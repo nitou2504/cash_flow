@@ -187,3 +187,25 @@ def create_recurrent_transactions(
         current_date += relativedelta(months=1)
         
     return transactions
+
+def create_budget_release_transaction(
+    budget_name: str,
+    release_amount: float,
+    account: Dict[str, Any],
+    month_date: date,
+) -> Dict[str, Any]:
+    """
+    Creates a positive 'Budget Release' transaction for underspent funds.
+    """
+    description = f"{budget_name} Budget Release {month_date.strftime('%Y-%m')}"
+    return {
+        "date_created": month_date,
+        "date_payed": month_date,
+        "description": description,
+        "account": account.get("account_id"),
+        "amount": abs(release_amount),  # Ensure amount is positive
+        "category": "Budget Release",
+        "budget": f"budget_{budget_name.lower()}",
+        "status": "committed",
+        "origin_id": f"budget_{budget_name.lower()}",
+    }

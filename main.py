@@ -52,6 +52,21 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
         raise ValueError(f"Invalid transaction type: {transaction_type}")
 
     if new_transactions:
+        # --- Real-time Budget Update Logic ---
+        for t in new_transactions:
+            if t.get("budget"):
+                allocation = repository.get_budget_allocation_for_month(
+                    conn, t["budget"], t["date_created"]
+                )
+                if allocation:
+                    amount_to_apply = min(abs(t['amount']), abs(allocation['amount']))
+                    new_allocation_amount = allocation['amount'] + amount_to_apply
+                    
+                    repository.update_transaction_amount(
+                        conn, allocation['id'], new_allocation_amount
+                    )
+        # --- End Budget Logic ---
+        
         repository.add_transactions(conn, new_transactions)
         print(f"Successfully added {len(new_transactions)} transaction(s).")
 
@@ -105,6 +120,34 @@ def generate_forecasts(conn: sqlite3.Connection, horizon_months: int):
         if new_forecasts:
             repository.add_transactions(conn, new_forecasts)
             print(f"Generated {len(new_forecasts)} new forecasts for '{sub['name']}'.")
+
+def run_monthly_budget_reconciliation(conn: sqlite3.Connection, month_date: date):
+    """
+    Handles the month-end underspend policy for all active budgets.
+    """
+    active_budgets = [
+        s for s in repository.get_all_active_subscriptions(conn, month_date)
+        if s.get("is_budget")
+    ]
+
+    for budget_sub in active_budgets:
+        allocation = repository.get_budget_allocation_for_month(
+            conn, budget_sub["id"], month_date
+        )
+        
+        if allocation and allocation["amount"] < 0: # Underspent
+            if budget_sub["underspend_behavior"] == "return":
+                account = repository.get_account_by_name(conn, budget_sub["payment_account_id"])
+                
+                release_trans = transactions.create_budget_release_transaction(
+                    budget_name=budget_sub["name"],
+                    release_amount=abs(allocation["amount"]),
+                    account=account,
+                    month_date=month_date,
+                )
+                repository.add_transactions(conn, [release_trans])
+                repository.update_transaction_amount(conn, allocation["id"], 0)
+                print(f"Released {release_trans['amount']:.2f} from '{budget_sub['name']}'.")
 
 
 if __name__ == '__main__':
@@ -163,6 +206,65 @@ if __name__ == '__main__':
     }
     repository.add_subscription(conn, netflix_subscription)
     generate_forecasts(conn, horizon_months=6)
+
+    # --- Budget Logic Examples ---
+    print("\n--- Setting up Budgets for Demonstration ---")
+    today = date.today()
+    current_month_start = today.replace(day=1)
+
+    # 1. Food Budget (Underspend with 'return')
+    food_budget = {
+        "id": "budget_food", "name": "Food", "category": "Food",
+        "monthly_amount": 400, "payment_account_id": "Cash",
+        "start_date": current_month_start, "is_budget": True, "underspend_behavior": "return"
+    }
+    repository.add_subscription(conn, food_budget)
+    repository.add_transactions(conn, [{
+        "date_created": current_month_start, "date_payed": current_month_start,
+        "description": "Food Budget", "account": "Cash", "amount": -400,
+        "category": "Food", "budget": "budget_food", "status": "committed", "origin_id": "budget_food"
+    }])
+
+    # 2. Transport Budget (Overspend example)
+    transport_budget = {
+        "id": "budget_transport", "name": "Transport", "category": "Transport",
+        "monthly_amount": 100, "payment_account_id": "Cash",
+        "start_date": current_month_start, "is_budget": True, "underspend_behavior": "keep"
+    }
+    repository.add_subscription(conn, transport_budget)
+    repository.add_transactions(conn, [{
+        "date_created": current_month_start, "date_payed": current_month_start,
+        "description": "Transport Budget", "account": "Cash", "amount": -100,
+        "category": "Transport", "budget": "budget_transport", "status": "committed", "origin_id": "budget_transport"
+    }])
+
+    # 3. Shopping Budget (Underspend with 'keep')
+    shopping_budget = {
+        "id": "budget_shopping", "name": "Shopping", "category": "Shopping",
+        "monthly_amount": 250, "payment_account_id": "Visa Produbanco",
+        "start_date": current_month_start, "is_budget": True, "underspend_behavior": "keep"
+    }
+    repository.add_subscription(conn, shopping_budget)
+    repository.add_transactions(conn, [{
+        "date_created": current_month_start, "date_payed": current_month_start,
+        "description": "Shopping Budget", "account": "Visa Produbanco", "amount": -250,
+        "category": "Shopping", "budget": "budget_shopping", "status": "committed", "origin_id": "budget_shopping"
+    }])
+
+    print("\n--- Logging Expenses Against Budgets ---")
+    # Scenario 1: Underspend the Food budget ($350 spent out of $400)
+    process_transaction_request(conn, {"type": "simple", "description": "Groceries Week 1", "amount": 150, "account": "Cash", "budget": "budget_food"})
+    process_transaction_request(conn, {"type": "simple", "description": "Groceries Week 2", "amount": 200, "account": "Cash", "budget": "budget_food"})
+
+    # Scenario 2: Overspend the Transport budget ($120 spent out of $100)
+    process_transaction_request(conn, {"type": "simple", "description": "Gasoline", "amount": 120, "account": "Cash", "budget": "budget_transport"})
+
+    # Scenario 3: Underspend the Shopping budget ($180 spent out of $250)
+    process_transaction_request(conn, {"type": "simple", "description": "New Shoes", "amount": 180, "account": "Visa Produbanco", "budget": "budget_shopping"})
+
+    print("\n--- Running Month-End Budget Reconciliation ---")
+    run_monthly_budget_reconciliation(conn, current_month_start)
+
 
     # --- Verify by fetching all transactions ---
     all_trans = repository.get_all_transactions(conn)

@@ -129,3 +129,33 @@ def update_future_forecasts_account(
     """
     cursor.execute(query, (new_account_id, origin_id, from_date))
     conn.commit()
+
+def get_budget_allocation_for_month(
+    conn: Connection, budget_id: str, month_date: date
+) -> Dict[str, Any]:
+    """
+    Retrieves the budget allocation transaction for a specific budget in a given month.
+    """
+    cursor = conn.cursor()
+    start_of_month = month_date.replace(day=1)
+    # Correctly calculate the end of the month
+    from dateutil.relativedelta import relativedelta
+    end_of_month = (start_of_month + relativedelta(months=1)) - relativedelta(days=1)
+    
+    query = """
+        SELECT * FROM transactions
+        WHERE budget = ? AND date(date_created) BETWEEN ? AND ?
+        AND (description LIKE '%Budget%' OR status = 'committed')
+    """
+    cursor.execute(query, (budget_id, start_of_month, end_of_month))
+    allocation = cursor.fetchone()
+    if allocation:
+        return dict(allocation)
+    return None
+
+def update_transaction_amount(conn: Connection, transaction_id: int, new_amount: float):
+    """Updates the amount of a specific transaction."""
+    cursor = conn.cursor()
+    query = "UPDATE transactions SET amount = ? WHERE id = ?"
+    cursor.execute(query, (new_amount, transaction_id))
+    conn.commit()
