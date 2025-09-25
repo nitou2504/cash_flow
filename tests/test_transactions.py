@@ -1,13 +1,11 @@
-
 import unittest
 from datetime import date, timedelta
 
-# This is a placeholder for the actual transaction creation logic.
-# We will develop the real module later.
 from transactions import (
     create_single_transaction,
     create_installment_transactions,
     create_split_transactions,
+    create_recurrent_transactions,
     _calculate_credit_card_payment_date,
 )
 
@@ -15,8 +13,9 @@ from transactions import (
 class TestTransactions(unittest.TestCase):
     def setUp(self):
         """Set up common test data."""
-        self.cash_account = {"account_type": "cash"}
+        self.cash_account = {"account_id": "Cash", "account_type": "cash"}
         self.credit_card_account = {
+            "account_id": "Visa Produbanco",
             "account_type": "credit_card",
             "cut_off_day": 15,
             "payment_day": 25,
@@ -31,7 +30,7 @@ class TestTransactions(unittest.TestCase):
             description="Taxi",
             amount=4.50,
             category="taxi",
-            budget_category="transport",
+            budget="transport",
             account=self.cash_account,
             transaction_date=self.transaction_date,
         )
@@ -49,7 +48,7 @@ class TestTransactions(unittest.TestCase):
             description="Dinner",
             amount=45.00,
             category="restaurant",
-            budget_category="food",
+            budget="food",
             account=self.credit_card_account,
             transaction_date=self.transaction_date,  # Oct 17th, after Oct 15th cut-off
         )
@@ -69,7 +68,7 @@ class TestTransactions(unittest.TestCase):
             description="Coffee",
             amount=5.00,
             category="cafe",
-            budget_category="food",
+            budget="food",
             account=self.credit_card_account,
             transaction_date=transaction_date,
         )
@@ -87,7 +86,7 @@ class TestTransactions(unittest.TestCase):
             total_amount=900.00,
             installments=3,
             category="electronics",
-            budget_category="shopping",
+            budget="shopping",
             account=self.credit_card_account,
             transaction_date=self.transaction_date,
         )
@@ -113,8 +112,8 @@ class TestTransactions(unittest.TestCase):
         Tests the creation of multiple transactions from a single split purchase.
         """
         splits = [
-            {"amount": 100, "category": "groceries", "budget_category": "food"},
-            {"amount": 20, "category": "snacks", "budget_category": "personal"},
+            {"amount": 100, "category": "groceries", "budget": "food"},
+            {"amount": 20, "category": "snacks", "budget": "personal"},
         ]
         transactions = create_split_transactions(
             description="Supermaxi",
@@ -159,6 +158,62 @@ class TestTransactions(unittest.TestCase):
             _calculate_credit_card_payment_date(date(2025, 12, 20), 15, 10),
             date(2026, 1, 10),
         )
+
+    def test_create_recurrent_transactions(self):
+        """
+        Tests generating forecast transactions for a subscription over a period.
+        """
+        subscription = {
+            "id": "sub_spotify",
+            "name": "Spotify",
+            "category": "entertainment",
+            "monthly_amount": 9.99,
+            "start_date": date(2025, 1, 15),
+            "is_budget": False,
+        }
+        start_period = date(2025, 10, 1)
+        end_period = date(2025, 12, 31)
+
+        transactions = create_recurrent_transactions(
+            subscription, self.credit_card_account, start_period, end_period
+        )
+
+        self.assertEqual(len(transactions), 3)
+        
+        # Test the first generated transaction
+        t1 = transactions[0]
+        self.assertEqual(t1["status"], "forecast")
+        self.assertEqual(t1["origin_id"], "sub_spotify")
+        self.assertEqual(t1["description"], "Spotify")
+        self.assertEqual(t1["date_created"], date(2025, 10, 15))
+        self.assertEqual(t1["date_payed"], date(2025, 11, 25)) # On cutoff day
+        self.assertIsNone(t1["budget"])
+
+        # Test the last generated transaction
+        t3 = transactions[2]
+        self.assertEqual(t3["date_created"], date(2025, 12, 15))
+        self.assertEqual(t3["date_payed"], date(2026, 1, 25)) # After cutoff in Dec
+
+    def test_create_recurrent_transactions_is_budget(self):
+        """
+        Tests that the 'budget' field is correctly set for budget subscriptions.
+        """
+        subscription = {
+            "id": "budget_food",
+            "name": "Food Budget",
+            "category": "food",
+            "monthly_amount": 300,
+            "start_date": date(2025, 1, 1),
+            "is_budget": True,
+        }
+        start_period = date(2025, 10, 1)
+        end_period = date(2025, 10, 31)
+
+        transactions = create_recurrent_transactions(
+            subscription, self.cash_account, start_period, end_period
+        )
+        self.assertEqual(len(transactions), 1)
+        self.assertEqual(transactions[0]["budget"], "budget_food")
 
 
 if __name__ == "__main__":

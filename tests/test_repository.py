@@ -1,20 +1,24 @@
-
 import unittest
 import sqlite3
+from datetime import date
+
 from repository import (
     get_account_by_name,
     add_transactions,
     get_all_transactions,
+    add_subscription,
+    get_subscription_by_id,
+    get_all_active_subscriptions,
+    delete_future_forecasts,
+    update_future_forecasts_account,
 )
-
-# Placeholder for database setup logic
-from database import create_tables, insert_initial_data
+from database import create_tables, insert_initial_data, create_connection
 
 
 class TestRepository(unittest.TestCase):
     def setUp(self):
         """Set up an in-memory database for each test."""
-        self.conn = sqlite3.connect(":memory:")
+        self.conn = create_connection(":memory:")
         self.conn.row_factory = sqlite3.Row
         create_tables(self.conn)
         insert_initial_data(self.conn)
@@ -47,7 +51,7 @@ class TestRepository(unittest.TestCase):
             "account": "Cash",
             "amount": -5.00,
             "category": "cafe",
-            "budget_category": "food",
+            "budget": "food",
             "status": "committed",
             "origin_id": None,
         }
@@ -69,7 +73,7 @@ class TestRepository(unittest.TestCase):
                 "account": "Visa Produbanco",
                 "amount": -150.00,
                 "category": "groceries",
-                "budget_category": "food",
+                "budget": "food",
                 "status": "committed",
                 "origin_id": "20251018-A1",
             },
@@ -80,7 +84,7 @@ class TestRepository(unittest.TestCase):
                 "account": "Visa Produbanco",
                 "amount": -25.00,
                 "category": "snacks",
-                "budget_category": "personal",
+                "budget": "personal",
                 "status": "committed",
                 "origin_id": "20251018-A1",
             },
@@ -102,6 +106,88 @@ class TestRepository(unittest.TestCase):
         
         transactions = get_all_transactions(self.conn)
         self.assertEqual(len(transactions), 0)
+
+
+class TestSubscriptionRepository(unittest.TestCase):
+    def setUp(self):
+        """Set up an in-memory database for each test."""
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        create_tables(self.conn)
+        insert_initial_data(self.conn)
+
+        # Sample subscriptions
+        self.sub1 = {
+            "id": "sub_spotify",
+            "name": "Spotify",
+            "category": "entertainment",
+            "monthly_amount": 9.99,
+            "payment_account_id": "Visa Produbanco",
+            "start_date": date(2025, 1, 15),
+            "end_date": None,
+        }
+        self.sub2 = {
+            "id": "sub_gym",
+            "name": "Gym Membership",
+            "category": "health",
+            "monthly_amount": 50.00,
+            "payment_account_id": "Amex Produbanco",
+            "start_date": date(2025, 3, 1),
+            "end_date": date(2025, 8, 31),
+        }
+        add_subscription(self.conn, self.sub1)
+        add_subscription(self.conn, self.sub2)
+
+    def tearDown(self):
+        """Close the database connection after each test."""
+        self.conn.close()
+
+    def test_add_and_get_subscription(self):
+        """Tests that a subscription can be added and retrieved by its ID."""
+        retrieved_sub = get_subscription_by_id(self.conn, "sub_spotify")
+        self.assertIsNotNone(retrieved_sub)
+        self.assertEqual(retrieved_sub["name"], "Spotify")
+
+    def test_get_all_active_subscriptions(self):
+        """Tests retrieving all subscriptions that are active on a given date."""
+        # Active in April 2025
+        active_subs = get_all_active_subscriptions(self.conn, date(2025, 4, 10))
+        self.assertEqual(len(active_subs), 2)
+
+        # Active in September 2025 (gym membership has ended)
+        active_subs = get_all_active_subscriptions(self.conn, date(2025, 9, 1))
+        self.assertEqual(len(active_subs), 1)
+        self.assertEqual(active_subs[0]["id"], "sub_spotify")
+
+    def test_delete_future_forecasts(self):
+        """Tests deleting forecast transactions from a specific date."""
+        # Add some forecast transactions
+        forecasts = [
+            {"date_created": "2025-10-15", "date_payed": "2025-11-10", "description": "Spotify", "account": "Visa Produbanco", "amount": -9.99, "category": "entertainment", "budget": None, "status": "forecast", "origin_id": "sub_spotify"},
+            {"date_created": "2025-11-15", "date_payed": "2025-12-10", "description": "Spotify", "account": "Visa Produbanco", "amount": -9.99, "category": "entertainment", "budget": None, "status": "forecast", "origin_id": "sub_spotify"},
+            {"date_created": "2025-12-15", "date_payed": "2026-01-10", "description": "Spotify", "account": "Visa Produbanco", "amount": -9.99, "category": "entertainment", "budget": None, "status": "forecast", "origin_id": "sub_spotify"},
+        ]
+        add_transactions(self.conn, forecasts)
+
+        delete_future_forecasts(self.conn, "sub_spotify", date(2025, 11, 1))
+        
+        remaining_forecasts = get_all_transactions(self.conn)
+        self.assertEqual(len(remaining_forecasts), 1)
+        self.assertEqual(remaining_forecasts[0]["date_created"], "2025-10-15")
+
+    def test_update_future_forecasts_account(self):
+        """Tests updating the payment account for future forecast transactions."""
+        forecasts = [
+            {"date_created": "2025-10-15", "date_payed": "2025-11-10", "description": "Spotify", "account": "Visa Produbanco", "amount": -9.99, "category": "entertainment", "budget": None, "status": "forecast", "origin_id": "sub_spotify"},
+            {"date_created": "2025-11-15", "date_payed": "2025-12-10", "description": "Spotify", "account": "Visa Produbanco", "amount": -9.99, "category": "entertainment", "budget": None, "status": "forecast", "origin_id": "sub_spotify"},
+        ]
+        add_transactions(self.conn, forecasts)
+
+        update_future_forecasts_account(self.conn, "sub_spotify", date(2025, 11, 1), "Amex Produbanco")
+
+        updated_forecasts = get_all_transactions(self.conn)
+        self.assertEqual(updated_forecasts[0]["account"], "Visa Produbanco") # Unchanged
+        self.assertEqual(updated_forecasts[1]["account"], "Amex Produbanco") # Changed
 
 
 if __name__ == "__main__":

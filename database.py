@@ -1,12 +1,25 @@
 
 import sqlite3
 from sqlite3 import Connection
+from datetime import date
+
+def adapt_date_iso(d: date):
+    """Adapt date to ISO 8601 string format."""
+    return d.isoformat()
+
+def convert_date(s: bytes):
+    """Convert ISO 8601 string to date object."""
+    return date.fromisoformat(s.decode('utf-8'))
+
+# Register the adapter and converter
+sqlite3.register_adapter(date, adapt_date_iso)
+sqlite3.register_converter("DATE", convert_date)
 
 def create_connection(db_path: str) -> Connection:
     """
     Establishes and returns a connection to the SQLite database file.
     """
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -24,6 +37,20 @@ def create_tables(conn: Connection):
         )
     """)
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS subscriptions (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            category TEXT NOT NULL,
+            monthly_amount REAL NOT NULL,
+            payment_account_id TEXT NOT NULL,
+            start_date DATE NOT NULL,
+            end_date DATE,
+            is_budget BOOLEAN NOT NULL DEFAULT 0,
+            underspend_behavior TEXT NOT NULL DEFAULT 'keep',
+            FOREIGN KEY (payment_account_id) REFERENCES accounts (account_id)
+        )
+    """)
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             date_created DATE NOT NULL,
@@ -32,7 +59,7 @@ def create_tables(conn: Connection):
             account TEXT,
             amount REAL NOT NULL,
             category TEXT,
-            budget_category TEXT,
+            budget TEXT,
             status TEXT NOT NULL,
             origin_id TEXT,
             FOREIGN KEY (account) REFERENCES accounts (account_id)

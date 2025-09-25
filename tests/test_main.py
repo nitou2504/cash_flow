@@ -6,13 +6,13 @@ from unittest.mock import patch, MagicMock
 from main import process_transaction_request
 
 # Placeholder for database setup logic
-from database import create_tables, insert_initial_data
+from database import create_tables, insert_initial_data, create_connection
 
 
 class TestMainController(unittest.TestCase):
     def setUp(self):
         """Set up an in-memory database for each test."""
-        self.conn = sqlite3.connect(":memory:")
+        self.conn = create_connection(":memory:")
         create_tables(self.conn)
         insert_initial_data(self.conn)
 
@@ -35,7 +35,7 @@ class TestMainController(unittest.TestCase):
             "amount": 4.50,
             "account": "Cash",
             "category": "taxi",
-            "budget_category": "transport",
+            "budget": "transport",
         }
         mock_repository.get_account_by_name.return_value = {
             "account_id": "Cash",
@@ -70,7 +70,7 @@ class TestMainController(unittest.TestCase):
             "installments": 3,
             "account": "Visa Produbanco",
             "category": "electronics",
-            "budget_category": "shopping",
+            "budget": "shopping",
         }
         mock_repository.get_account_by_name.return_value = {
             "account_id": "Visa Produbanco",
@@ -104,8 +104,8 @@ class TestMainController(unittest.TestCase):
             "description": "Supermaxi",
             "account": "Visa Produbanco",
             "splits": [
-                {"amount": 100, "category": "groceries", "budget_category": "food"},
-                {"amount": 20, "category": "snacks", "budget_category": "personal"},
+                {"amount": 100, "category": "groceries", "budget": "food"},
+                {"amount": 20, "category": "snacks", "budget": "personal"},
             ],
         }
         mock_repository.get_account_by_name.return_value = {

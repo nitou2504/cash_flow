@@ -1,7 +1,7 @@
-
 import sqlite3
 from sqlite3 import Connection
 from typing import List, Dict, Any
+from datetime import date
 
 def get_account_by_name(conn: Connection, name: str) -> Dict[str, Any]:
     """
@@ -22,7 +22,7 @@ def add_transactions(conn: Connection, transactions: List[Dict[str, Any]]):
     query = """
         INSERT INTO transactions (
             date_created, date_payed, description, account, amount,
-            category, budget_category, status, origin_id
+            category, budget, status, origin_id
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
     data = [
@@ -33,7 +33,7 @@ def add_transactions(conn: Connection, transactions: List[Dict[str, Any]]):
             t["account"],
             t["amount"],
             t["category"],
-            t["budget_category"],
+            t["budget"],
             t["status"],
             t["origin_id"],
         )
@@ -50,3 +50,82 @@ def get_all_transactions(conn: Connection) -> List[Dict[str, Any]]:
     cursor.execute("SELECT * FROM transactions ORDER BY date_payed")
     transactions = cursor.fetchall()
     return [dict(row) for row in transactions]
+
+def add_subscription(conn: Connection, sub: Dict[str, Any]):
+    """Inserts a new record into the subscriptions table."""
+    cursor = conn.cursor()
+    query = """
+        INSERT INTO subscriptions (
+            id, name, category, monthly_amount, payment_account_id,
+            start_date, end_date, is_budget, underspend_behavior
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """
+    # Set defaults if not provided
+    is_budget = sub.get("is_budget", 0)
+    underspend_behavior = sub.get("underspend_behavior", "keep")
+
+    data = (
+        sub["id"],
+        sub["name"],
+        sub["category"],
+        sub["monthly_amount"],
+        sub["payment_account_id"],
+        sub["start_date"],
+        sub.get("end_date"),
+        is_budget,
+        underspend_behavior,
+    )
+    cursor.execute(query, data)
+    conn.commit()
+
+def get_subscription_by_id(conn: Connection, sub_id: str) -> Dict[str, Any]:
+    """Retrieves a single subscription by its ID."""
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM subscriptions WHERE id = ?", (sub_id,))
+    sub = cursor.fetchone()
+    if sub:
+        return dict(sub)
+    return None
+
+def get_all_active_subscriptions(conn: Connection, start_range: date, end_range: date = None) -> List[Dict[str, Any]]:
+    """
+    Fetches all subscriptions that are active within a given date range.
+    If end_range is not provided, it defaults to start_range.
+    """
+    if end_range is None:
+        end_range = start_range
+        
+    cursor = conn.cursor()
+    query = """
+        SELECT * FROM subscriptions
+        WHERE start_date <= ? AND (end_date IS NULL OR end_date >= ?)
+    """
+    cursor.execute(query, (end_range, start_range))
+    subs = cursor.fetchall()
+    return [dict(row) for row in subs]
+
+def delete_future_forecasts(conn: Connection, origin_id: str, from_date: date):
+    """
+    Deletes all 'forecast' status transactions for a given subscription
+    from a specific date onward.
+    """
+    cursor = conn.cursor()
+    query = """
+        DELETE FROM transactions
+        WHERE origin_id = ? AND status = 'forecast' AND date_created >= ?
+    """
+    cursor.execute(query, (origin_id, from_date))
+    conn.commit()
+
+def update_future_forecasts_account(
+    conn: Connection, origin_id: str, from_date: date, new_account_id: str
+):
+    """Updates the account for all future forecasts of a subscription."""
+    cursor = conn.cursor()
+    query = """
+        UPDATE transactions
+        SET account = ?
+        WHERE origin_id = ? AND status = 'forecast' AND date_created >= ?
+    """
+    cursor.execute(query, (new_account_id, origin_id, from_date))
+    conn.commit()

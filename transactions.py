@@ -1,7 +1,8 @@
-
 import uuid
 from datetime import date, timedelta
 from typing import List, Dict, Any, Optional
+from dateutil.relativedelta import relativedelta
+
 
 def _generate_origin_id() -> str:
     """
@@ -33,7 +34,7 @@ def _create_base_transaction(
     description: str,
     amount: float,
     category: Optional[str],
-    budget_category: Optional[str],
+    budget: Optional[str],
     transaction_date: date,
 ) -> Dict[str, Any]:
     """
@@ -44,7 +45,7 @@ def _create_base_transaction(
         "description": description,
         "amount": -abs(amount),  # Ensure amount is negative for expenses
         "category": category,
-        "budget_category": budget_category,
+        "budget": budget,
         "status": "committed",
         "origin_id": None,
     }
@@ -53,7 +54,7 @@ def create_single_transaction(
     description: str,
     amount: float,
     category: Optional[str],
-    budget_category: Optional[str],
+    budget: Optional[str],
     account: Dict[str, Any],
     transaction_date: date,
 ) -> Dict[str, Any]:
@@ -61,7 +62,7 @@ def create_single_transaction(
     Creates one complete transaction, handling logic for cash and credit cards.
     """
     transaction = _create_base_transaction(
-        description, amount, category, budget_category, transaction_date
+        description, amount, category, budget, transaction_date
     )
     transaction["account"] = account.get("account_id")
 
@@ -79,7 +80,7 @@ def create_installment_transactions(
     total_amount: float,
     installments: int,
     category: Optional[str],
-    budget_category: Optional[str],
+    budget: Optional[str],
     account: Dict[str, Any],
     transaction_date: date,
 ) -> List[Dict[str, Any]]:
@@ -94,20 +95,13 @@ def create_installment_transactions(
     for i in range(installments):
         installment_description = f"{description} ({i + 1}/{installments})"
         
-        # Calculate the transaction date for the billing of this installment
-        # This is a simplified way to advance months. A more robust library might be better for edge cases.
-        months_to_add = i
-        future_year = transaction_date.year + (transaction_date.month + months_to_add -1) // 12
-        future_month = (transaction_date.month + months_to_add -1) % 12 + 1
-        
-        # Create a date to properly calculate the payment date for future installments
-        future_billing_date = date(future_year, future_month, transaction_date.day)
+        future_billing_date = transaction_date + relativedelta(months=i)
 
         transaction = _create_base_transaction(
             description=installment_description,
             amount=installment_amount,
             category=category,
-            budget_category=budget_category,
+            budget=budget,
             transaction_date=transaction_date, # The purchase date is the same for all
         )
         transaction["account"] = account.get("account_id")
@@ -140,10 +134,56 @@ def create_split_transactions(
             description=description,
             amount=split["amount"],
             category=split["category"],
-            budget_category=split["budget_category"],
+            budget=split.get("budget"),
             account=account,
             transaction_date=transaction_date,
         )
         transaction["origin_id"] = origin_id
         transactions.append(transaction)
+    return transactions
+
+def create_recurrent_transactions(
+    subscription: Dict[str, Any],
+    account: Dict[str, Any],
+    start_period: date,
+    end_period: date,
+) -> List[Dict[str, Any]]:
+    """
+    Generates a list of forecast transaction dictionaries for a given
+    subscription over a specified period.
+    """
+    transactions = []
+    current_date = start_period
+
+    while current_date <= end_period:
+        # Set the transaction day to the subscription's start day
+        transaction_day = subscription["start_date"].day
+        # handle cases where the day is invalid for the month (e.g. 31 in Feb)
+        try:
+            transaction_date = date(current_date.year, current_date.month, transaction_day)
+        except ValueError:
+            # This logic gets the last day of the month
+            transaction_date = date(current_date.year, current_date.month + 1, 1) - timedelta(days=1)
+
+
+        if transaction_date >= start_period and transaction_date <= end_period:
+            trans = create_single_transaction(
+                description=subscription["name"],
+                amount=subscription["monthly_amount"],
+                category=subscription["category"],
+                budget=None,  # Default to None
+                account=account,
+                transaction_date=transaction_date,
+            )
+            
+            # Override fields for forecast
+            trans["status"] = "forecast"
+            trans["origin_id"] = subscription["id"]
+            if subscription.get("is_budget"):
+                trans["budget"] = subscription["id"]
+            
+            transactions.append(trans)
+
+        current_date += relativedelta(months=1)
+        
     return transactions
