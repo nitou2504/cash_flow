@@ -59,7 +59,7 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
                     conn, t["budget"], t["date_created"]
                 )
                 if allocation:
-                    amount_to_apply = min(abs(t['amount']), abs(allocation['amount']))
+                    amount_to_apply = abs(t['amount'])
                     new_allocation_amount = allocation['amount'] + amount_to_apply
                     
                     repository.update_transaction_amount(
@@ -69,6 +69,64 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
         
         repository.add_transactions(conn, new_transactions)
         print(f"Successfully added {len(new_transactions)} transaction(s).")
+
+def process_transaction_update(conn: sqlite3.Connection, transaction_id: int, updates: Dict[str, Any]):
+    """
+    Modifies a transaction and ensures its linked budget is correctly adjusted.
+    """
+    original_transaction = repository.get_transaction_by_id(conn, transaction_id)
+    if not original_transaction:
+        raise ValueError(f"Transaction with ID {transaction_id} not found.")
+
+    budget_id = original_transaction.get("budget")
+    
+    if budget_id:
+        old_amount = original_transaction.get("amount", 0.0)
+        new_amount = updates.get("amount", old_amount)
+
+        if old_amount != new_amount:
+            # The adjustment is the difference in impact between the new and old amounts.
+            adjustment = abs(new_amount) - abs(old_amount)
+            
+            allocation = repository.get_budget_allocation_for_month(
+                conn, budget_id, original_transaction["date_created"]
+            )
+            
+            if allocation:
+                # Apply the adjustment to the allocation's current value
+                new_allocation_amount = allocation['amount'] + adjustment
+                repository.update_transaction_amount(
+                    conn, allocation['id'], new_allocation_amount
+                )
+
+    repository.update_transaction(conn, transaction_id, updates)
+
+def process_transaction_deletion(conn: sqlite3.Connection, transaction_id: int):
+    """
+    Deletes a transaction and correctly "returns" its value to any linked budget.
+    """
+    transaction_to_delete = repository.get_transaction_by_id(conn, transaction_id)
+    if not transaction_to_delete:
+        return
+
+    budget_id = transaction_to_delete.get("budget")
+
+    if budget_id:
+        transaction_amount = transaction_to_delete.get("amount", 0.0)
+        
+        allocation = repository.get_budget_allocation_for_month(
+            conn, budget_id, transaction_to_delete["date_created"]
+        )
+        
+        if allocation:
+            # "Return" the money by subtracting the absolute value (impact) of the expense
+            new_allocation_amount = allocation['amount'] - abs(transaction_amount)
+            repository.update_transaction_amount(
+                conn, allocation['id'], new_allocation_amount
+            )
+
+    repository.delete_transaction(conn, transaction_id)
+
 
 def generate_forecasts(conn: sqlite3.Connection, horizon_months: int, from_date: date = None):
     """

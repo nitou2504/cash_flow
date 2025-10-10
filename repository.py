@@ -51,6 +51,15 @@ def get_all_transactions(conn: Connection) -> List[Dict[str, Any]]:
     transactions = cursor.fetchall()
     return [dict(row) for row in transactions]
 
+def get_transaction_by_id(conn: Connection, transaction_id: int) -> Dict[str, Any]:
+    """Retrieves a single transaction by its primary key."""
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM transactions WHERE id = ?", (transaction_id,))
+    transaction = cursor.fetchone()
+    if transaction:
+        return dict(transaction)
+    return None
+
 def add_subscription(conn: Connection, sub: Dict[str, Any]):
     """Inserts a new record into the subscriptions table."""
     cursor = conn.cursor()
@@ -185,4 +194,22 @@ def commit_forecasts_for_month(conn: Connection, month_date: date):
         WHERE status = 'forecast' AND date(date_created) BETWEEN ? AND ?
     """
     cursor.execute(query, (start_of_month, end_of_month))
+    conn.commit()
+
+def update_transaction(conn: Connection, transaction_id: int, updates: Dict[str, Any]):
+    """Generically updates one or more fields of a specific transaction."""
+    cursor = conn.cursor()
+    fields = ", ".join([f"{key} = ?" for key in updates.keys()])
+    values = list(updates.values())
+    values.append(transaction_id)
+    
+    query = f"UPDATE transactions SET {fields} WHERE id = ?"
+    cursor.execute(query, tuple(values))
+    conn.commit()
+
+def delete_transaction(conn: Connection, transaction_id: int):
+    """Permanently removes a single transaction from the database."""
+    cursor = conn.cursor()
+    query = "DELETE FROM transactions WHERE id = ?"
+    cursor.execute(query, (transaction_id,))
     conn.commit()
