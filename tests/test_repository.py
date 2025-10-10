@@ -11,6 +11,8 @@ from repository import (
     get_all_active_subscriptions,
     delete_future_forecasts,
     update_future_forecasts_account,
+    get_setting,
+    commit_forecasts_for_month,
 )
 from database import create_tables, insert_initial_data, create_connection
 
@@ -188,6 +190,62 @@ class TestSubscriptionRepository(unittest.TestCase):
         updated_forecasts = get_all_transactions(self.conn)
         self.assertEqual(updated_forecasts[0]["account"], "Visa Produbanco") # Unchanged
         self.assertEqual(updated_forecasts[1]["account"], "Amex Produbanco") # Changed
+
+
+class TestSettingsRepository(unittest.TestCase):
+    def setUp(self):
+        """Set up an in-memory database for each test."""
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        create_tables(self.conn)
+        # The settings table needs to be created for these tests
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
+
+    def tearDown(self):
+        """Close the database connection after each test."""
+        self.conn.close()
+
+    def test_get_and_set_setting(self):
+        """Tests that a setting can be saved and retrieved."""
+        self.conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)",
+                          ("forecast_horizon", "6"))
+        self.conn.commit()
+
+        horizon = get_setting(self.conn, "forecast_horizon")
+        self.assertEqual(horizon, "6")
+
+    def test_commit_forecasts_for_month(self):
+        """
+        Tests that all forecast transactions for a specific month are
+        updated to 'committed'.
+        """
+        forecasts = [
+            # This one should be committed
+            {"date_created": date(2025, 11, 5), "date_payed": "2025-11-10", "description": "November Forecast", "account": "Cash", "amount": -10, "category": "test", "budget": None, "status": "forecast", "origin_id": "A"},
+            # This one should NOT be committed (wrong month)
+            {"date_created": date(2025, 10, 5), "date_payed": "2025-10-10", "description": "October Forecast", "account": "Cash", "amount": -10, "category": "test", "budget": None, "status": "forecast", "origin_id": "B"},
+            # This one should be committed
+            {"date_created": date(2025, 11, 20), "date_payed": "2025-11-25", "description": "November Forecast 2", "account": "Cash", "amount": -20, "category": "test", "budget": None, "status": "forecast", "origin_id": "C"},
+            # This one should NOT be committed (already committed)
+            {"date_created": date(2025, 11, 15), "date_payed": "2025-11-20", "description": "November Committed", "account": "Cash", "amount": -30, "category": "test", "budget": None, "status": "committed", "origin_id": "D"},
+        ]
+        add_transactions(self.conn, forecasts)
+
+        commit_forecasts_for_month(self.conn, date(2025, 11, 1))
+
+        transactions = get_all_transactions(self.conn)
+        
+        status_map = {t['origin_id']: t['status'] for t in transactions}
+
+        self.assertEqual(status_map['A'], 'committed')
+        self.assertEqual(status_map['B'], 'forecast')
+        self.assertEqual(status_map['C'], 'committed')
+        self.assertEqual(status_map['D'], 'committed')
 
 
 if __name__ == "__main__":

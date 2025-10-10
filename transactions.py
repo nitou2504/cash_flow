@@ -189,6 +189,7 @@ def create_recurrent_transactions(
     return transactions
 
 def create_budget_release_transaction(
+    budget_id: str,
     budget_name: str,
     release_amount: float,
     account: Dict[str, Any],
@@ -205,7 +206,7 @@ def create_budget_release_transaction(
         "account": account.get("account_id"),
         "amount": abs(release_amount),  # Ensure amount is positive
         "category": "Budget Release",
-        "budget": f"budget_{budget_name.lower()}",
+        "budget": budget_id,
         "status": "committed",
-        "origin_id": f"budget_{budget_name.lower()}",
+        "origin_id": budget_id,
     }

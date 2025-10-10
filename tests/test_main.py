@@ -126,5 +126,95 @@ class TestMainController(unittest.TestCase):
         mock_repository.add_transactions.assert_called_once()
 
 
+class TestMonthlyRollover(unittest.TestCase):
+    def setUp(self):
+        """Set up a full in-memory database for an integration test."""
+        self.conn = create_connection(":memory:")
+        create_tables(self.conn)
+        insert_initial_data(self.conn)
+        # Explicitly create the settings table for the test
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
+
+    def tearDown(self):
+        """Close the database connection after each test."""
+        self.conn.close()
+
+    def test_run_monthly_rollover_integration(self):
+        """
+        An integration test for the entire monthly rollover process that
+        simulates moving into a new month.
+        """
+        from main import generate_forecasts, run_monthly_rollover
+        from repository import get_all_transactions, add_subscription
+        from datetime import date
+        from dateutil.relativedelta import relativedelta
+
+        print("\n\n--- Running Test: test_run_monthly_rollover_integration ---")
+
+        # --- Setup: Simulate a fixed point in time ---
+        TEST_TODAY = date(2025, 10, 9)
+        NEXT_MONTH = TEST_TODAY + relativedelta(months=1)
+        print(f"--- Test: Simulated 'today' is {TEST_TODAY}. We will roll over to {NEXT_MONTH.strftime('%Y-%m')}. ---")
+
+        # 1. Set a 3-month forecast horizon
+        self.conn.execute(
+            "UPDATE settings SET value = ? WHERE key = ?",
+            ("3", "forecast_horizon_months")
+        )
+        self.conn.commit()
+        print("--- Test: Set forecast horizon to 3 months. ---")
+
+        # 2. Add a budget that started last month
+        food_budget = {
+            "id": "budget_food", "name": "Food", "category": "Food",
+            "monthly_amount": 400, "payment_account_id": "Cash",
+            "start_date": (TEST_TODAY - relativedelta(months=1)).replace(day=1),
+            "is_budget": True
+        }
+        add_subscription(self.conn, food_budget)
+        print(f"--- Test: Added 'Food' budget starting on {food_budget['start_date']}. ---")
+
+        # 3. Generate initial forecasts from our simulated "today"
+        print("\n--- Test Action: Generating initial forecasts (for Oct, Nov, Dec)... ---")
+        generate_forecasts(self.conn, horizon_months=3, from_date=TEST_TODAY)
+        
+        # --- Action: Simulate running the process chronologically ---
+        print(f"\n--- Test Action: Running rollover for {TEST_TODAY.strftime('%Y-%m')}... ---")
+        run_monthly_rollover(self.conn, TEST_TODAY)
+        
+        print(f"\n--- Test Action: Running rollover for {NEXT_MONTH.strftime('%Y-%m')}... ---")
+        run_monthly_rollover(self.conn, NEXT_MONTH)
+
+        # --- Assertions ---
+        print("\n--- Test Assertions: Verifying the results... ---")
+        transactions = get_all_transactions(self.conn)
+        
+        # a) Check that NEXT month's budget (November) is now committed
+        next_month_budget = next(
+            t for t in transactions 
+            if t['origin_id'] == 'budget_food' 
+            and t['date_created'].month == NEXT_MONTH.month
+        )
+        self.assertEqual(next_month_budget['status'], 'committed')
+        print(f"--- Test OK: Budget for {NEXT_MONTH.strftime('%Y-%m')} is now 'committed'. ---")
+
+        # b) Check that the forecast horizon is still maintained
+        new_forecast_count = sum(1 for t in transactions if t['status'] == 'forecast')
+        self.assertEqual(new_forecast_count, 3)
+        print(f"--- Test OK: Found {new_forecast_count} future forecasts, maintaining the 3-month horizon. ---")
+
+        # c) Verify the new latest forecast is for the correct future month
+        latest_forecast = max(t['date_created'] for t in transactions if t['status'] == 'forecast')
+        expected_latest_month = (NEXT_MONTH + relativedelta(months=3))
+        self.assertEqual(latest_forecast.month, expected_latest_month.month)
+        print(f"--- Test OK: The latest forecast is correctly set for {latest_forecast.strftime('%Y-%m')}. ---")
+        print("--- Test Finished Successfully ---\n")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -70,12 +70,12 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
         repository.add_transactions(conn, new_transactions)
         print(f"Successfully added {len(new_transactions)} transaction(s).")
 
-def generate_forecasts(conn: sqlite3.Connection, horizon_months: int):
+def generate_forecasts(conn: sqlite3.Connection, horizon_months: int, from_date: date = None):
     """
     A scheduler job that creates and maintains forecast transactions up to a
     defined horizon.
     """
-    today = date.today()
+    today = from_date or date.today()
     horizon_date = today + relativedelta(months=horizon_months)
     
     active_subscriptions = repository.get_all_active_subscriptions(conn, today, horizon_date)
@@ -140,6 +140,7 @@ def run_monthly_budget_reconciliation(conn: sqlite3.Connection, month_date: date
                 account = repository.get_account_by_name(conn, budget_sub["payment_account_id"])
                 
                 release_trans = transactions.create_budget_release_transaction(
+                    budget_id=budget_sub["id"],
                     budget_name=budget_sub["name"],
                     release_amount=abs(allocation["amount"]),
                     account=account,
@@ -148,6 +149,26 @@ def run_monthly_budget_reconciliation(conn: sqlite3.Connection, month_date: date
                 repository.add_transactions(conn, [release_trans])
                 repository.update_transaction_amount(conn, allocation["id"], 0)
                 print(f"Released {release_trans['amount']:.2f} from '{budget_sub['name']}'.")
+
+
+def run_monthly_rollover(conn: sqlite3.Connection, process_date: date):
+    """
+    The main, on-demand entry point for all monthly processing.
+    It commits the current month's forecasts and tops up the forecast horizon.
+    """
+    print(f"\n--- Running Monthly Rollover for {process_date.strftime('%Y-%m')} ---")
+    
+    # 1. Commit forecasts for the given month
+    repository.commit_forecasts_for_month(conn, process_date)
+    print("Committed forecasts for the current month.")
+
+    # 2. Retrieve forecast horizon setting
+    horizon_str = repository.get_setting(conn, "forecast_horizon_months")
+    horizon_months = int(horizon_str) if horizon_str else 6 # Default to 6
+    
+    # 3. Generate new forecasts to top up the horizon
+    generate_forecasts(conn, horizon_months, process_date)
+    print("Forecast generation complete.")
 
 
 if __name__ == '__main__':
@@ -205,7 +226,7 @@ if __name__ == '__main__':
         "start_date": date.today() - relativedelta(months=1),
     }
     repository.add_subscription(conn, netflix_subscription)
-    generate_forecasts(conn, horizon_months=6)
+    generate_forecasts(conn, horizon_months=6, from_date=date.today())
 
     # --- Budget Logic Examples ---
     print("\n--- Setting up Budgets for Demonstration ---")
@@ -214,7 +235,7 @@ if __name__ == '__main__':
 
     # 1. Food Budget (Underspend with 'return')
     food_budget = {
-        "id": "budget_food", "name": "Food", "category": "Food",
+        "id": "budget_food", "name": "Food Budget", "category": "Food",
         "monthly_amount": 400, "payment_account_id": "Cash",
         "start_date": current_month_start, "is_budget": True, "underspend_behavior": "return"
     }
@@ -227,7 +248,7 @@ if __name__ == '__main__':
 
     # 2. Transport Budget (Overspend example)
     transport_budget = {
-        "id": "budget_transport", "name": "Transport", "category": "Transport",
+        "id": "budget_transport", "name": "Transport Budget", "category": "Transport",
         "monthly_amount": 100, "payment_account_id": "Cash",
         "start_date": current_month_start, "is_budget": True, "underspend_behavior": "keep"
     }
@@ -240,7 +261,7 @@ if __name__ == '__main__':
 
     # 3. Shopping Budget (Underspend with 'keep')
     shopping_budget = {
-        "id": "budget_shopping", "name": "Shopping", "category": "Shopping",
+        "id": "budget_shopping", "name": "Shopping Budget", "category": "Shopping",
         "monthly_amount": 250, "payment_account_id": "Visa Produbanco",
         "start_date": current_month_start, "is_budget": True, "underspend_behavior": "keep"
     }
@@ -264,6 +285,9 @@ if __name__ == '__main__':
 
     print("\n--- Running Month-End Budget Reconciliation ---")
     run_monthly_budget_reconciliation(conn, current_month_start)
+
+    # --- Run Monthly Rollover to commit forecasts and generate new ones ---
+    run_monthly_rollover(conn, today)
 
 
     # --- Verify by fetching all transactions ---

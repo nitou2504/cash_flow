@@ -55,7 +55,7 @@ def add_subscription(conn: Connection, sub: Dict[str, Any]):
     """Inserts a new record into the subscriptions table."""
     cursor = conn.cursor()
     query = """
-        INSERT INTO subscriptions (
+        INSERT OR IGNORE INTO subscriptions (
             id, name, category, monthly_amount, payment_account_id,
             start_date, end_date, is_budget, underspend_behavior
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -158,4 +158,31 @@ def update_transaction_amount(conn: Connection, transaction_id: int, new_amount:
     cursor = conn.cursor()
     query = "UPDATE transactions SET amount = ? WHERE id = ?"
     cursor.execute(query, (new_amount, transaction_id))
+    conn.commit()
+
+def get_setting(conn: Connection, key: str) -> str:
+    """Retrieves a specific setting value from the settings table by its key."""
+    cursor = conn.cursor()
+    cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+    setting = cursor.fetchone()
+    if setting:
+        return setting[0]
+    return None
+
+def commit_forecasts_for_month(conn: Connection, month_date: date):
+    """
+    Changes the status of all 'forecast' transactions to 'committed' for a
+    given month.
+    """
+    cursor = conn.cursor()
+    start_of_month = month_date.replace(day=1)
+    from dateutil.relativedelta import relativedelta
+    end_of_month = (start_of_month + relativedelta(months=1)) - relativedelta(days=1)
+
+    query = """
+        UPDATE transactions
+        SET status = 'committed'
+        WHERE status = 'forecast' AND date(date_created) BETWEEN ? AND ?
+    """
+    cursor.execute(query, (start_of_month, end_of_month))
     conn.commit()

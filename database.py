@@ -65,6 +65,12 @@ def create_tables(conn: Connection):
             FOREIGN KEY (account) REFERENCES accounts (account_id)
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+    """)
     conn.commit()
 
 def insert_initial_data(conn: Connection):
@@ -78,6 +84,12 @@ def insert_initial_data(conn: Connection):
         ("Amex Produbanco", "credit_card", 2, 15)
     ]
     cursor.executemany("INSERT OR IGNORE INTO accounts VALUES (?, ?, ?, ?)", accounts)
+
+    # Insert default settings
+    settings = [
+        ("forecast_horizon_months", "6")
+    ]
+    cursor.executemany("INSERT OR IGNORE INTO settings VALUES (?, ?)", settings)
     conn.commit()
 
 def initialize_database(db_path: str = "cash_flow.db"):
