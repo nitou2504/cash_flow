@@ -23,32 +23,47 @@ In this tool, **everything is a transaction**. This simple idea is the key to ou
 
 Tell the tool about your Netflix subscription once, and it will automatically create future `'forecast'` transactions for as many months ahead as you want. The same goes for rent, bills, or any recurring payment. This means you can immediately see how much money is already earmarked for future months, removing any surprises.
 
-### Live Budgeting
+### Live Budgeting: The Digital Envelope System
 
-Budgets aren't just numbers in a separate sheet; they are live transactions. When you set a $400 Food budget for the month, we create a `-400` transaction that acts as your monthly allocation.
+Budgets aren't just numbers in a separate sheet; they are live, dynamic transactions that function like a **digital envelope system**. When you set a $400 Food budget for the month, the system creates a single transaction with an amount of `-400`. This transaction is your "envelope"—it represents the total pool of money allocated for that category.
 
-As you spend money on groceries, this budget transaction is updated in real-time. Spend $50, and the budget transaction's amount automatically changes to `-350`. This shows you exactly how much you have left at a glance, directly in your transaction history. At the end of the month, you decide what happens to any leftover budget money. You can have it automatically "returned" to your cash flow, giving you an accurate picture of your available funds. Alternatively, you can choose to "keep" the remaining amount allocated. This is useful if the money was already spent on untracked small items or set aside, ensuring your budget for the month is officially closed out without affecting your cash balance.
+As you spend, you are "taking money" directly from this envelope. Here’s how it works in practice:
+
+1.  **Initial State:** The "Food Budget" transaction shows `-400`.
+2.  **You spend $50 on groceries:** The system finds the Food Budget envelope and updates its balance: `-400 + 50 = -350`. The budget transaction now shows you have $350 remaining.
+3.  **You spend another $370:** This is more than the $350 left in your envelope. The system handles this intelligently:
+    *   The "Food Budget" transaction is updated by the remaining $350, bringing its balance to `0`. It is now capped at zero to show the allocation is fully spent.
+    *   Your actual expense of $370 is still recorded in full.
+
+This method provides the best of both worlds: you can see at a glance that your food budget is exhausted, but your overall cash flow remains perfectly accurate because the **real transaction amount is always preserved**.
+
+At the end of the month, you decide what happens to any leftover budget money. You can have it automatically "returned" to your cash flow, giving you an accurate picture of your available funds. Alternatively, you can choose to "keep" the remaining amount allocated. This is useful if the money was already spent on untracked small items or set aside, ensuring your budget for the month is officially closed out without affecting your cash balance.
 
 ### Putting It All Together: True Forecasting
 
-Because your future installment payments, your Netflix subscription, and your remaining Food budget are all just rows in the same table, forecasting becomes simple and intuitive. You can easily see your entire financial picture to answer questions like:
+The power of this system comes from a simple but profound principle: **everything is a transaction**. Your past spending, your future subscription payments, your installment plans, and your live budget envelopes all exist as rows in the same table. This gives you a single, unified timeline of your money.
 
-*   *"Given all my subscriptions and installment payments, what will my credit card bill be in December?"*
-*   *"How much disposable income will I actually have next month after all my commitments are met?"*
+The forecast is accurate because it's not based on abstract limits; it's based on the **actual cash impact** of every financial event. The key is that money allocated to a budget is considered 'spent' from your cash flow the moment you allocate it. Spending against that budget later simply categorizes the expense without affecting your overall cash balance again. This prevents double-counting and ensures you always know exactly how much disposable cash you have.
 
-A quick look at your future transactions gives you the answer:
+To see this in action, imagine a "Cash Flow Report" that calculates your running balance. Notice how an expense made from a budget does not impact the balance, because that money was already earmarked.
 
 ```
---- Your Financial Timeline (Excerpt) ---
-date_payed  | description              | amount  | status
------------------------------------------------------------
-2025-10-25  | Dinner at Luigi's        | -45.00  | committed  <-- A past, real expense
-2025-11-15  | Netflix Subscription     | -15.99  | forecast   <-- A future, automatic payment
-2025-11-25  | New Laptop (2/6)         | -200.00 | committed  <-- A future, real commitment
-2025-11-30  | Food Budget              | -150.00 | committed  <-- Your remaining live budget for the month
+--- Your Cash Flow Report (Excerpt for Nov 2025) ---
+date_payed  | description              | cash_flow_impact | running_balance
+---------------------------------------------------------------------------
+            | Balance from Oct 31        |                  | $2000.00
+2025-11-01  | Monthly Salary           | +3000.00         | $5000.00
+2025-11-01  | Food Budget Allocation   | -400.00          | $4600.00
+2025-11-15  | Netflix Subscription     | -15.99           | $4584.01
+2025-11-20  | Groceries                | -80.00           | $4584.01 (No change)
+            | *Food Budget transaction is updated to -320*  |                  | $4584.01        <-- Envelope updates, cash balance is unaffected.
+2025-11-25  | New Laptop (2/6)         | -200.00          | $4384.01
 ```
+Behind the scenes, the `$80` grocery expense is still recorded as a transaction, and the "Food Budget" allocation is automatically updated to show `$320` remaining. As if using the envelope money, then seeing how much you still have in it.
 
-This unified view makes financial planning intuitive and removes the guesswork.
+So, your cash balance remains correct and your budget allocation is always up-to-date and easy to track.
+
+This approach offers great flexibility. If your circumstances change, you can edit a budget's amount mid-month, and the system will instantly recalculate its balance, giving you a constantly accurate financial picture. This unified view removes the guesswork and gives you a clear, honest picture of your financial future.
 
 ## 4. Future Vision: LLM-Powered Input
 
