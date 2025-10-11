@@ -96,6 +96,17 @@ def get_subscription_by_id(conn: Connection, sub_id: str) -> Dict[str, Any]:
         return dict(sub)
     return None
 
+def update_subscription(conn: Connection, subscription_id: str, updates: Dict[str, Any]):
+    """Generically updates one or more fields of a specific subscription."""
+    cursor = conn.cursor()
+    fields = ", ".join([f"{key} = ?" for key in updates.keys()])
+    values = list(updates.values())
+    values.append(subscription_id)
+    
+    query = f"UPDATE subscriptions SET {fields} WHERE id = ?"
+    cursor.execute(query, tuple(values))
+    conn.commit()
+
 def get_all_active_subscriptions(conn: Connection, start_range: date, end_range: date = None) -> List[Dict[str, Any]]:
     """
     Fetches all subscriptions that are active within a given date range.

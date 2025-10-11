@@ -143,6 +143,50 @@ def process_transaction_deletion(conn: sqlite3.Connection, transaction_id: int):
         _recalculate_and_update_budget(conn, budget_id, transaction_date)
 
 
+def process_budget_update(conn: sqlite3.Connection, budget_id: str, new_amount: float, effective_date: date):
+    """
+    Changes the monthly allocation for a budget from a specific date onward,
+    regenerating all future forecasts.
+    """
+    # First, ensure the budget we are trying to update actually exists.
+    budget_subscription = repository.get_subscription_by_id(conn, budget_id)
+    if not budget_subscription:
+        print(f"Warning: Budget with ID '{budget_id}' not found. No update performed.")
+        return
+
+    # Part A: Handle the effective_date month
+    # 1. Always update the master subscription record first
+    repository.update_subscription(conn, budget_id, {"monthly_amount": new_amount})
+
+    # 2. Check if the effective_date is in a "live" (committed) month
+    effective_month_start = effective_date.replace(day=1)
+    allocation_for_effective_month = repository.get_budget_allocation_for_month(conn, budget_id, effective_month_start)
+
+    if allocation_for_effective_month and allocation_for_effective_month['status'] == 'committed':
+        # It's the current, active month. We need to recalculate the live balance.
+        total_spent = repository.get_total_spent_for_budget_in_month(conn, budget_id, effective_month_start)
+        
+        # New balance is the new budget minus what's already been spent, capped at 0
+        new_live_balance = -abs(new_amount) + total_spent
+        if new_live_balance > 0:
+            new_live_balance = 0
+        
+        repository.update_transaction_amount(conn, allocation_for_effective_month['id'], new_live_balance)
+
+    # Part B: Wipe and Regenerate the Future
+    # 1. Define the starting point for the wipe
+    wipe_start_date = effective_month_start
+
+    # 2. Delete all old forecasts from that point onward
+    repository.delete_future_forecasts(conn, budget_id, wipe_start_date)
+
+    # 3. Regenerate new forecasts up to the horizon
+    horizon_str = repository.get_setting(conn, "forecast_horizon_months")
+    horizon_months = int(horizon_str) if horizon_str else 6
+    # Use the effective_date to ensure forecasts are generated from the correct point in time
+    generate_forecasts(conn, horizon_months, from_date=effective_date)
+
+
 def generate_forecasts(conn: sqlite3.Connection, horizon_months: int, from_date: date = None):
     """
     A scheduler job that creates and maintains forecast transactions up to a
