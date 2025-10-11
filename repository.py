@@ -60,6 +60,15 @@ def get_transaction_by_id(conn: Connection, transaction_id: int) -> Dict[str, An
         return dict(transaction)
     return None
 
+
+def get_transactions_by_origin_id(conn: Connection, origin_id: str) -> List[Dict[str, Any]]:
+    """Retrieves all transactions sharing a common origin_id."""
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM transactions WHERE origin_id = ?", (origin_id,))
+    transactions = cursor.fetchall()
+    return [dict(row) for row in transactions]
+
+
 def add_subscription(conn: Connection, sub: Dict[str, Any]):
     """Inserts a new record into the subscriptions table."""
     cursor = conn.cursor()

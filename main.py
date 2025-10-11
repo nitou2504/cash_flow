@@ -30,6 +30,38 @@ def _recalculate_and_update_budget(conn: sqlite3.Connection, budget_id: str, mon
         repository.update_transaction_amount(conn, allocation['id'], new_allocation_amount)
 
 
+def _get_transaction_group_info(conn: sqlite3.Connection, transaction_id: int) -> Dict[str, Any]:
+    """
+    Analyzes a transaction to determine its group type (simple, split, installment, or subscription)
+    and retrieves all sibling transactions.
+    """
+    transaction = repository.get_transaction_by_id(conn, transaction_id)
+    if not transaction:
+        raise ValueError(f"Transaction with ID {transaction_id} not found.")
+
+    origin_id = transaction.get("origin_id")
+
+    # Case 1: Simple transaction (no origin_id)
+    if not origin_id:
+        return {"type": "simple", "origin_id": None, "siblings": [transaction]}
+
+    # Fetch all transactions sharing the same origin_id
+    siblings = repository.get_transactions_by_origin_id(conn, origin_id)
+
+    # Case 2: Subscription-linked transaction
+    if repository.get_subscription_by_id(conn, origin_id):
+        return {"type": "subscription", "origin_id": origin_id, "siblings": siblings}
+
+    # Case 3 & 4: Differentiate between Split and Installment
+    # Collect all unique payment dates from the sibling transactions
+    payment_dates = {t["date_payed"] for t in siblings}
+
+    if len(payment_dates) == 1:
+        return {"type": "split", "origin_id": origin_id, "siblings": siblings}
+    else:
+        return {"type": "installment", "origin_id": origin_id, "siblings": siblings}
+
+
 def _apply_expense_to_budget(conn: sqlite3.Connection, transaction: Dict[str, Any]):
     """
     Finds or creates the correct budget allocation for an expense and updates its balance.
@@ -74,7 +106,7 @@ def _apply_expense_to_budget(conn: sqlite3.Connection, transaction: Dict[str, An
         )
 
 
-def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any]):
+def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any], transaction_date: date = None):
     """
     Acts as the main router for incoming transaction requests.
     """
@@ -85,7 +117,8 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
     if not account:
         raise ValueError(f"Account '{account_name}' not found.")
 
-    transaction_date = date.today()
+    # Use the provided date or default to today
+    effective_transaction_date = transaction_date or date.today()
     new_transactions = []
 
     if transaction_type == "simple":
@@ -96,7 +129,7 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
                 category=request.get("category"),
                 budget=request.get("budget"),
                 account=account,
-                transaction_date=transaction_date,
+                transaction_date=effective_transaction_date,
             )
         )
     elif transaction_type == "installment":
@@ -107,14 +140,14 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
             category=request.get("category"),
             budget=request.get("budget"),
             account=account,
-            transaction_date=transaction_date,
+            transaction_date=effective_transaction_date,
         )
     elif transaction_type == "split":
         new_transactions = transactions.create_split_transactions(
             description=request["description"],
             splits=request["splits"],
             account=account,
-            transaction_date=transaction_date,
+            transaction_date=effective_transaction_date,
         )
     else:
         raise ValueError(f"Invalid transaction type: {transaction_type}")
@@ -176,6 +209,43 @@ def process_transaction_deletion(conn: sqlite3.Connection, transaction_id: int):
     # If there was a budget, trigger a full recalculation
     if budget_id:
         _recalculate_and_update_budget(conn, budget_id, transaction_date)
+
+
+def process_transaction_conversion(conn: sqlite3.Connection, transaction_id: int, conversion_details: Dict[str, Any]):
+    """
+    Orchestrates the conversion of a transaction or group of transactions
+    from one type to another using a robust "collect, delete, heal, create" pattern.
+    """
+    # 1. Identify the full transaction group
+    group_info = _get_transaction_group_info(conn, transaction_id)
+    
+    # 2. Validate the conversion
+    if group_info["type"] == "subscription":
+        raise ValueError("Cannot convert a subscription-linked transaction.")
+
+    # 3. Collect Context: Find all unique budgets and months that will be affected
+    budgets_to_heal = set()
+    for sibling in group_info["siblings"]:
+        if sibling.get("budget"):
+            # Use date_payed as it determines the month the budget is in
+            budgets_to_heal.add((sibling["budget"], sibling["date_payed"]))
+
+    # 4. Delete: Remove all old transactions from the database directly
+    for sibling in group_info["siblings"]:
+        repository.delete_transaction(conn, sibling["id"])
+
+    # 5. Heal: After all deletions, recalculate every affected budget
+    for budget_id, month_date in budgets_to_heal:
+        _recalculate_and_update_budget(conn, budget_id, month_date)
+
+    # 6. Create: Generate the new transaction(s)
+    original_date = group_info["siblings"][0]["date_created"]
+    request = {
+        "type": conversion_details["target_type"],
+        "account": conversion_details["account"],
+        **conversion_details
+    }
+    process_transaction_request(conn, request, transaction_date=original_date)
 
 
 def process_budget_update(conn: sqlite3.Connection, budget_id: str, new_amount: float, effective_date: date):
@@ -344,6 +414,7 @@ def run_monthly_rollover(conn: sqlite3.Connection, process_date: date):
 if __name__ == '__main__':
     # Example Usage
     from database import create_connection, initialize_database
+    from unittest.mock import patch
 
     # Initialize and connect to the database
     db_path = "cash_flow.db"
