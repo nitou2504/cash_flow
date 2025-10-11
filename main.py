@@ -30,6 +30,50 @@ def _recalculate_and_update_budget(conn: sqlite3.Connection, budget_id: str, mon
         repository.update_transaction_amount(conn, allocation['id'], new_allocation_amount)
 
 
+def _apply_expense_to_budget(conn: sqlite3.Connection, transaction: Dict[str, Any]):
+    """
+    Finds or creates the correct budget allocation for an expense and updates its balance.
+    """
+    budget_id = transaction.get("budget")
+    if not budget_id:
+        return
+
+    target_month = transaction["date_payed"]
+    allocation = repository.get_budget_allocation_for_month(conn, budget_id, target_month)
+
+    # If no budget exists for that month, create it on the fly
+    if not allocation:
+        budget_sub = repository.get_subscription_by_id(conn, budget_id)
+        if not budget_sub:
+            return # Should not happen if data is consistent
+
+        # Create a new, full allocation for the future month
+        new_allocation_trans = transactions.create_single_transaction(
+            description=budget_sub["name"],
+            amount=budget_sub["monthly_amount"],
+            category=budget_sub["category"],
+            budget=budget_id,
+            account=repository.get_account_by_name(conn, budget_sub["payment_account_id"]),
+            transaction_date=target_month.replace(day=1)
+        )
+        # Important: Mark it as a forecast and link to the subscription
+        new_allocation_trans["status"] = "forecast"
+        new_allocation_trans["origin_id"] = budget_id
+        
+        repository.add_transactions(conn, [new_allocation_trans])
+        # Retrieve the newly created allocation to proceed
+        allocation = repository.get_budget_allocation_for_month(conn, budget_id, target_month)
+
+    if allocation:
+        # Amount to apply is the smaller of the expense or the remaining budget
+        amount_to_apply = min(abs(transaction['amount']), abs(allocation['amount']))
+        new_allocation_amount = allocation['amount'] + amount_to_apply
+        
+        repository.update_transaction_amount(
+            conn, allocation['id'], new_allocation_amount
+        )
+
+
 def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any]):
     """
     Acts as the main router for incoming transaction requests.
@@ -76,24 +120,15 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
         raise ValueError(f"Invalid transaction type: {transaction_type}")
 
     if new_transactions:
-        # --- Real-time Budget Update Logic ---
-        for t in new_transactions:
-            if t.get("budget"):
-                allocation = repository.get_budget_allocation_for_month(
-                    conn, t["budget"], t["date_created"]
-                )
-                if allocation:
-                    # Amount to apply is the smaller of the expense or the remaining budget
-                    amount_to_apply = min(abs(t['amount']), abs(allocation['amount']))
-                    new_allocation_amount = allocation['amount'] + amount_to_apply
-                    
-                    repository.update_transaction_amount(
-                        conn, allocation['id'], new_allocation_amount
-                    )
-        # --- End Budget Logic ---
-        
+        # First, save the transactions to the database
         repository.add_transactions(conn, new_transactions)
         print(f"Successfully added {len(new_transactions)} transaction(s).")
+
+        # --- Real-time Budget Update Logic ---
+        # Now, apply their effects to the corresponding budgets
+        for t in new_transactions:
+            _apply_expense_to_budget(conn, t)
+        # --- End Budget Logic ---
 
 def process_transaction_update(conn: sqlite3.Connection, transaction_id: int, updates: Dict[str, Any]):
     """
@@ -209,10 +244,11 @@ def generate_forecasts(conn: sqlite3.Connection, horizon_months: int, from_date:
         # Determine the start period for generating new forecasts
         if last_forecast_date:
             # Start from the month after the last forecast
-            start_period = last_forecast_date + relativedelta(months=1)
+            start_period = (last_forecast_date + relativedelta(months=1)).replace(day=1)
         else:
             # No forecasts exist, start from the subscription's start date or today
-            start_period = max(sub['start_date'], today)
+            effective_start = max(sub['start_date'], today)
+            start_period = effective_start.replace(day=1)
 
         # Determine the end period
         end_period = sub.get('end_date') or horizon_date
@@ -227,11 +263,28 @@ def generate_forecasts(conn: sqlite3.Connection, horizon_months: int, from_date:
             print(f"Warning: Account '{sub['payment_account_id']}' for subscription '{sub['id']}' not found. Skipping.")
             continue
 
+        # --- Pre-calculation for Budgets ---
+        initial_amounts = {}
+        if sub.get("is_budget"):
+            # Check each month in the generation window for pre-existing committed expenses
+            current_month = start_period
+            while current_month <= end_period:
+                total_committed = repository.get_total_committed_for_budget_in_month(
+                    conn, sub["id"], current_month
+                )
+                if total_committed > 0:
+                    month_key = current_month.strftime("%Y-%m")
+                    initial_amount = -sub["monthly_amount"] + total_committed
+                    initial_amounts[month_key] = min(0, initial_amount) # Cap at 0
+                current_month += relativedelta(months=1)
+        # --- End Pre-calculation ---
+
         new_forecasts = transactions.create_recurrent_transactions(
             subscription=sub,
             account=account,
             start_period=start_period,
-            end_period=end_period
+            end_period=end_period,
+            initial_amounts=initial_amounts,
         )
 
         if new_forecasts:

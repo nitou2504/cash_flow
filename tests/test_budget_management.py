@@ -17,7 +17,7 @@ class TestBudgetUpdate(unittest.TestCase):
         self.conn = create_connection(":memory:")
         create_tables(self.conn)
         insert_initial_data(self.conn)
-        self.today = date(2025, 10, 15)
+        self.today = date(2025, 10, 10)
         self.current_month = self.today.replace(day=1)
         self.next_month = (self.today + relativedelta(months=1)).replace(day=1)
 
@@ -148,3 +148,87 @@ class TestBudgetUpdate(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestFutureDatedBudgetUpdate(unittest.TestCase):
+    def setUp(self):
+        """Set up a scenario where an expense is pushed to a future budget."""
+        self.conn = create_connection(":memory:")
+        create_tables(self.conn)
+        insert_initial_data(self.conn)
+        # Transaction date is AFTER the Visa cut-off day (14th)
+        self.today = date(2025, 10, 15)
+        self.current_month = self.today.replace(day=1)
+        self.next_month = (self.today + relativedelta(months=1)).replace(day=1)
+        self.month_after_next = (self.today + relativedelta(months=2)).replace(day=1)
+
+        self.budget_id = "budget_shopping"
+        add_subscription(self.conn, {
+            "id": self.budget_id, "name": "Shopping Budget", "category": "Shopping",
+            "monthly_amount": 200.00, "payment_account_id": "Visa Produbanco",
+            "start_date": self.current_month, "is_budget": True
+        })
+
+        with patch('main.date') as mock_date:
+            mock_date.today.return_value = self.today
+            generate_forecasts(self.conn, 6)
+        
+        commit_forecasts_for_month(self.conn, self.current_month)
+
+        print("\n--- Test: Future-Dated Budget Update ---")
+        print(f"SETUP: Today is {self.today}. Visa cut-off is day 14.")
+        
+        # This expense is created on Oct 15, but its date_payed will be in November
+        expense_request = {
+            "type": "simple", "description": "Late Month Purchase", "amount": 50.00,
+            "account": "Visa Produbanco", "budget": self.budget_id
+        }
+        with patch('main.date') as mock_date:
+            mock_date.today.return_value = self.today
+            process_transaction_request(self.conn, expense_request)
+        
+        print("SETUP: Logged a $50.00 expense. Because it's after the cut-off, its 'date_payed' is in November.")
+
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_budget_update_affects_correct_future_month(self):
+        """
+        Tests that updating a budget correctly recalculates a future month's balance
+        that has been affected by a credit card purchase from the current month.
+        """
+        # Pre-condition check: Current month is untouched, next month is affected
+        allocation_current = get_budget_allocation_for_month(self.conn, self.budget_id, self.current_month)
+        allocation_next = get_budget_allocation_for_month(self.conn, self.budget_id, self.next_month)
+        
+        print("\nSTEP 1: Pre-Condition Verification")
+        print(f"  - October Budget ('current'): {allocation_current['amount']:.2f}. Expected: -200.00 (Correct, expense was for Nov).")
+        print(f"  - November Budget ('next'): {allocation_next['amount']:.2f}. Expected: -150.00 (Correct, -200 + 50 expense).")
+        
+        self.assertAlmostEqual(allocation_current['amount'], -200.00)
+        self.assertAlmostEqual(allocation_next['amount'], -150.00)
+
+        # Action: Update the budget to 300, effective for the NEXT month
+        print("\nSTEP 2: Action")
+        print(f"  - Calling process_budget_update for November with new amount: 300.00")
+        process_budget_update(self.conn, self.budget_id, 300.00, self.next_month)
+
+        # Assertion 1: Current month's allocation remains untouched
+        allocation_current_after = get_budget_allocation_for_month(self.conn, self.budget_id, self.current_month)
+        print("\nSTEP 3: Post-Condition Verification")
+        print(f"  - October Budget: {allocation_current_after['amount']:.2f}. Expected: -200.00 (Correct, update was for the future).")
+        self.assertAlmostEqual(allocation_current_after['amount'], -200.00)
+
+        # Assertion 2: Next month's allocation is correctly recalculated
+        # New balance should be -300 + 50 = -250
+        allocation_next_after = get_budget_allocation_for_month(self.conn, self.budget_id, self.next_month)
+        print(f"  - November Budget: {allocation_next_after['amount']:.2f}. Expected: -250.00 (Correct, new base of -300 + 50 expense).")
+        self.assertAlmostEqual(allocation_next_after['amount'], -250.00)
+
+        # Assertion 3: The forecast for the month after next is updated
+        allocation_future = get_budget_allocation_for_month(self.conn, self.budget_id, self.month_after_next)
+        print(f"  - December Budget: {allocation_future['amount']:.2f}. Expected: -300.00 (Correct, future forecasts regenerated).")
+        self.assertAlmostEqual(allocation_future['amount'], -300.00)
+        print("\n--- Test Complete ---")
+

@@ -195,6 +195,32 @@ def get_total_spent_for_budget_in_month(
     total = cursor.fetchone()[0]
     return abs(total) if total else 0.0
 
+
+def get_total_committed_for_budget_in_month(
+    conn: Connection, budget_id: str, month_date: date
+) -> float:
+    """
+    Calculates the total of committed expenses against a budget for a future month.
+    This is used by the forecast generator to correctly adjust the starting
+    balance of a new budget allocation.
+    """
+    cursor = conn.cursor()
+    start_of_month = month_date.replace(day=1)
+    from dateutil.relativedelta import relativedelta
+    end_of_month = (start_of_month + relativedelta(months=1)) - relativedelta(days=1)
+
+    query = """
+        SELECT SUM(amount) FROM transactions
+        WHERE budget = ?
+        AND status = 'committed'
+        AND date(date_payed) BETWEEN ? AND ?
+        AND (origin_id IS NULL OR origin_id != ?)
+    """
+    cursor.execute(query, (budget_id, start_of_month, end_of_month, budget_id))
+    total = cursor.fetchone()[0]
+    return abs(total) if total else 0.0
+
+
 def update_transaction_amount(conn: Connection, transaction_id: int, new_amount: float):
     """Updates the amount of a specific transaction."""
     cursor = conn.cursor()

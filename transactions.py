@@ -147,6 +147,7 @@ def create_recurrent_transactions(
     account: Dict[str, Any],
     start_period: date,
     end_period: date,
+    initial_amounts: Optional[Dict[str, float]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Generates a list of forecast transaction dictionaries for a given
@@ -154,6 +155,7 @@ def create_recurrent_transactions(
     """
     transactions = []
     current_date = start_period
+    initial_amounts = initial_amounts or {}
 
     while current_date <= end_period:
         # Set the transaction day to the subscription's start day
@@ -167,9 +169,13 @@ def create_recurrent_transactions(
 
 
         if transaction_date >= start_period and transaction_date <= end_period:
+            # For budgets, check if there's a pre-calculated starting amount
+            month_key = transaction_date.strftime("%Y-%m")
+            amount = initial_amounts.get(month_key, subscription["monthly_amount"])
+
             trans = create_single_transaction(
                 description=subscription["name"],
-                amount=subscription["monthly_amount"],
+                amount=amount,
                 category=subscription["category"],
                 budget=None,  # Default to None
                 account=account,
