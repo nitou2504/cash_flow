@@ -57,6 +57,7 @@ def create_single_transaction(
     budget: Optional[str],
     account: Dict[str, Any],
     transaction_date: date,
+    grace_period_months: int = 0,
 ) -> Dict[str, Any]:
     """
     Creates one complete transaction, handling logic for cash and credit cards.
@@ -66,12 +67,15 @@ def create_single_transaction(
     )
     transaction["account"] = account.get("account_id")
 
+    # Apply grace period if any
+    effective_date = transaction_date + relativedelta(months=grace_period_months)
+
     if account.get("account_type") == "credit_card":
         transaction["date_payed"] = _calculate_credit_card_payment_date(
-            transaction_date, account["cut_off_day"], account["payment_day"]
+            effective_date, account["cut_off_day"], account["payment_day"]
         )
     else:
-        transaction["date_payed"] = transaction_date
+        transaction["date_payed"] = effective_date
 
     return transaction
 
@@ -83,6 +87,7 @@ def create_installment_transactions(
     budget: Optional[str],
     account: Dict[str, Any],
     transaction_date: date,
+    grace_period_months: int = 0,
 ) -> List[Dict[str, Any]]:
     """
     Generates a list of transactions for a purchase made in installments.
@@ -95,7 +100,7 @@ def create_installment_transactions(
     for i in range(installments):
         installment_description = f"{description} ({i + 1}/{installments})"
         
-        future_billing_date = transaction_date + relativedelta(months=i)
+        future_billing_date = transaction_date + relativedelta(months=i + grace_period_months)
 
         transaction = _create_base_transaction(
             description=installment_description,

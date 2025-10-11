@@ -130,6 +130,7 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
                 budget=request.get("budget"),
                 account=account,
                 transaction_date=effective_transaction_date,
+                grace_period_months=request.get("grace_period_months", 0),
             )
         )
     elif transaction_type == "installment":
@@ -141,6 +142,7 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
             budget=request.get("budget"),
             account=account,
             transaction_date=effective_transaction_date,
+            grace_period_months=request.get("grace_period_months", 0),
         )
     elif transaction_type == "split":
         new_transactions = transactions.create_split_transactions(
