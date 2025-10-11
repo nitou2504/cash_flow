@@ -6,6 +6,30 @@ from dateutil.relativedelta import relativedelta
 import repository
 import transactions
 
+def _recalculate_and_update_budget(conn: sqlite3.Connection, budget_id: str, month_date: date):
+    """
+    Recalculates a budget's live balance for a given month and updates it.
+    This is the source of truth for budget adjustments.
+    """
+    budget_subscription = repository.get_subscription_by_id(conn, budget_id)
+    if not budget_subscription:
+        return
+
+    total_budget_amount = budget_subscription['monthly_amount']
+    
+    # Get all expenses for this budget in the given month
+    total_spent = repository.get_total_spent_for_budget_in_month(conn, budget_id, month_date)
+    
+    # The new balance is the initial budget minus what's been spent, capped at 0
+    amount_to_apply = min(total_spent, total_budget_amount)
+    new_allocation_amount = -total_budget_amount + amount_to_apply
+
+    # Find the allocation transaction and update it
+    allocation = repository.get_budget_allocation_for_month(conn, budget_id, month_date)
+    if allocation:
+        repository.update_transaction_amount(conn, allocation['id'], new_allocation_amount)
+
+
 def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any]):
     """
     Acts as the main router for incoming transaction requests.
@@ -59,7 +83,8 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
                     conn, t["budget"], t["date_created"]
                 )
                 if allocation:
-                    amount_to_apply = abs(t['amount'])
+                    # Amount to apply is the smaller of the expense or the remaining budget
+                    amount_to_apply = min(abs(t['amount']), abs(allocation['amount']))
                     new_allocation_amount = allocation['amount'] + amount_to_apply
                     
                     repository.update_transaction_amount(
@@ -78,28 +103,26 @@ def process_transaction_update(conn: sqlite3.Connection, transaction_id: int, up
     if not original_transaction:
         raise ValueError(f"Transaction with ID {transaction_id} not found.")
 
-    budget_id = original_transaction.get("budget")
-    
-    if budget_id:
-        old_amount = original_transaction.get("amount", 0.0)
-        new_amount = updates.get("amount", old_amount)
-
-        if old_amount != new_amount:
-            # The adjustment is the difference in impact between the new and old amounts.
-            adjustment = abs(new_amount) - abs(old_amount)
-            
-            allocation = repository.get_budget_allocation_for_month(
-                conn, budget_id, original_transaction["date_created"]
-            )
-            
-            if allocation:
-                # Apply the adjustment to the allocation's current value
-                new_allocation_amount = allocation['amount'] + adjustment
-                repository.update_transaction_amount(
-                    conn, allocation['id'], new_allocation_amount
-                )
-
+    # Apply the update first
     repository.update_transaction(conn, transaction_id, updates)
+    updated_transaction = repository.get_transaction_by_id(conn, transaction_id)
+
+    # Use a set to avoid recalculating the same budget twice.
+    # It stores tuples of (budget_id, month_date)
+    budgets_to_recalculate = set()
+    
+    original_budget = original_transaction.get("budget")
+    if original_budget:
+        budgets_to_recalculate.add((original_budget, original_transaction["date_created"]))
+
+    updated_budget = updated_transaction.get("budget")
+    if updated_budget:
+        # Use the date from the updated transaction in case it also changed
+        budgets_to_recalculate.add((updated_budget, updated_transaction["date_created"]))
+    
+    for budget_id, month_date in budgets_to_recalculate:
+        _recalculate_and_update_budget(conn, budget_id, month_date)
+
 
 def process_transaction_deletion(conn: sqlite3.Connection, transaction_id: int):
     """
@@ -110,22 +133,14 @@ def process_transaction_deletion(conn: sqlite3.Connection, transaction_id: int):
         return
 
     budget_id = transaction_to_delete.get("budget")
+    transaction_date = transaction_to_delete.get("date_created")
 
-    if budget_id:
-        transaction_amount = transaction_to_delete.get("amount", 0.0)
-        
-        allocation = repository.get_budget_allocation_for_month(
-            conn, budget_id, transaction_to_delete["date_created"]
-        )
-        
-        if allocation:
-            # "Return" the money by subtracting the absolute value (impact) of the expense
-            new_allocation_amount = allocation['amount'] - abs(transaction_amount)
-            repository.update_transaction_amount(
-                conn, allocation['id'], new_allocation_amount
-            )
-
+    # Delete the transaction first
     repository.delete_transaction(conn, transaction_id)
+
+    # If there was a budget, trigger a full recalculation
+    if budget_id:
+        _recalculate_and_update_budget(conn, budget_id, transaction_date)
 
 
 def generate_forecasts(conn: sqlite3.Connection, horizon_months: int, from_date: date = None):

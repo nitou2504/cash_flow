@@ -153,14 +153,36 @@ def get_budget_allocation_for_month(
     
     query = """
         SELECT * FROM transactions
-        WHERE budget = ? AND date(date_created) BETWEEN ? AND ?
-        AND (description LIKE '%Budget%' OR status = 'committed')
+        WHERE origin_id = ? AND date(date_created) BETWEEN ? AND ?
     """
     cursor.execute(query, (budget_id, start_of_month, end_of_month))
     allocation = cursor.fetchone()
     if allocation:
         return dict(allocation)
     return None
+
+def get_total_spent_for_budget_in_month(
+    conn: Connection, budget_id: str, month_date: date
+) -> float:
+    """
+    Calculates the total amount spent against a specific budget in a given month.
+    It sums up all transactions linked to the budget, excluding the initial
+    budget allocation transaction itself.
+    """
+    cursor = conn.cursor()
+    start_of_month = month_date.replace(day=1)
+    from dateutil.relativedelta import relativedelta
+    end_of_month = (start_of_month + relativedelta(months=1)) - relativedelta(days=1)
+
+    query = """
+        SELECT SUM(amount) FROM transactions
+        WHERE budget = ?
+        AND date(date_created) BETWEEN ? AND ?
+        AND (origin_id IS NULL OR origin_id != ?)
+    """
+    cursor.execute(query, (budget_id, start_of_month, end_of_month, budget_id))
+    total = cursor.fetchone()[0]
+    return abs(total) if total else 0.0
 
 def update_transaction_amount(conn: Connection, transaction_id: int, new_amount: float):
     """Updates the amount of a specific transaction."""
