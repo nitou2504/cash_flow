@@ -183,12 +183,12 @@ def process_transaction_update(conn: sqlite3.Connection, transaction_id: int, up
     
     original_budget = original_transaction.get("budget")
     if original_budget:
-        budgets_to_recalculate.add((original_budget, original_transaction["date_created"]))
+        budgets_to_recalculate.add((original_budget, original_transaction["date_payed"]))
 
     updated_budget = updated_transaction.get("budget")
     if updated_budget:
         # Use the date from the updated transaction in case it also changed
-        budgets_to_recalculate.add((updated_budget, updated_transaction["date_created"]))
+        budgets_to_recalculate.add((updated_budget, updated_transaction["date_payed"]))
     
     for budget_id, month_date in budgets_to_recalculate:
         _recalculate_and_update_budget(conn, budget_id, month_date)
@@ -203,7 +203,7 @@ def process_transaction_deletion(conn: sqlite3.Connection, transaction_id: int):
         return
 
     budget_id = transaction_to_delete.get("budget")
-    transaction_date = transaction_to_delete.get("date_created")
+    transaction_date = transaction_to_delete.get("date_payed")
 
     # Delete the transaction first
     repository.delete_transaction(conn, transaction_id)
@@ -411,6 +411,78 @@ def run_monthly_rollover(conn: sqlite3.Connection, process_date: date):
     # 3. Generate new forecasts to top up the horizon
     generate_forecasts(conn, horizon_months, process_date)
     print("Forecast generation complete.")
+
+
+def process_transaction_date_update(conn: sqlite3.Connection, transaction_id: int, new_date: date):
+    """
+    Handles the complex logic of changing a transaction's date, ensuring
+    payment dates and budget allocations are correctly recalculated using a
+    "delete and re-create" pattern.
+    """
+    # 1. Identify the full transaction group
+    group_info = _get_transaction_group_info(conn, transaction_id)
+    
+    # Validate the operation
+    if group_info["type"] == "subscription":
+        raise ValueError("Cannot change the date of a subscription-linked transaction directly.")
+
+    # 2. Collect Context from the original transaction(s) before deletion
+    original_siblings = group_info["siblings"]
+    first_sibling = original_siblings[0]
+    
+    # This context will be used to re-create the transaction
+    recreation_context = {
+        "account": first_sibling["account"],
+        "budget": first_sibling.get("budget"),
+        "category": first_sibling.get("category"),
+    }
+
+    # Specifics for transaction type
+    if group_info["type"] == "simple":
+        recreation_context["type"] = "simple"
+        recreation_context["description"] = first_sibling["description"]
+        recreation_context["amount"] = abs(first_sibling["amount"])
+    
+    elif group_info["type"] == "installment":
+        # For installments, we need to find the total amount and count
+        total_amount = sum(abs(t["amount"]) for t in original_siblings)
+        installments = len(original_siblings)
+        # Description needs to be stripped of the "(1/N)" part
+        description = first_sibling["description"].split('(')[0].strip()
+
+        recreation_context["type"] = "installment"
+        recreation_context["description"] = description
+        recreation_context["total_amount"] = total_amount
+        recreation_context["installments"] = installments
+    
+    elif group_info["type"] == "split":
+        # Re-create the splits array
+        splits = [
+            {
+                "amount": abs(t["amount"]),
+                "category": t["category"],
+                "budget": t.get("budget")
+            }
+            for t in original_siblings
+        ]
+        recreation_context["type"] = "split"
+        recreation_context["description"] = first_sibling["description"]
+        recreation_context["splits"] = splits
+
+    # 3. Heal: Identify affected budgets, delete old transactions, and recalculate
+    budgets_to_heal = set()
+    for sibling in original_siblings:
+        if sibling.get("budget"):
+            budgets_to_heal.add((sibling["budget"], sibling["date_payed"]))
+
+    for sibling in original_siblings:
+        repository.delete_transaction(conn, sibling["id"])
+
+    for budget_id, month_date in budgets_to_heal:
+        _recalculate_and_update_budget(conn, budget_id, month_date)
+
+    # 4. Re-create: Generate the new transaction(s) with the new date
+    process_transaction_request(conn, recreation_context, transaction_date=new_date)
 
 
 if __name__ == '__main__':
