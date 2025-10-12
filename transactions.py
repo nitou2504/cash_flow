@@ -88,6 +88,8 @@ def create_installment_transactions(
     account: Dict[str, Any],
     transaction_date: date,
     grace_period_months: int = 0,
+    start_from_installment: int = 1,
+    total_installments: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """
     Generates a list of transactions for a purchase made in installments.
@@ -97,8 +99,13 @@ def create_installment_transactions(
     
     transactions = []
 
+    # If total_installments isn't specified, fall back to the number of installments being created.
+    # This maintains backward compatibility.
+    final_total_installments = total_installments if total_installments is not None else installments
+
     for i in range(installments):
-        installment_description = f"{description} ({i + 1}/{installments})"
+        current_installment_num = start_from_installment + i
+        installment_description = f"{description} ({current_installment_num}/{final_total_installments})"
         
         future_billing_date = transaction_date + relativedelta(months=i + grace_period_months)
 
