@@ -9,7 +9,7 @@ from repository import (
     add_subscription,
     get_subscription_by_id,
     get_all_active_subscriptions,
-    delete_future_forecasts,
+    delete_future_budget_allocations,
     update_future_forecasts_account,
     get_setting,
     commit_forecasts_for_month,
@@ -161,7 +161,7 @@ class TestSubscriptionRepository(unittest.TestCase):
         self.assertEqual(len(active_subs), 1)
         self.assertEqual(active_subs[0]["id"], "sub_spotify")
 
-    def test_delete_future_forecasts(self):
+    def test_delete_future_budget_allocations(self):
         """Tests deleting forecast transactions from a specific date."""
         # Add some forecast transactions
         forecasts = [
@@ -171,7 +171,7 @@ class TestSubscriptionRepository(unittest.TestCase):
         ]
         add_transactions(self.conn, forecasts)
 
-        delete_future_forecasts(self.conn, "sub_spotify", date(2025, 11, 1))
+        delete_future_budget_allocations(self.conn, "sub_spotify", date(2025, 11, 1))
         
         remaining_forecasts = get_all_transactions(self.conn)
         self.assertEqual(len(remaining_forecasts), 1)

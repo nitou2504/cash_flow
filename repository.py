@@ -133,15 +133,17 @@ def get_all_active_subscriptions(conn: Connection, start_range: date, end_range:
     subs = cursor.fetchall()
     return [dict(row) for row in subs]
 
-def delete_future_forecasts(conn: Connection, origin_id: str, from_date: date):
+def delete_future_budget_allocations(conn: Connection, origin_id: str, from_date: date):
     """
-    Deletes all 'forecast' status transactions for a given subscription
-    from a specific date onward.
+    Deletes all future budget allocation transactions for a given budget,
+    regardless of their status ('forecast' or 'committed').
+    This is used when a budget's amount is updated, to ensure a clean slate
+    for regenerating future allocations.
     """
     cursor = conn.cursor()
     query = """
         DELETE FROM transactions
-        WHERE origin_id = ? AND status = 'forecast' AND date_created >= ?
+        WHERE origin_id = ? AND date_created >= ?
     """
     cursor.execute(query, (origin_id, from_date))
     conn.commit()

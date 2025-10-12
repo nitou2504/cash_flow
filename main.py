@@ -285,7 +285,7 @@ def process_budget_update(conn: sqlite3.Connection, budget_id: str, new_amount: 
     wipe_start_date = effective_month_start
 
     # 2. Delete all old forecasts from that point onward
-    repository.delete_future_forecasts(conn, budget_id, wipe_start_date)
+    repository.delete_future_budget_allocations(conn, budget_id, wipe_start_date)
 
     # 3. Regenerate new forecasts up to the horizon
     horizon_str = repository.get_setting(conn, "forecast_horizon_months")
