@@ -11,7 +11,9 @@ Its key feature is the ability to distinguish between the date a transaction occ
 *   **Multiple Transaction Types:** Handles simple expenses, installment purchases, and split transactions.
 *   **Intelligent Credit Card Logic:** Automatically calculates the correct payment date for credit card transactions based on user-defined cut-off and payment days.
 *   **Subscription Management:** Automatically forecasts recurring payments like subscriptions and bills.
-*   **Dynamic Budget Tracking:** Treats monthly budgets as a running balance, updated in real-time with every expense.
+*   **Dynamic Budget Tracking:** Treats monthly budgets as a running balance, updated in real-time with every expense. Budgets are capped at zero to accurately reflect when allocated funds are depleted without distorting the overall cash flow.
+*   **Robust Editing and Corrections:** Easily change a transaction's date or a budget's amount. The system intelligently recalculates all affected budgets and payment dates—even across future, committed months—ensuring your financial plan is always accurate and up-to-date.
+*   **Flexible Payment Timing:** Model "buy now, pay later" scenarios with grace periods that delay the cash flow impact of a purchase.
 *   **Powerful Forecasting:** By representing all future commitments (installments, subscriptions, budgets) as transactions, it provides a clear and accurate view of your future cash flow.
 *   **Test-Driven:** Developed using a Test-Driven Development (TDD) approach to ensure reliability and correctness.
 
