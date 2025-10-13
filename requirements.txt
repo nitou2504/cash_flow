@@ -1,1 +1,3 @@
 python-dateutil
+google-generativeai
+rich

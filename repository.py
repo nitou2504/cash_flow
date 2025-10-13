@@ -283,3 +283,23 @@ def delete_transaction(conn: Connection, transaction_id: int):
     query = "DELETE FROM transactions WHERE id = ?"
     cursor.execute(query, (transaction_id,))
     conn.commit()
+
+def get_transactions_with_running_balance(conn: Connection) -> List[Dict[str, Any]]:
+    """
+    Retrieves all transactions and calculates a cumulative running balance.
+    It relies on the core system logic where budget allocation amounts are
+    dynamically updated, ensuring the 'amount' column is always the source
+    of truth for cash flow.
+    """
+    transactions = get_all_transactions(conn) # Already sorted by date_payed
+    
+    running_balance = 0.0
+    processed_transactions = []
+
+    for t in transactions:
+        transaction_dict = dict(t)
+        running_balance += transaction_dict["amount"]
+        transaction_dict["running_balance"] = running_balance
+        processed_transactions.append(transaction_dict)
+        
+    return processed_transactions

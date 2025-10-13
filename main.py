@@ -398,21 +398,21 @@ def run_monthly_budget_reconciliation(conn: sqlite3.Connection, month_date: date
 def run_monthly_rollover(conn: sqlite3.Connection, process_date: date):
     """
     The main, on-demand entry point for all monthly processing.
-    It commits the current month's forecasts and tops up the forecast horizon.
+    It tops up the forecast horizon and then commits the current month's forecasts.
     """
     print(f"\n--- Running Monthly Rollover for {process_date.strftime('%Y-%m')} ---")
     
-    # 1. Commit forecasts for the given month
-    repository.commit_forecasts_for_month(conn, process_date)
-    print("Committed forecasts for the current month.")
-
-    # 2. Retrieve forecast horizon setting
+    # 1. Retrieve forecast horizon setting
     horizon_str = repository.get_setting(conn, "forecast_horizon_months")
-    horizon_months = int(horizon_str) if horizon_str else 6 # Default to 6
+    horizon_months = int(horizon_str) if horizon_str else 6  # Default to 6
     
-    # 3. Generate new forecasts to top up the horizon
+    # 2. Generate new forecasts to top up the horizon first
     generate_forecasts(conn, horizon_months, process_date)
     print("Forecast generation complete.")
+
+    # 3. Commit forecasts for the given month
+    repository.commit_forecasts_for_month(conn, process_date)
+    print("Committed forecasts for the current month.")
 
 
 def process_transaction_date_update(conn: sqlite3.Connection, transaction_id: int, new_date: date):
