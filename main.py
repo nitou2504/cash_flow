@@ -66,6 +66,11 @@ def _apply_expense_to_budget(conn: sqlite3.Connection, transaction: Dict[str, An
     """
     Finds or creates the correct budget allocation for an expense and updates its balance.
     """
+    # This is a critical safety measure: only negative amounts (expenses)
+    # should ever be applied to a budget.
+    if transaction['amount'] >= 0:
+        return
+
     budget_id = transaction.get("budget")
     if not budget_id:
         return
@@ -131,6 +136,7 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
                 account=account,
                 transaction_date=effective_transaction_date,
                 grace_period_months=request.get("grace_period_months", 0),
+                is_income=request.get("is_income", False),
             )
         )
     elif transaction_type == "installment":
@@ -145,6 +151,7 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
             grace_period_months=request.get("grace_period_months", 0),
             start_from_installment=request.get("start_from_installment", 1),
             total_installments=request.get("total_installments"),
+            is_income=request.get("is_income", False),
         )
     elif transaction_type == "split":
         new_transactions = transactions.create_split_transactions(
@@ -152,6 +159,7 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
             splits=request["splits"],
             account=account,
             transaction_date=effective_transaction_date,
+            is_income=request.get("is_income", False),
         )
     else:
         raise ValueError(f"Invalid transaction type: {transaction_type}")

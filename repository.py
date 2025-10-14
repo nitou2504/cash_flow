@@ -75,12 +75,13 @@ def add_subscription(conn: Connection, sub: Dict[str, Any]):
     query = """
         INSERT OR IGNORE INTO subscriptions (
             id, name, category, monthly_amount, payment_account_id,
-            start_date, end_date, is_budget, underspend_behavior
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            start_date, end_date, is_budget, underspend_behavior, is_income
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
     # Set defaults if not provided
     is_budget = sub.get("is_budget", 0)
     underspend_behavior = sub.get("underspend_behavior", "keep")
+    is_income = sub.get("is_income", 0)
 
     data = (
         sub["id"],
@@ -92,6 +93,7 @@ def add_subscription(conn: Connection, sub: Dict[str, Any]):
         sub.get("end_date"),
         is_budget,
         underspend_behavior,
+        is_income,
     )
     cursor.execute(query, data)
     conn.commit()

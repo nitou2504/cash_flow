@@ -77,11 +77,11 @@ class TestInterface(unittest.TestCase):
         
         # 3. Verify the content of a specific row (the first one)
         first_call_args = table_instance.add_row.call_args_list[0].args
-        self.assertEqual(first_call_args[0], "2025-10-01")
-        self.assertEqual(first_call_args[1], "Food Budget")
-        self.assertEqual(first_call_args[3], "-320.00")
-        self.assertEqual(first_call_args[4], "-320.00")
-        
+        self.assertEqual(first_call_args[1], "2025-10-01") # Date
+        self.assertEqual(first_call_args[2], "Food Budget") # Description
+        self.assertEqual(first_call_args[4], "-320.00") # Amount
+        self.assertEqual(first_call_args[-1], "-320.00") # Running Total
+
         print("\n--- Test Complete ---")
 
 if __name__ == "__main__":

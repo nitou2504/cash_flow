@@ -25,7 +25,7 @@ def run_manual_test():
     add_subscription(conn, {
         "id": "income_salary", "name": "Salary", "category": "Income",
         "monthly_amount": 1100, "payment_account_id": "Cash",
-        "start_date": today.replace(day=1), "is_budget": False
+        "start_date": today.replace(day=1), "is_budget": False, "is_income": True
     })
 
     add_subscription(conn, {

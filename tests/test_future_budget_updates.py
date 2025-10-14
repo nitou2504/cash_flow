@@ -72,9 +72,9 @@ class TestFutureBudgetUpdates(unittest.TestCase):
         print(f"  - {msg_before}")
         
         # Verification: Initial budget is $200, installment is $50. Remaining should be $150.
-        self.assertAlmostEqual(oct_budget_before['amount'], -200.00, "October budget should be untouched.")
-        self.assertAlmostEqual(nov_budget_before['amount'], -150.00, "November budget should be -200 + 50.")
-        self.assertAlmostEqual(dec_budget_before['amount'], -150.00, "December budget should be -200 + 50.")
+        self.assertAlmostEqual(oct_budget_before['amount'], -200.00, msg="October budget should be untouched.")
+        self.assertAlmostEqual(nov_budget_before['amount'], -150.00, msg="November budget should be -200 + 50.")
+        self.assertAlmostEqual(dec_budget_before['amount'], -150.00, msg="December budget should be -200 + 50.")
 
         # --- Act: Update the budget amount from November onwards ---
         print("\nSTEP 2: Updating budget from $200 to $120, effective Nov 1.")

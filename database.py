@@ -46,6 +46,7 @@ def create_tables(conn: Connection):
             start_date DATE NOT NULL,
             end_date DATE,
             is_budget BOOLEAN NOT NULL DEFAULT 0,
+            is_income BOOLEAN NOT NULL DEFAULT 0,
             underspend_behavior TEXT NOT NULL DEFAULT 'keep',
             FOREIGN KEY (payment_account_id) REFERENCES accounts (account_id)
         )

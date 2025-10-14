@@ -42,7 +42,7 @@ class TestMainController(unittest.TestCase):
             "account_type": "cash",
         }
         mock_transactions.create_single_transaction.return_value = {
-            "description": "Test"
+            "amount": -4.50, "date_payed": "2025-01-01"
         }  # Dummy return
 
         process_transaction_request(self.conn, request)
@@ -77,9 +77,9 @@ class TestMainController(unittest.TestCase):
             "account_type": "credit_card",
         }
         mock_transactions.create_installment_transactions.return_value = [
-            {},
-            {},
-            {},
+            {"amount": -300, "date_payed": "2025-01-01"},
+            {"amount": -300, "date_payed": "2025-02-01"},
+            {"amount": -300, "date_payed": "2025-03-01"},
         ]  # Dummy
 
         process_transaction_request(self.conn, request)
@@ -113,8 +113,8 @@ class TestMainController(unittest.TestCase):
             "account_type": "credit_card",
         }
         mock_transactions.create_split_transactions.return_value = [
-            {},
-            {},
+            {"amount": -100, "date_payed": "2025-01-01"},
+            {"amount": -20, "date_payed": "2025-01-01"},
         ]  # Dummy
 
         process_transaction_request(self.conn, request)

@@ -43,7 +43,7 @@ def _create_base_transaction(
     return {
         "date_created": transaction_date,
         "description": description,
-        "amount": -abs(amount),  # Ensure amount is negative for expenses
+        "amount": amount,
         "category": category,
         "budget": budget,
         "status": "committed",
@@ -58,12 +58,14 @@ def create_single_transaction(
     account: Dict[str, Any],
     transaction_date: date,
     grace_period_months: int = 0,
+    is_income: bool = False,
 ) -> Dict[str, Any]:
     """
     Creates one complete transaction, handling logic for cash and credit cards.
     """
+    final_amount = abs(amount) if is_income else -abs(amount)
     transaction = _create_base_transaction(
-        description, amount, category, budget, transaction_date
+        description, final_amount, category, budget, transaction_date
     )
     transaction["account"] = account.get("account_id")
 
@@ -90,12 +92,14 @@ def create_installment_transactions(
     grace_period_months: int = 0,
     start_from_installment: int = 1,
     total_installments: Optional[int] = None,
+    is_income: bool = False,
 ) -> List[Dict[str, Any]]:
     """
     Generates a list of transactions for a purchase made in installments.
     """
     origin_id = _generate_origin_id()
     installment_amount = round(total_amount / installments, 2)
+    final_amount = abs(installment_amount) if is_income else -abs(installment_amount)
     
     transactions = []
 
@@ -111,7 +115,7 @@ def create_installment_transactions(
 
         transaction = _create_base_transaction(
             description=installment_description,
-            amount=installment_amount,
+            amount=final_amount,
             category=category,
             budget=budget,
             transaction_date=transaction_date, # The purchase date is the same for all
@@ -135,6 +139,7 @@ def create_split_transactions(
     splits: List[Dict[str, Any]],
     account: Dict[str, Any],
     transaction_date: date,
+    is_income: bool = False,
 ) -> List[Dict[str, Any]]:
     """
     Generates a list of transactions for a split purchase.
@@ -149,6 +154,7 @@ def create_split_transactions(
             budget=split.get("budget"),
             account=account,
             transaction_date=transaction_date,
+            is_income=is_income,
         )
         transaction["origin_id"] = origin_id
         transactions.append(transaction)
@@ -192,6 +198,7 @@ def create_recurrent_transactions(
                 budget=None,  # Default to None
                 account=account,
                 transaction_date=transaction_date,
+                is_income=subscription.get("is_income", False),
             )
             
             # Override fields for forecast

@@ -53,11 +53,11 @@ class TestPartialInstallments(unittest.TestCase):
             "New Phone (5/6)",
             "New Phone (6/6)"
         ]
-        self.assertListEqual(descriptions, expected_descriptions, "Descriptions should be correctly numbered.")
+        self.assertListEqual(descriptions, expected_descriptions, msg="Descriptions should be correctly numbered.")
 
         for t in transactions:
-            self.assertAlmostEqual(t['amount'], -100.00, "Installment amount should be correct.")
-        
+            self.assertAlmostEqual(t['amount'], -100.00, msg="Installment amount should be correct.")
+
         print("\n--- Test Complete ---")
 
 if __name__ == "__main__":
