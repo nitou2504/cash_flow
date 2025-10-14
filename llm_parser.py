@@ -36,10 +36,12 @@ Your output MUST be a single JSON object with a root-level `request_type` field,
 2.  The `account` field MUST be one of the following valid account names: {account_names}.
 3.  For `installment` transactions, if the user mentions a partial payment (e.g., "3rd of 6"), you MUST populate `start_from_installment` and `total_installments`. If they only say "6 installments", then `installments` is 6, and the other two fields should be omitted.
 4.  If the user mentions income, salary, or being paid, you MUST set `"is_income": true`. Otherwise, omit it or set it to false.
+5.  **Date Logic:** Only include `date_created` if the user provides specific date information (e.g., 'yesterday', 'last Tuesday', 'on the 5th'). If no date is mentioned, omit the field.
 
 **Schema:**
 - `type`: (string) "simple", "installment", or "split".
 - `description`: (string) A brief description of the transaction.
+- `date_created`: (string, optional) The creation date in "YYYY-MM-DD" format.
 - `amount`: (float) For "simple" type, the total amount.
 - `total_amount`: (float) For "installment" type, the total purchase amount.
 - `installments`: (int) For "installment" type, the number of payments.
@@ -94,15 +96,16 @@ User: "lunch at cafe 15.75 cash food budget"
   "budget": "food"
 }}
 
-User: "1200 for a new laptop in 6 installments on my visa"
+User: "bought a 600 bike last month on the 29th in 3 installments on visa"
 {{
   "request_type": "transaction",
   "type": "installment",
-  "description": "New Laptop",
-  "total_amount": 1200.00,
-  "installments": 6,
+  "description": "Bike",
+  "total_amount": 600,
+  "installments": 3,
   "account": "Visa Produbanco",
-  "category": "electronics"
+  "category": "sports",
+  "date_created": "2025-09-29"
 }}
 
 User: "Grocery store amex produbanco 80 for groceries on the food budget and 15 for household supplies on the home budget"
@@ -167,6 +170,71 @@ User: "I get a recurring monthly income of 1200 into my Cash account"
     "payment_account_id": "Cash",
     "is_income": true
   }}
+}}
+"""
+
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(
+        model_name="gemini-2.5-flash",
+        system_instruction=system_prompt
+    )
+    
+    response = model.generate_content(contents=user_input)
+    
+    try:
+        return json.loads(response.text)
+    except (json.JSONDecodeError, IndexError) as e:
+        print(f"Error: Failed to decode JSON from LLM response.")
+        print(f"Raw response: {response.text}")
+        return None
+
+
+def parse_account_string(user_input: str) -> Dict[str, Any]:
+    """
+    Uses the Gemini API to parse a natural language string into a structured
+    JSON object for creating a new account.
+    """
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY environment variable not set.")
+
+    system_prompt = f"""
+You are an expert financial assistant. Your task is to parse a user's natural language input into a single, structured JSON object to create a new financial account.
+
+**Constraints and Rules:**
+1.  The JSON output MUST adhere to the schema provided below.
+2.  The `account_type` must be either "cash" or "credit_card".
+3.  If the user mentions a "credit card", you MUST extract the `cut_off_day` and `payment_day`. If they are not provided, you can omit them.
+4.  The `account_id` should be a descriptive name for the account.
+5.  Do NOT add any fields that are not in the schema.
+6.  Do NOT enclose the JSON in markdown backticks.
+
+**JSON Schema:**
+- `account_id`: (string) The name of the account (e.g., "My Bank Savings").
+- `account_type`: (string) "cash" or "credit_card".
+- `cut_off_day`: (int, optional) For credit cards, the billing cycle cut-off day.
+- `payment_day`: (int, optional) For credit cards, the bill payment day.
+
+**Examples:**
+
+User: "add a new cash account called Wallet"
+{{
+  "account_id": "Wallet",
+  "account_type": "cash"
+}}
+
+User: "create a credit card account for my new Visa, the cut off is on the 15th and payment is on the 30th"
+{{
+  "account_id": "New Visa",
+  "account_type": "credit_card",
+  "cut_off_day": 15,
+  "payment_day": 30
+}}
+
+User: "new credit card called Amex Gold"
+{{
+  "account_id": "Amex Gold",
+  "account_type": "credit_card"
 }}
 """
 
