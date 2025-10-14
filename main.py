@@ -175,6 +175,28 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
             _apply_expense_to_budget(conn, t)
         # --- End Budget Logic ---
 
+
+def process_subscription_request(conn: sqlite3.Connection, subscription_data: Dict[str, Any]):
+    """
+    Handles the creation of a new subscription and generates its initial forecast.
+    """
+    # The LLM provides a string; convert it to a date object.
+    # Default to today if the LLM omits it.
+    start_date_str = subscription_data.get("start_date")
+    if start_date_str:
+        subscription_data["start_date"] = date.fromisoformat(start_date_str)
+    else:
+        subscription_data["start_date"] = date.today()
+
+    repository.add_subscription(conn, subscription_data)
+    print(f"Successfully added subscription: {subscription_data['name']}")
+
+    # Immediately generate the forecasts for the new subscription
+    horizon_str = repository.get_setting(conn, "forecast_horizon_months")
+    horizon_months = int(horizon_str) if horizon_str else 6
+    generate_forecasts(conn, horizon_months, from_date=subscription_data["start_date"])
+
+
 def process_transaction_update(conn: sqlite3.Connection, transaction_id: int, updates: Dict[str, Any]):
     """
     Modifies a transaction and ensures its linked budget is correctly adjusted.

@@ -46,24 +46,30 @@ def handle_accounts_add(conn: sqlite3.Connection, args: argparse.Namespace):
     print(f"Successfully added account: {args.id}")
 
 def handle_add(conn: sqlite3.Connection, args: argparse.Namespace):
-    """Parses a natural language string to add a transaction."""
+    """Parses a natural language string to add a transaction, subscription, or budget."""
     accounts = repository.get_all_accounts(conn)
     if not accounts:
         print("Error: No accounts found. Please add an account first using 'accounts add'.")
         return
 
     print("Parsing your request with the LLM...")
-    transaction_json = llm_parser.parse_transaction_string(args.description, accounts)
+    request_json = llm_parser.parse_transaction_string(args.description, accounts)
 
-    if transaction_json:
+    if request_json:
         console = Console()
-        syntax = Syntax(json.dumps(transaction_json, indent=4), "json", theme="default", line_numbers=True)
-        console.print("\nGenerated Transaction:")
+        syntax = Syntax(json.dumps(request_json, indent=4), "json", theme="default", line_numbers=True)
+        console.print("\nGenerated Request:")
         console.print(syntax)
 
-        confirm = input("\nProceed to add this transaction? [Y/n] ")
+        confirm = input("\nProceed with this request? [Y/n] ")
         if confirm.lower() == 'y' or confirm == '':
-            controller.process_transaction_request(conn, transaction_json)
+            request_type = request_json.get("request_type")
+            if request_type == "transaction":
+                controller.process_transaction_request(conn, request_json)
+            elif request_type == "subscription":
+                controller.process_subscription_request(conn, request_json["details"])
+            else:
+                print(f"Error: Unknown request type '{request_type}'.")
         else:
             print("Operation cancelled.")
 
