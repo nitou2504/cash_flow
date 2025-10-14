@@ -1,3 +1,4 @@
-python-dateutil
 google-generativeai
 rich
+python-dateutil
+python-dotenv

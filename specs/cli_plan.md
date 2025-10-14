@@ -47,13 +47,46 @@ This is the most critical new piece of logic. It must correctly determine which 
 ### Step 4: The `add` Command (LLM Integration)
 
 -   **System Prompt:** A detailed system prompt will be crafted in `llm_parser.py`. It will instruct the Gemini model on its role, the required JSON schema, and provide clear examples for `simple`, `installment`, and `split` transactions to ensure reliable output.
--   **LLM Function:** A function, `parse_transaction_string(user_input)`, will handle the API call. It will securely read the `GOOGLE_API_KEY` from an environment variable.
+-   **LLM Function:** A function, `parse_transaction_string(user_input)`, will handle the API call. It will securely read the `GOOGLE_API_KEY` from an environment variable, using model `gemini-2.5-flash`
 -   **User Flow in `cli.py`:**
     1.  The user runs `python cli.py add "..."`.
     2.  The CLI calls `llm_parser.parse_transaction_string()`.
     3.  The generated JSON is printed to the console.
     4.  **Safety Check:** The user is prompted for confirmation (`[Y/n]`).
     5.  If confirmed, the JSON is passed to the existing `main.process_transaction_request()` function to be logged in the database.
+
+#### Example of api usage:
+
+```python
+import json
+import google.generativeai as genai
+
+    genai.configure(api_key=api_key)
+
+    model = genai.GenerativeModel(
+        model_name="gemini-2.5-flash",
+        system_instruction=system_prompt
+    )
+    
+    response = model.generate_content(
+        contents=user_prompt
+    )
+    
+    response_text = response.text.strip()
+
+    if response_text.startswith('```json'):
+        response_text = response_text[7:-3].strip()
+    elif response_text.startswith('```'):
+        response_text = response_text[3:-3].strip()
+    
+    # Add a final check to ensure the response is valid JSON before loading
+    try:
+        return json.loads(response_text)
+    except json.JSONDecodeError:
+        print(f"  -> ERROR: Failed to decode JSON from API response for {routine_path}.")
+        print(f"  -> Raw response: {response_text}")
+        return []
+```
 
 ## 4. CLI Usage Specification
 

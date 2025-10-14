@@ -305,3 +305,23 @@ def get_transactions_with_running_balance(conn: Connection) -> List[Dict[str, An
         processed_transactions.append(transaction_dict)
         
     return processed_transactions
+
+
+def get_all_accounts(conn: Connection) -> List[Dict[str, Any]]:
+    """
+    Retrieves all accounts from the database.
+    """
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM accounts ORDER BY account_id")
+    accounts = cursor.fetchall()
+    return [dict(row) for row in accounts]
+
+
+def add_account(conn: Connection, account_id: str, account_type: str, cut_off_day: int = None, payment_day: int = None):
+    """
+    Inserts a new account into the accounts table.
+    """
+    cursor = conn.cursor()
+    query = "INSERT OR IGNORE INTO accounts (account_id, account_type, cut_off_day, payment_day) VALUES (?, ?, ?, ?)"
+    cursor.execute(query, (account_id, account_type, cut_off_day, payment_day))
+    conn.commit()
