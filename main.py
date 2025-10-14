@@ -519,12 +519,12 @@ def process_transaction_date_update(conn: sqlite3.Connection, transaction_id: in
 
 if __name__ == '__main__':
     # Example Usage
-    from database import create_connection, initialize_database
+    from database import create_connection, initialize_database_with_mock_data
     from unittest.mock import patch
 
     # Initialize and connect to the database
     db_path = "cash_flow.db"
-    initialize_database(db_path)
+    initialize_database_with_mock_data(db_path)
     conn = create_connection(db_path)
 
     # --- Simple Transaction Example ---

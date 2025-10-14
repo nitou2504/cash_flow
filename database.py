@@ -74,9 +74,9 @@ def create_tables(conn: Connection):
     """)
     conn.commit()
 
-def insert_initial_data(conn: Connection):
+def insert_mock_data(conn: Connection):
     """
-    Populates the 'accounts' table with default data.
+    Populates the 'accounts' table with mock data for demonstration.
     """
     cursor = conn.cursor()
     accounts = [
@@ -85,23 +85,37 @@ def insert_initial_data(conn: Connection):
         ("Amex Produbanco", "credit_card", 2, 15)
     ]
     cursor.executemany("INSERT OR IGNORE INTO accounts VALUES (?, ?, ?, ?)", accounts)
-
-    # Insert default settings
-    settings = [
-        ("forecast_horizon_months", "6")
-    ]
-    cursor.executemany("INSERT OR IGNORE INTO settings VALUES (?, ?)", settings)
     conn.commit()
 
 def initialize_database(db_path: str = "cash_flow.db"):
     """
-    A master function that orchestrates the entire database setup process.
+    A master function that ensures the database and its tables exist.
+    It only populates essential settings, not mock data.
     """
     conn = create_connection(db_path)
     create_tables(conn)
-    insert_initial_data(conn)
+    
+    # Insert default settings
+    cursor = conn.cursor()
+    settings = [
+        ("forecast_horizon_months", "6")
+    ]
+    cursor.executemany("INSERT OR IGNORE INTO settings VALUES (?, ?)", settings)
+    
+    conn.commit()
     conn.close()
     print("Database initialized successfully.")
 
+def initialize_database_with_mock_data(db_path: str = "cash_flow.db"):
+    """
+    A helper function for development and testing that initializes the database
+    and populates it with mock accounts.
+    """
+    initialize_database(db_path)
+    conn = create_connection(db_path)
+    insert_mock_data(conn)
+    conn.close()
+    print("Database initialized with mock data.")
+
 if __name__ == '__main__':
-    initialize_database()
+    initialize_database_with_mock_data()
