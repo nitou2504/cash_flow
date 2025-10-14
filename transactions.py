@@ -98,17 +98,23 @@ def create_installment_transactions(
     Generates a list of transactions for a purchase made in installments.
     """
     origin_id = _generate_origin_id()
-    installment_amount = round(total_amount / installments, 2)
+    
+    # If total_installments isn't specified, it's a new plan, so the total is simply the number of installments.
+    final_total_installments = total_installments if total_installments is not None else installments
+    
+    # The amount per installment is always based on the total plan, not the number of transactions being created.
+    installment_amount = round(total_amount / final_total_installments, 2)
     final_amount = abs(installment_amount) if is_income else -abs(installment_amount)
     
     transactions = []
 
-    # If total_installments isn't specified, fall back to the number of installments being created.
-    # This maintains backward compatibility.
-    final_total_installments = total_installments if total_installments is not None else installments
-
     for i in range(installments):
         current_installment_num = start_from_installment + i
+        
+        # Safety break to prevent creating more installments than the plan allows.
+        if total_installments is not None and current_installment_num > total_installments:
+            break
+            
         installment_description = f"{description} ({current_installment_num}/{final_total_installments})"
         
         future_billing_date = transaction_date + relativedelta(months=i + grace_period_months)

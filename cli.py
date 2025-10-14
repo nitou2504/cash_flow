@@ -97,6 +97,8 @@ def handle_add(conn: sqlite3.Connection, args: argparse.Namespace):
                 controller.process_transaction_request(conn, request_json, transaction_date=transaction_date)
             elif request_type == "subscription":
                 controller.process_subscription_request(conn, request_json["details"])
+                # Rerun rollover to immediately commit forecasts for the new sub
+                controller.run_monthly_rollover(conn, date.today())
             else:
                 print(f"Error: Unknown request type '{request_type}'.")
         else:
@@ -108,6 +110,9 @@ def main():
     db_path = "cash_flow.db"
     initialize_database(db_path)
     conn = create_connection(db_path)
+
+    # Per technical spec, always run rollover on startup to sync state.
+    controller.run_monthly_rollover(conn, date.today())
 
     # --- Argument Parsing ---
     parser = argparse.ArgumentParser(description="Personal Cash Flow CLI")

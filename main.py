@@ -140,17 +140,31 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
             )
         )
     elif transaction_type == "installment":
+        installments = request.get("installments")
+        total_installments = request.get("total_installments")
+        start_from = request.get("start_from_installment", 1)
+
+        # If 'installments' isn't provided, calculate it from the total.
+        if installments is None and total_installments is not None:
+            installments = total_installments - start_from + 1
+        
+        # Validation: Ensure we have the necessary data to proceed.
+        if installments is None or request.get("total_amount") is None:
+            raise ValueError(
+                "Installment request is missing 'installments' or 'total_amount'."
+            )
+
         new_transactions = transactions.create_installment_transactions(
             description=request["description"],
             total_amount=request["total_amount"],
-            installments=request["installments"],
+            installments=installments,
             category=request.get("category"),
             budget=request.get("budget"),
             account=account,
             transaction_date=effective_transaction_date,
             grace_period_months=request.get("grace_period_months", 0),
-            start_from_installment=request.get("start_from_installment", 1),
-            total_installments=request.get("total_installments"),
+            start_from_installment=start_from,
+            total_installments=total_installments,
             is_income=request.get("is_income", False),
         )
     elif transaction_type == "split":

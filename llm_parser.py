@@ -34,7 +34,9 @@ Your output MUST be a single JSON object with a root-level `request_type` field,
 **Rules:**
 1.  The `type` field must be one of: "simple", "installment", or "split".
 2.  The `account` field MUST be one of the following valid account names: {account_names}.
-3.  For `installment` transactions, if the user mentions a partial payment (e.g., "3rd of 6"), you MUST populate `start_from_installment` and `total_installments`. If they only say "6 installments", then `installments` is 6, and the other two fields should be omitted.
+3.  **Installment Logic:** The `installments` field (the number of payments to create) is **mandatory** for this type.
+    - If the user gives a total number (e.g., "6 installments"), set `installments` to that number.
+    - If the user gives a partial plan (e.g., "starting the 3rd of 12"), you MUST calculate the remaining payments and set `installments` to that value (e.g., `12 - 3 + 1 = 10`). You must also include `start_from_installment` and `total_installments` for context.
 4.  If the user mentions income, salary, or being paid, you MUST set `"is_income": true`. Otherwise, omit it or set it to false.
 5.  **Date Logic:** Only include `date_created` if the user provides specific date information (e.g., 'yesterday', 'last Tuesday', 'on the 5th'). If no date is mentioned, omit the field.
 
