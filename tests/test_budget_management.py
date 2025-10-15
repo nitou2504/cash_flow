@@ -7,7 +7,7 @@ from dateutil.relativedelta import relativedelta
 from database import create_connection, create_tables, insert_mock_data
 from repository import (
     add_subscription, get_all_transactions, get_subscription_by_id,
-    get_budget_allocation_for_month, commit_forecasts_for_month
+    get_budget_allocation_for_month, commit_past_and_current_forecasts
 )
 from main import generate_forecasts, process_transaction_request, process_budget_update
 
@@ -36,7 +36,7 @@ class TestBudgetUpdate(unittest.TestCase):
             generate_forecasts(self.conn, 6)
 
         # 3. Commit the current month's forecast to make it "live"
-        commit_forecasts_for_month(self.conn, self.current_month)
+        commit_past_and_current_forecasts(self.conn, self.current_month)
 
         # 4. Log an expense against the current month's budget
         expense_request = {
@@ -173,7 +173,7 @@ class TestFutureDatedBudgetUpdate(unittest.TestCase):
             mock_date.today.return_value = self.today
             generate_forecasts(self.conn, 6)
         
-        commit_forecasts_for_month(self.conn, self.current_month)
+        commit_past_and_current_forecasts(self.conn, self.current_month)
 
         print("\n--- Test: Future-Dated Budget Update ---")
         print(f"SETUP: Today is {self.today}. Visa cut-off is day 14.")

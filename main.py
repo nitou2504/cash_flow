@@ -455,7 +455,7 @@ def run_monthly_rollover(conn: sqlite3.Connection, process_date: date):
     print("Forecast generation complete.")
 
     # 3. Commit forecasts for the given month
-    repository.commit_forecasts_for_month(conn, process_date)
+    repository.commit_past_and_current_forecasts(conn, process_date)
     print("Committed forecasts for the current month.")
 
 

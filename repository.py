@@ -250,7 +250,7 @@ def get_setting(conn: Connection, key: str) -> str:
         return setting[0]
     return None
 
-def commit_forecasts_for_month(conn: Connection, month_date: date):
+def commit_past_and_current_forecasts(conn: Connection, month_date: date):
     """
     Changes the status of all 'forecast' transactions to 'committed' for a
     given month.
@@ -263,9 +263,9 @@ def commit_forecasts_for_month(conn: Connection, month_date: date):
     query = """
         UPDATE transactions
         SET status = 'committed'
-        WHERE status = 'forecast' AND date(date_created) BETWEEN ? AND ?
+        WHERE status = 'forecast' AND date(date_payed) <= ?
     """
-    cursor.execute(query, (start_of_month, end_of_month))
+    cursor.execute(query, (end_of_month,))
     conn.commit()
 
 def update_transaction(conn: Connection, transaction_id: int, updates: Dict[str, Any]):

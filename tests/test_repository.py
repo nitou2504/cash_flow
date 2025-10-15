@@ -12,7 +12,7 @@ from repository import (
     delete_future_budget_allocations,
     update_future_forecasts_account,
     get_setting,
-    commit_forecasts_for_month,
+    commit_past_and_current_forecasts,
 )
 from database import create_tables, insert_mock_data, create_connection
 
@@ -225,27 +225,31 @@ class TestSettingsRepository(unittest.TestCase):
         updated to 'committed'.
         """
         forecasts = [
-            # This one should be committed
-            {"date_created": date(2025, 11, 5), "date_payed": "2025-11-10", "description": "November Forecast", "account": "Cash", "amount": -10, "category": "test", "budget": None, "status": "forecast", "origin_id": "A"},
-            # This one should NOT be committed (wrong month)
-            {"date_created": date(2025, 10, 5), "date_payed": "2025-10-10", "description": "October Forecast", "account": "Cash", "amount": -10, "category": "test", "budget": None, "status": "forecast", "origin_id": "B"},
-            # This one should be committed
-            {"date_created": date(2025, 11, 20), "date_payed": "2025-11-25", "description": "November Forecast 2", "account": "Cash", "amount": -20, "category": "test", "budget": None, "status": "forecast", "origin_id": "C"},
-            # This one should NOT be committed (already committed)
-            {"date_created": date(2025, 11, 15), "date_payed": "2025-11-20", "description": "November Committed", "account": "Cash", "amount": -30, "category": "test", "budget": None, "status": "committed", "origin_id": "D"},
+            # Older past month → should be committed
+            {"date_created": date(2025, 9, 25), "date_payed": "2025-09-30", "description": "September Forecast", "account": "Cash", "amount": -5, "category": "test", "budget": None, "status": "forecast", "origin_id": "E"},
+            # Previous month → should be committed
+            {"date_created": date(2025, 10, 5), "date_payed": "2025-10-15", "description": "October Forecast", "account": "Cash", "amount": -10, "category": "test", "budget": None, "status": "forecast", "origin_id": "A"},
+            # Current month → should be committed
+            {"date_created": date(2025, 11, 1), "date_payed": "2025-11-10", "description": "November Forecast", "account": "Cash", "amount": -15, "category": "test", "budget": None, "status": "forecast", "origin_id": "B"},
+            # Future month → should NOT be committed
+            {"date_created": date(2025, 12, 1), "date_payed": "2025-12-05", "description": "December Forecast", "account": "Cash", "amount": -20, "category": "test", "budget": None, "status": "forecast", "origin_id": "C"},
+            # Already committed → should remain committed
+            {"date_created": date(2025, 10, 1), "date_payed": "2025-10-05", "description": "October Committed", "account": "Cash", "amount": -5, "category": "test", "budget": None, "status": "committed", "origin_id": "D"},
         ]
+
         add_transactions(self.conn, forecasts)
 
-        commit_forecasts_for_month(self.conn, date(2025, 11, 1))
+        commit_past_and_current_forecasts(self.conn, date(2025, 11, 1))
 
         transactions = get_all_transactions(self.conn)
         
         status_map = {t['origin_id']: t['status'] for t in transactions}
 
-        self.assertEqual(status_map['A'], 'committed')
-        self.assertEqual(status_map['B'], 'forecast')
-        self.assertEqual(status_map['C'], 'committed')
-        self.assertEqual(status_map['D'], 'committed')
+        self.assertEqual(status_map['E'], 'committed')  # September → past month
+        self.assertEqual(status_map['A'], 'committed')  # October → past month
+        self.assertEqual(status_map['B'], 'committed')  # November → current month
+        self.assertEqual(status_map['C'], 'forecast')   # December → future month
+        self.assertEqual(status_map['D'], 'committed')  # Already committed → unchanged
 
 
 if __name__ == "__main__":

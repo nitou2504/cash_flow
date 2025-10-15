@@ -12,7 +12,7 @@ The application relies on an "orchestrator" (the main application flow, currentl
 
 The primary tool for this is the `run_monthly_rollover()` function. This function is designed to be **idempotent**, meaning it can be run multiple times without changing the result beyond its initial application.
 
--   **`commit_forecasts_for_month()`**: This sub-function only affects transactions with a `'forecast'` status. Running it a second time on a committed month will find no matching rows and do nothing.
+-   **`commit_past_and_current_forecasts()`**: This sub-function only affects transactions with a `'forecast'` status. Running it a second time on a committed month will find no matching rows and do nothing.
 -   **`generate_forecasts()`**: This sub-function first checks for the latest existing forecast. If the forecast horizon is already full, it does nothing.
 
 **Golden Rule:** The main application flow should **always call `run_monthly_rollover(conn, date.today())` at the beginning of any session.** This acts as a safe, low-cost "state synchronization" step, guaranteeing that the current month's data is correctly committed before any other operations are performed. This responsibility is intentionally kept at the orchestrator level and not embedded within business logic functions (like `process_budget_update`) to maintain the **Single Responsibility Principle**.

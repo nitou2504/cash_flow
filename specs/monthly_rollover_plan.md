@@ -27,7 +27,7 @@ The repository will be updated with new functions to manage settings and to hand
     *   **Purpose:** Retrieves a specific setting value from the `settings` table by its key.
     *   **Logic:** Executes a `SELECT` query on the `settings` table.
 
-*   **`commit_forecasts_for_month(conn: Connection, month_date: date)`**:
+*   **`commit_past_and_current_forecasts(conn: Connection, month_date: date)`**:
     *   **Purpose:** Changes the status of all `'forecast'` transactions to `'committed'` for a given month. This action "locks in" the financial events for that period.
     *   **Logic:**
         1.  Calculates the first and last day of the month based on `month_date`.
@@ -40,7 +40,7 @@ A new master function will be created to orchestrate the entire monthly rollover
 *   **`run_monthly_rollover(conn: Connection, process_date: date)`**:
     *   **Purpose:** Acts as the main, on-demand entry point for all monthly processing. It is idempotent and can be run safely at any time for a given month.
     *   **Logic:**
-        1.  **Commit Forecasts:** Calls `repository.commit_forecasts_for_month()` for the `process_date` to convert all of the current month's forecasts into committed transactions. This is the crucial step that "activates" the current month's budgets.
+        1.  **Commit Forecasts:** Calls `repository.commit_past_and_current_forecasts()` for the `process_date` to convert all of the current month's forecasts into committed transactions. This is the crucial step that "activates" the current month's budgets.
         2.  **Retrieve Horizon:** Fetches the `forecast_horizon_months` value from the database using `repository.get_setting()`.
         3.  **Generate New Forecasts:** Calls the existing `generate_forecasts()` function, passing the retrieved horizon. This ensures the forecast window is always "topped up" for the required number of months into the future.
 
