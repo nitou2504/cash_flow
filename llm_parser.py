@@ -37,7 +37,7 @@ Your output MUST be a single JSON object with a root-level `request_type` field,
 3.  **Installment Logic:** The `installments` field (the number of payments to create) is **mandatory** for this type.
     - If the user gives a total number (e.g., "6 installments"), set `installments` to that number.
     - If the user gives a partial plan (e.g., "starting the 3rd of 12"), you MUST calculate the remaining payments and set `installments` to that value (e.g., `12 - 3 + 1 = 10`). You must also include `start_from_installment` and `total_installments` for context.
-4.  If the user mentions income, salary, or being paid, you MUST set `"is_income": true`. Otherwise, omit it or set it to false.
+4.  If the user mentions income, salary, current funds, or being paid, you MUST set `"is_income": true`. Otherwise, omit it or set it to false. Since the default assumption is an expense by the system.
 5.  **Date Logic:** Only include `date_created` if the user provides specific date information (e.g., 'yesterday', 'last Tuesday', 'on the 5th'). If no date is mentioned, omit the field.
 
 **Schema:**
