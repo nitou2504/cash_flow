@@ -2,11 +2,12 @@
 import argparse
 import sqlite3
 import json
+import csv
 from rich.console import Console
 from rich.table import Table
 from rich.syntax import Syntax
 
-from datetime import date
+from datetime import date, datetime
 
 from dotenv import load_dotenv
 
@@ -104,6 +105,108 @@ def handle_add(conn: sqlite3.Connection, args: argparse.Namespace):
         else:
             print("Operation cancelled.")
 
+def handle_add_batch(conn: sqlite3.Connection, args: argparse.Namespace):
+    """Adds multiple transactions from a CSV file."""
+    try:
+        with open(args.file_path, 'r', newline='') as f:
+            reader = csv.reader(f)
+            header = next(reader) # Skip header
+            lines = list(reader)
+    except FileNotFoundError:
+        print(f"Error: File not found at {args.file_path}")
+        return
+    except StopIteration:
+        print(f"Error: CSV file at {args.file_path} is empty or has no header.")
+        return
+
+    accounts = repository.get_all_accounts(conn)
+    if not accounts:
+        print("Error: No accounts found. Please add an account first using 'accounts add'.")
+        return
+    
+    account_ids = {acc['account_id'] for acc in accounts}
+
+    console = Console()
+    print(f"Found {len(lines)} transactions to process from {args.file_path}...")
+
+    for i, row in enumerate(lines):
+        if not row:
+            continue
+        
+        try:
+            # Expected format: creation_date,description,account_id,amount
+            date_str, description, account_id, amount_str = row
+        except ValueError:
+            console.print(f"\n[yellow]Skipping line {i+2}: Incorrect number of columns. Expected 4, got {len(row)}.[/yellow]")
+            continue
+
+        # --- Data Validation ---
+        try:
+            transaction_date = datetime.strptime(date_str, '%m/%d/%y').date()
+            amount = float(amount_str)
+        except ValueError as e:
+            console.print(f"\n[red]Error parsing line {i+2}: {row} - Invalid date or amount format. {e}[/red]")
+            continue
+        
+        if account_id not in account_ids:
+            console.print(f"\n[red]Error on line {i+2}: Account '{account_id}' not found in the database. Skipping.[/red]")
+            console.print(f"Available accounts are: {', '.join(account_ids)}")
+            continue
+
+        # --- User Confirmation ---
+        console.print("\n--- New Transaction ---")
+        console.print(f"  Date: {transaction_date.strftime('%Y-%m-%d')}")
+        console.print(f"  Desc: {description.strip()}")
+        console.print(f"  Acct: {account_id}")
+        console.print(f"  Amnt: {amount:.2f}")
+        
+        confirm = input("Proceed to add this transaction? [Y/n/a] (Yes/No/Abort) ")
+        if confirm.lower() == 'y' or confirm == '':
+            # Flatten the request structure to match what the controller expects
+            request_data = {
+                "type": "simple",
+                "description": description.strip(),
+                "amount": amount,
+                "account": account_id,
+            }
+            controller.process_transaction_request(conn, request_data, transaction_date=transaction_date)
+            console.print("[green]Transaction added successfully.[/green]")
+        elif confirm.lower() == 'a':
+            print("Operation aborted by user.")
+            break
+        else:
+            print("Transaction skipped.")
+    
+    print("\nBatch processing finished.")
+
+def handle_delete(conn: sqlite3.Connection, args: argparse.Namespace):
+    """Deletes a transaction by its ID."""
+    transaction_id = args.transaction_id
+    
+    # Fetch the transaction to show details before deleting
+    transaction = repository.get_transaction_by_id(conn, transaction_id)
+    
+    if not transaction:
+        print(f"Error: Transaction with ID {transaction_id} not found.")
+        return
+
+    console = Console()
+    console.print("\n--- Transaction to Delete ---")
+    table = Table(show_header=False, box=None)
+    table.add_row("ID:", str(transaction['id']))
+    table.add_row("Date:", str(transaction['date_payed']))
+    table.add_row("Description:", transaction['description'])
+    table.add_row("Account:", transaction['account'])
+    table.add_row("Amount:", f"{transaction['amount']:.2f}")
+    console.print(table)
+
+    confirm = input(f"\nAre you sure you want to permanently delete this transaction? [y/N] ")
+    if confirm.lower() == 'y':
+        controller.process_transaction_deletion(conn, transaction_id)
+        print(f"Successfully deleted transaction {transaction_id}.")
+    else:
+        print("Operation cancelled.")
+
 def main():
     load_dotenv()
     # --- Database Setup ---
@@ -121,6 +224,10 @@ def main():
     # Add command
     add_parser = subparsers.add_parser("add", help="Add a transaction using natural language")
     add_parser.add_argument("description", help="The natural language description of the transaction")
+
+    # Add batch command
+    add_batch_parser = subparsers.add_parser("add-batch", help="Add multiple transactions from a CSV file")
+    add_batch_parser.add_argument("file_path", help="Path to the CSV file")
 
     # Accounts command
     acc_parser = subparsers.add_parser("accounts", help="Manage accounts")
@@ -145,11 +252,17 @@ def main():
     export_parser.add_argument("file_path", help="Path to the CSV file")
     export_parser.add_argument("--with-balance", action="store_true", help="Include running balance")
 
+    # Delete command
+    delete_parser = subparsers.add_parser("delete", help="Delete a transaction by its ID")
+    delete_parser.add_argument("transaction_id", type=int, help="The ID of the transaction to delete")
+
     args = parser.parse_args()
 
     # --- Command Handling ---
     if args.command == "add":
         handle_add(conn, args)
+    elif args.command == "add-batch":
+        handle_add_batch(conn, args)
     elif args.command == "accounts":
         if args.subcommand == "list":
             handle_accounts_list(conn)
@@ -161,6 +274,8 @@ def main():
         interface.view_transactions(conn)
     elif args.command == "export":
         interface.export_transactions_to_csv(conn, args.file_path, args.with_balance)
+    elif args.command == "delete":
+        handle_delete(conn, args)
 
     conn.close()
 
