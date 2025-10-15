@@ -1,7 +1,7 @@
 import unittest
 from datetime import date
 
-from database import create_connection, create_tables, insert_initial_data
+from database import create_connection, create_tables, insert_mock_data
 from repository import get_all_transactions, get_account_by_name
 from main import process_transaction_request
 
@@ -9,7 +9,7 @@ class TestPartialInstallments(unittest.TestCase):
     def setUp(self):
         self.conn = create_connection(":memory:")
         create_tables(self.conn)
-        insert_initial_data(self.conn)
+        insert_mock_data(self.conn)
         self.account = get_account_by_name(self.conn, "Visa Produbanco")
         self.today = date(2025, 10, 15)
 
@@ -23,18 +23,17 @@ class TestPartialInstallments(unittest.TestCase):
         """
         print("\n--- Test: Create partial installments ---")
         
-        # Scenario: A purchase was made in 6 total installments.
-        # The user is logging the remaining 4, starting from installment #3.
-        # The remaining amount is 400.
+        # Scenario: A purchase of $600 was made in 6 total installments.
+        # The user is now logging the remaining 4, starting from installment #3.
         request = {
             "type": "installment",
             "description": "New Phone",
-            "total_amount": 400.00,
-            "installments": 4,  # The number of installments to log
+            "total_amount": 600.00, # The ORIGINAL total amount of the purchase
+            "installments": 4,      # The number of installments to log now
             "account": self.account['account_id'],
             "category": "electronics",
             "start_from_installment": 3,
-            "total_installments": 6
+            "total_installments": 6 # The total number of installments in the plan
         }
         
         process_transaction_request(self.conn, request, transaction_date=self.today)

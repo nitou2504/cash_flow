@@ -14,21 +14,29 @@ def _calculate_credit_card_payment_date(
     transaction_date: date, cut_off_day: int, payment_day: int
 ) -> date:
     """
-    Calculates the correct payment date for a credit card transaction.
+    Calculates the correct payment date for a credit card transaction by
+    determining if it's a same-month or next-month payment cycle.
     """
-    if transaction_date.day >= cut_off_day:
-        # Payment falls into the next billing cycle
-        payment_month = transaction_date.month + 1
-        payment_year = transaction_date.year
-        if payment_month > 12:
-            payment_month = 1
-            payment_year += 1
-    else:
-        # Payment is in the current billing cycle
-        payment_month = transaction_date.month
-        payment_year = transaction_date.year
-
-    return date(payment_year, payment_month, payment_day)
+    # Case 1: Same-month payment cycle (e.g., cut on 14th, pay on 25th)
+    if payment_day > cut_off_day:
+        if transaction_date.day >= cut_off_day:
+            # Purchase is on or after cut-off, so it's on next month's bill
+            payment_date = transaction_date + relativedelta(months=1)
+            return payment_date.replace(day=payment_day)
+        else:
+            # Purchase is before cut-off, so it's on this month's bill
+            return transaction_date.replace(day=payment_day)
+    
+    # Case 2: Next-month payment cycle (e.g., cut on 30th, pay on 15th)
+    else:  # payment_day <= cut_off_day
+        if transaction_date.day > cut_off_day:
+            # Purchase is after cut-off, bill is month+1, payment is month+2
+            payment_date = transaction_date + relativedelta(months=2)
+            return payment_date.replace(day=payment_day)
+        else:
+            # Purchase is before cut-off, bill is this month, payment is month+1
+            payment_date = transaction_date + relativedelta(months=1)
+            return payment_date.replace(day=payment_day)
 
 def _create_base_transaction(
     description: str,

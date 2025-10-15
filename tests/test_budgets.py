@@ -5,7 +5,7 @@ from datetime import date
 from unittest.mock import patch
 
 from main import process_transaction_request, run_monthly_budget_reconciliation
-from database import create_connection, create_tables, insert_initial_data
+from database import create_connection, create_tables, insert_mock_data
 from repository import add_subscription, get_all_transactions, add_transactions, get_budget_allocation_for_month
 
 class TestBudgetLogic(unittest.TestCase):
@@ -13,7 +13,7 @@ class TestBudgetLogic(unittest.TestCase):
         """Set up an in-memory database for each test."""
         self.conn = create_connection(":memory:")
         create_tables(self.conn)
-        insert_initial_data(self.conn)
+        insert_mock_data(self.conn)
 
         # 1. Create a budget subscription for "Food"
         self.food_budget_sub = {

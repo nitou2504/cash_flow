@@ -4,7 +4,7 @@ from datetime import date
 from unittest.mock import patch
 from dateutil.relativedelta import relativedelta
 
-from database import create_connection, create_tables, insert_initial_data
+from database import create_connection, create_tables, insert_mock_data
 from repository import (
     add_subscription, get_all_transactions, get_subscription_by_id,
     get_budget_allocation_for_month, commit_forecasts_for_month
@@ -16,7 +16,7 @@ class TestBudgetUpdate(unittest.TestCase):
         """Set up a consistent scenario for testing budget updates."""
         self.conn = create_connection(":memory:")
         create_tables(self.conn)
-        insert_initial_data(self.conn)
+        insert_mock_data(self.conn)
         self.today = date(2025, 10, 10)
         self.current_month = self.today.replace(day=1)
         self.next_month = (self.today + relativedelta(months=1)).replace(day=1)
@@ -155,7 +155,7 @@ class TestFutureDatedBudgetUpdate(unittest.TestCase):
         """Set up a scenario where an expense is pushed to a future budget."""
         self.conn = create_connection(":memory:")
         create_tables(self.conn)
-        insert_initial_data(self.conn)
+        insert_mock_data(self.conn)
         # Transaction date is AFTER the Visa cut-off day (14th)
         self.today = date(2025, 10, 15)
         self.current_month = self.today.replace(day=1)

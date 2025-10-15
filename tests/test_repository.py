@@ -14,7 +14,7 @@ from repository import (
     get_setting,
     commit_forecasts_for_month,
 )
-from database import create_tables, insert_initial_data, create_connection
+from database import create_tables, insert_mock_data, create_connection
 
 
 class TestRepository(unittest.TestCase):
@@ -23,7 +23,7 @@ class TestRepository(unittest.TestCase):
         self.conn = create_connection(":memory:")
         self.conn.row_factory = sqlite3.Row
         create_tables(self.conn)
-        insert_initial_data(self.conn)
+        insert_mock_data(self.conn)
 
     def tearDown(self):
         """Close the database connection after each test."""
@@ -116,7 +116,7 @@ class TestSubscriptionRepository(unittest.TestCase):
         self.conn = sqlite3.connect(":memory:")
         self.conn.row_factory = sqlite3.Row
         create_tables(self.conn)
-        insert_initial_data(self.conn)
+        insert_mock_data(self.conn)
 
         # Sample subscriptions
         self.sub1 = {

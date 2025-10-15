@@ -153,10 +153,10 @@ class TestTransactions(unittest.TestCase):
             _calculate_credit_card_payment_date(date(2025, 10, 15), 15, 25),
             date(2025, 11, 25),
         )
-        # December transaction -> January next year
+        # Purchase after Dec cut-off (15th) for next-month cycle (pay on 10th) -> payment in Feb
         self.assertEqual(
             _calculate_credit_card_payment_date(date(2025, 12, 20), 15, 10),
-            date(2026, 1, 10),
+            date(2026, 2, 10),
         )
 
     def test_create_recurrent_transactions(self):

@@ -126,9 +126,9 @@ This module handles the initial setup and schema creation for the SQLite databas
 -   **`create_tables(conn: Connection)`**
     -   **Purpose:** Creates the `accounts` and `transactions` tables if they do not already exist, based on the schema in `spec.md`.
 
--   **`insert_initial_data(conn: Connection)`**
+-   **`insert_mock_data(conn: Connection)`**
     -   **Purpose:** Populates the `accounts` table with default data (e.g., a "Cash" account and a sample credit card) to make the application immediately usable.
 
 -   **`initialize_database(db_path: str)`**
     -   **Purpose:** A master function that orchestrates the entire database setup process.
-    -   **Details:** It calls `create_connection`, `create_tables`, and `insert_initial_data` in sequence. This is the primary function to be called by any setup script.
+    -   **Details:** It calls `create_connection`, `create_tables`, and `insert_mock_data` in sequence. This is the primary function to be called by any setup script.

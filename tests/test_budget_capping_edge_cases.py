@@ -2,7 +2,7 @@ import unittest
 from datetime import date
 from dateutil.relativedelta import relativedelta
 
-from database import create_connection, create_tables, insert_initial_data
+from database import create_connection, create_tables, insert_mock_data
 from repository import (
     add_subscription, add_transactions, get_budget_allocation_for_month,
     get_all_transactions
@@ -17,7 +17,7 @@ class TestBudgetCappingEdgeCases(unittest.TestCase):
         """Set up a database with a budget for edge case testing."""
         self.conn = create_connection(":memory:")
         create_tables(self.conn)
-        insert_initial_data(self.conn)
+        insert_mock_data(self.conn)
         
         self.start_date = date(2025, 10, 10)
         self.budget_id = "budget_test"

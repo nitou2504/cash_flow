@@ -3,7 +3,7 @@ from datetime import date
 from unittest.mock import patch
 from dateutil.relativedelta import relativedelta
 
-from database import create_connection, create_tables, insert_initial_data
+from database import create_connection, create_tables, insert_mock_data
 from repository import (
     add_subscription, get_budget_allocation_for_month, get_account_by_name
 )
@@ -16,7 +16,7 @@ class TestFutureBudgetUpdates(unittest.TestCase):
         """Set up an in-memory database for each test."""
         self.conn = create_connection(":memory:")
         create_tables(self.conn)
-        insert_initial_data(self.conn)
+        insert_mock_data(self.conn)
         
         self.today = date(2025, 10, 15)
         self.october = self.today

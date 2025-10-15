@@ -2,7 +2,7 @@ import unittest
 import sqlite3
 from unittest.mock import patch, MagicMock
 
-from database import create_connection, create_tables, insert_initial_data
+from database import create_connection, create_tables, insert_mock_data
 from interface import view_transactions
 from main import process_transaction_request, run_monthly_rollover
 from repository import add_subscription
@@ -12,7 +12,7 @@ class TestInterface(unittest.TestCase):
     def setUp(self):
         self.conn = create_connection(":memory:")
         create_tables(self.conn)
-        insert_initial_data(self.conn)
+        insert_mock_data(self.conn)
         self.today = date(2025, 10, 15)
 
     def tearDown(self):

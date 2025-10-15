@@ -3,7 +3,7 @@ import sqlite3
 from datetime import date
 from dateutil.relativedelta import relativedelta
 
-from database import create_connection, create_tables, insert_initial_data
+from database import create_connection, create_tables, insert_mock_data
 from repository import add_subscription, add_transactions, get_budget_allocation_for_month, get_all_transactions
 from main import _get_transaction_group_info, process_transaction_request, process_transaction_conversion
 
@@ -13,7 +13,7 @@ class TestTransactionGroupIdentifier(unittest.TestCase):
         """Set up a database with all types of transactions."""
         self.conn = create_connection(":memory:")
         create_tables(self.conn)
-        insert_initial_data(self.conn)
+        insert_mock_data(self.conn)
         self.today = date(2025, 10, 15)
 
         # 1. Simple Transaction (no origin_id)
@@ -81,7 +81,7 @@ class TestTransactionConversions(unittest.TestCase):
         """Set up an in-memory database for conversion scenarios."""
         self.conn = create_connection(":memory:")
         create_tables(self.conn)
-        insert_initial_data(self.conn)
+        insert_mock_data(self.conn)
         
         self.start_date = date(2025, 9, 15)
         self.budget_id = "budget_shopping"

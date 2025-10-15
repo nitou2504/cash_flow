@@ -16,7 +16,7 @@ A new table will be added to store user-defined settings, making the application
     ```
 
 *   **Insert Initial Settings:**
-    The `insert_initial_data` function will be updated to populate the `settings` table with default values.
+    The `insert_mock_data` function will be updated to populate the `settings` table with default values.
     *   A default `forecast_horizon_months` will be set to `6`.
 
 ## 2. Data Persistence Layer (`repository.py`)

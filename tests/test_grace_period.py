@@ -2,7 +2,7 @@ import unittest
 from datetime import date
 from dateutil.relativedelta import relativedelta
 
-from database import create_connection, create_tables, insert_initial_data
+from database import create_connection, create_tables, insert_mock_data
 from main import process_transaction_request
 from repository import get_all_transactions
 
@@ -11,7 +11,7 @@ class TestGracePeriod(unittest.TestCase):
         """Set up an in-memory database for testing."""
         self.conn = create_connection(":memory:")
         create_tables(self.conn)
-        insert_initial_data(self.conn)
+        insert_mock_data(self.conn)
         self.today = date(2025, 10, 5)
 
     def tearDown(self):

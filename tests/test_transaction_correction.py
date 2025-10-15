@@ -3,7 +3,7 @@ from datetime import date
 from unittest.mock import patch
 from dateutil.relativedelta import relativedelta
 
-from database import create_connection, create_tables, insert_initial_data
+from database import create_connection, create_tables, insert_mock_data
 from repository import (
     add_subscription, get_budget_allocation_for_month, get_all_transactions
 )
@@ -16,7 +16,7 @@ class TestTransactionCorrection(unittest.TestCase):
         """Set up an in-memory database for the correction scenario."""
         self.conn = create_connection(":memory:")
         create_tables(self.conn)
-        insert_initial_data(self.conn)
+        insert_mock_data(self.conn)
         
         # We are operating in October, but will correct a transaction from September
         self.today = date(2025, 10, 5)

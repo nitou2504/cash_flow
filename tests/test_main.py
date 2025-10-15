@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock
 from main import process_transaction_request
 
 # Placeholder for database setup logic
-from database import create_tables, insert_initial_data, create_connection
+from database import create_tables, insert_mock_data, create_connection
 
 
 class TestMainController(unittest.TestCase):
@@ -14,7 +14,7 @@ class TestMainController(unittest.TestCase):
         """Set up an in-memory database for each test."""
         self.conn = create_connection(":memory:")
         create_tables(self.conn)
-        insert_initial_data(self.conn)
+        insert_mock_data(self.conn)
 
     def tearDown(self):
         """Close the database connection after each test."""
@@ -131,7 +131,7 @@ class TestMonthlyRollover(unittest.TestCase):
         """Set up a full in-memory database for an integration test."""
         self.conn = create_connection(":memory:")
         create_tables(self.conn)
-        insert_initial_data(self.conn)
+        insert_mock_data(self.conn)
         # Explicitly create the settings table for the test
         self.conn.execute("""
             CREATE TABLE IF NOT EXISTS settings (
@@ -163,8 +163,8 @@ class TestMonthlyRollover(unittest.TestCase):
 
         # 1. Set a 3-month forecast horizon
         self.conn.execute(
-            "UPDATE settings SET value = ? WHERE key = ?",
-            ("3", "forecast_horizon_months")
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            ("forecast_horizon_months", "3")
         )
         self.conn.commit()
         print("--- Test: Set forecast horizon to 3 months. ---")

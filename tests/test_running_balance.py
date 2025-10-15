@@ -2,7 +2,7 @@ import unittest
 from datetime import date
 from unittest.mock import patch
 
-from database import create_connection, create_tables, insert_initial_data
+from database import create_connection, create_tables, insert_mock_data
 from repository import add_subscription, get_transactions_with_running_balance
 from main import process_transaction_request, run_monthly_rollover
 
@@ -10,7 +10,7 @@ class TestRunningBalance(unittest.TestCase):
     def setUp(self):
         self.conn = create_connection(":memory:")
         create_tables(self.conn)
-        insert_initial_data(self.conn)
+        insert_mock_data(self.conn)
         self.today = date(2025, 10, 15)
 
     def tearDown(self):

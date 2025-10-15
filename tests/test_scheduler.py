@@ -6,7 +6,7 @@ from datetime import date
 from dateutil.relativedelta import relativedelta
 
 from main import generate_forecasts
-from database import create_tables, insert_initial_data, create_connection
+from database import create_tables, insert_mock_data, create_connection
 from repository import add_subscription, get_all_transactions, add_transactions
 
 class TestScheduler(unittest.TestCase):
@@ -14,7 +14,7 @@ class TestScheduler(unittest.TestCase):
         """Set up an in-memory database for each test."""
         self.conn = create_connection(":memory:")
         create_tables(self.conn)
-        insert_initial_data(self.conn)
+        insert_mock_data(self.conn)
 
         # Sample subscription that runs indefinitely
         self.sub_indefinite = {

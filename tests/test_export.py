@@ -5,7 +5,7 @@ import csv
 from datetime import date
 from unittest.mock import patch
 
-from database import create_connection, create_tables, insert_initial_data
+from database import create_connection, create_tables, insert_mock_data
 from interface import export_transactions_to_csv
 from main import process_transaction_request, run_monthly_rollover
 from repository import add_subscription
@@ -14,7 +14,7 @@ class TestExport(unittest.TestCase):
     def setUp(self):
         self.conn = create_connection(":memory:")
         create_tables(self.conn)
-        insert_initial_data(self.conn)
+        insert_mock_data(self.conn)
         self.today = date(2025, 10, 15)
         self.test_csv_path = "test_transactions.csv"
 
