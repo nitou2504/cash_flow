@@ -8,6 +8,7 @@ from rich.table import Table
 from rich.syntax import Syntax
 
 from datetime import date, datetime
+from dateutil.relativedelta import relativedelta
 
 from dotenv import load_dotenv
 
@@ -207,6 +208,99 @@ def handle_delete(conn: sqlite3.Connection, args: argparse.Namespace):
     else:
         print("Operation cancelled.")
 
+def handle_add_installments(conn: sqlite3.Connection, args: argparse.Namespace):
+    """
+    Adds multiple transactions from a CSV file, designed to handle
+    pre-existing single installments using the provided creation date.
+    """
+    try:
+        with open(args.file_path, 'r', newline='') as f:
+            reader = csv.reader(f)
+            header = next(reader)
+            lines = list(reader)
+    except FileNotFoundError:
+        print(f"Error: File not found at {args.file_path}")
+        return
+    except StopIteration:
+        print(f"Error: CSV file at {args.file_path} is empty.")
+        return
+
+    console = Console()
+    print(f"Found {len(lines)} transactions to process from {args.file_path}...")
+    
+    processed_count = 0
+    for i, row in enumerate(lines):
+        try:
+            created_str, desc, acct, amt_str, curr_inst_str, total_inst_str = row
+        except ValueError:
+            console.print(f"\n[yellow]Skipping line {i+2}: Incorrect number of columns. Expected 6, got {len(row)}.[/yellow]")
+            continue
+
+        try:
+            transaction_date = datetime.strptime(created_str, '%m/%d/%y').date()
+            amount = float(amt_str)
+        except ValueError as e:
+            console.print(f"\n[red]Error parsing line {i+2}: {row} - Invalid date or amount. {e}[/red]")
+            continue
+
+        is_installment = curr_inst_str and total_inst_str
+        
+        console.print("\n--- New Transaction ---")
+        console.print(f"  Creation Date: {transaction_date.strftime('%Y-%m-%d')}")
+        console.print(f"  Description:   {desc}")
+        console.print(f"  Account:       {acct}")
+        console.print(f"  Amount:        {amount:.2f}")
+        if is_installment:
+            console.print(f"  Installment:   Starting from {curr_inst_str} of {total_inst_str}")
+        
+        confirm = input("Proceed to add this transaction? [Y/n/a] (Yes/No/Abort) ")
+
+        if confirm.lower() == 'y' or confirm == '':
+            request_data = {
+                "account": acct,
+                "description": desc,
+            }
+            if is_installment:
+                current_installment = int(curr_inst_str)
+                total_installments = int(total_inst_str)
+                
+                # Calculate the original total purchase amount.
+                original_total_amount = amount * total_installments
+                
+                # Calculate the number of remaining installments to create.
+                installments_to_create = total_installments - current_installment + 1
+                
+                request_data.update({
+                    "type": "installment",
+                    "total_amount": original_total_amount,
+                    "installments": installments_to_create,
+                    "start_from_installment": current_installment,
+                    "total_installments": total_installments
+                })
+            else:
+                request_data.update({
+                    "type": "simple",
+                    "amount": amount,
+                })
+            
+            try:
+                controller.process_transaction_request(conn, request_data, transaction_date=transaction_date)
+                console.print("[green]Transaction added successfully.[/green]")
+                processed_count += 1
+            except ValueError as e:
+                console.print(f"[red]Error processing transaction: {e}[/red]")
+
+        elif confirm.lower() == 'a':
+            print("Operation aborted by user.")
+            break
+        else:
+            print("Transaction skipped.")
+            
+    print("\nBatch processing finished.")
+    
+    if processed_count > 0:
+        controller.run_monthly_rollover(conn, date.today())
+
 def main():
     load_dotenv()
     # --- Database Setup ---
@@ -228,6 +322,10 @@ def main():
     # Add batch command
     add_batch_parser = subparsers.add_parser("add-batch", help="Add multiple transactions from a CSV file")
     add_batch_parser.add_argument("file_path", help="Path to the CSV file")
+
+    # Add installments command
+    add_installments_parser = subparsers.add_parser("add-installments", help="Add multiple pre-existing installments from a CSV file")
+    add_installments_parser.add_argument("file_path", help="Path to the CSV file")
 
     # Accounts command
     acc_parser = subparsers.add_parser("accounts", help="Manage accounts")
@@ -263,6 +361,8 @@ def main():
         handle_add(conn, args)
     elif args.command == "add-batch":
         handle_add_batch(conn, args)
+    elif args.command == "add-installments":
+        handle_add_installments(conn, args)
     elif args.command == "accounts":
         if args.subcommand == "list":
             handle_accounts_list(conn)
