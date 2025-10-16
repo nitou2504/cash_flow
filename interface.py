@@ -18,11 +18,11 @@ def view_transactions(conn: sqlite3.Connection):
     table.add_column("Date Created", style="dim")
     table.add_column("Description", style="bold")
     table.add_column("Account")
-    table.add_column("Amount", justify="right", style="yellow")
+    table.add_column("Amount", justify="right")
     table.add_column("Category")
     table.add_column("Budget")
     table.add_column("Status")
-    table.add_column("Running Balance", justify="right", style="green")
+    table.add_column("Running Balance", justify="right")
 
     last_month = None
     for t in transactions:
@@ -30,17 +30,23 @@ def view_transactions(conn: sqlite3.Connection):
         if last_month and current_month != last_month:
             table.add_section()
         
+        is_pending = t['status'] == 'pending'
+        row_style = "dim" if is_pending else ""
+        amount_style = "grey50" if is_pending else "yellow"
+        balance_style = "grey50" if is_pending else "green"
+
         table.add_row(
             str(t['id']),
             str(t['date_payed']),
             str(t['date_created']),
             t['description'],
             t['account'],
-            f"{t['amount']:.2f}",
+            f"[{amount_style}]{t['amount']:.2f}[/]",
             t['category'],
-            t.get('budget', ''),
+            t.get('budget', '') or '',
             t['status'],
-            f"{t['running_balance']:.2f}"
+            f"[{balance_style}]{t['running_balance']:.2f}[/]",
+            style=row_style
         )
         last_month = current_month
 

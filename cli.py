@@ -208,6 +208,14 @@ def handle_delete(conn: sqlite3.Connection, args: argparse.Namespace):
     else:
         print("Operation cancelled.")
 
+def handle_clear(conn: sqlite3.Connection, args: argparse.Namespace):
+    """Clears a pending transaction by its ID."""
+    transaction_id = args.transaction_id
+    try:
+        controller.process_transaction_clearance(conn, transaction_id)
+    except ValueError as e:
+        print(f"Error: {e}")
+
 def handle_add_installments(conn: sqlite3.Connection, args: argparse.Namespace):
     """
     Adds multiple transactions from a CSV file, designed to handle
@@ -354,6 +362,10 @@ def main():
     delete_parser = subparsers.add_parser("delete", help="Delete a transaction by its ID")
     delete_parser.add_argument("transaction_id", type=int, help="The ID of the transaction to delete")
 
+    # Clear command
+    clear_parser = subparsers.add_parser("clear", help="Clear a pending transaction by its ID")
+    clear_parser.add_argument("transaction_id", type=int, help="The ID of the transaction to clear")
+
     args = parser.parse_args()
 
     # --- Command Handling ---
@@ -376,6 +388,8 @@ def main():
         interface.export_transactions_to_csv(conn, args.file_path, args.with_balance)
     elif args.command == "delete":
         handle_delete(conn, args)
+    elif args.command == "clear":
+        handle_clear(conn, args)
 
     conn.close()
 
