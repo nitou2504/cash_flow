@@ -66,6 +66,10 @@ def _apply_expense_to_budget(conn: sqlite3.Connection, transaction: Dict[str, An
     """
     Finds or creates the correct budget allocation for an expense and updates its balance.
     """
+    # Do not apply pending transactions to any budget.
+    if transaction.get('status') == 'pending':
+        return
+
     # This is a critical safety measure: only negative amounts (expenses)
     # should ever be applied to a budget.
     if transaction['amount'] >= 0:
@@ -137,6 +141,7 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
                 transaction_date=effective_transaction_date,
                 grace_period_months=request.get("grace_period_months", 0),
                 is_income=request.get("is_income", False),
+                is_pending=request.get("is_pending", False),
             )
         )
     elif transaction_type == "installment":
@@ -166,6 +171,7 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
             start_from_installment=start_from,
             total_installments=total_installments,
             is_income=request.get("is_income", False),
+            is_pending=request.get("is_pending", False),
         )
     elif transaction_type == "split":
         new_transactions = transactions.create_split_transactions(
@@ -174,6 +180,7 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
             account=account,
             transaction_date=effective_transaction_date,
             is_income=request.get("is_income", False),
+            is_pending=request.get("is_pending", False),
         )
     else:
         raise ValueError(f"Invalid transaction type: {transaction_type}")
@@ -257,6 +264,31 @@ def process_transaction_deletion(conn: sqlite3.Connection, transaction_id: int):
     # If there was a budget, trigger a full recalculation
     if budget_id:
         _recalculate_and_update_budget(conn, budget_id, transaction_date)
+
+
+def process_transaction_clearance(conn: sqlite3.Connection, transaction_id: int):
+    """
+    Changes a transaction's status from 'pending' to 'committed' and
+    recalculates the corresponding budget.
+    """
+    transaction_to_clear = repository.get_transaction_by_id(conn, transaction_id)
+    if not transaction_to_clear:
+        raise ValueError(f"Transaction with ID {transaction_id} not found.")
+
+    if transaction_to_clear['status'] != 'pending':
+        print(f"Warning: Transaction {transaction_id} is not pending.")
+        return
+
+    # 1. Update the transaction status
+    repository.update_transaction(conn, transaction_id, {"status": "committed"})
+    print(f"Cleared transaction {transaction_id}.")
+
+    # 2. If it's linked to a budget, trigger a full recalculation for that budget
+    budget_id = transaction_to_clear.get("budget")
+    if budget_id:
+        transaction_date = transaction_to_clear.get("date_payed")
+        _recalculate_and_update_budget(conn, budget_id, transaction_date)
+        print(f"Recalculated budget '{budget_id}'.")
 
 
 def process_transaction_conversion(conn: sqlite3.Connection, transaction_id: int, conversion_details: Dict[str, Any]):

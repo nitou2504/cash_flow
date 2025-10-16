@@ -44,6 +44,7 @@ def _create_base_transaction(
     category: Optional[str],
     budget: Optional[str],
     transaction_date: date,
+    is_pending: bool = False,
 ) -> Dict[str, Any]:
     """
     A private factory function to construct the common fields for any transaction.
@@ -54,7 +55,7 @@ def _create_base_transaction(
         "amount": amount,
         "category": category,
         "budget": budget,
-        "status": "committed",
+        "status": "pending" if is_pending else "committed",
         "origin_id": None,
     }
 
@@ -67,13 +68,14 @@ def create_single_transaction(
     transaction_date: date,
     grace_period_months: int = 0,
     is_income: bool = False,
+    is_pending: bool = False,
 ) -> Dict[str, Any]:
     """
     Creates one complete transaction, handling logic for cash and credit cards.
     """
     final_amount = abs(amount) if is_income else -abs(amount)
     transaction = _create_base_transaction(
-        description, final_amount, category, budget, transaction_date
+        description, final_amount, category, budget, transaction_date, is_pending
     )
     transaction["account"] = account.get("account_id")
 
@@ -101,6 +103,7 @@ def create_installment_transactions(
     start_from_installment: int = 1,
     total_installments: Optional[int] = None,
     is_income: bool = False,
+    is_pending: bool = False,
 ) -> List[Dict[str, Any]]:
     """
     Generates a list of transactions for a purchase made in installments.
@@ -133,6 +136,7 @@ def create_installment_transactions(
             category=category,
             budget=budget,
             transaction_date=transaction_date, # The purchase date is the same for all
+            is_pending=is_pending,
         )
         transaction["account"] = account.get("account_id")
         transaction["origin_id"] = origin_id
@@ -154,6 +158,7 @@ def create_split_transactions(
     account: Dict[str, Any],
     transaction_date: date,
     is_income: bool = False,
+    is_pending: bool = False,
 ) -> List[Dict[str, Any]]:
     """
     Generates a list of transactions for a split purchase.
@@ -169,6 +174,7 @@ def create_split_transactions(
             account=account,
             transaction_date=transaction_date,
             is_income=is_income,
+            is_pending=is_pending,
         )
         transaction["origin_id"] = origin_id
         transactions.append(transaction)

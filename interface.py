@@ -15,6 +15,7 @@ def view_transactions(conn: sqlite3.Connection):
     table = Table(title="Cash Flow Transactions", show_header=True, header_style="bold magenta")
     table.add_column("ID", style="dim")
     table.add_column("Date Payed", style="cyan")
+    table.add_column("Date Created", style="dim")
     table.add_column("Description", style="bold")
     table.add_column("Account")
     table.add_column("Amount", justify="right", style="yellow")
@@ -32,6 +33,7 @@ def view_transactions(conn: sqlite3.Connection):
         table.add_row(
             str(t['id']),
             str(t['date_payed']),
+            str(t['date_created']),
             t['description'],
             t['account'],
             f"{t['amount']:.2f}",
