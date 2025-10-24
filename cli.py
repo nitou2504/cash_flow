@@ -353,6 +353,7 @@ def main():
     # View command
     view_parser = subparsers.add_parser("view", help="View transactions for the upcoming months")
     view_parser.add_argument("--months", type=int, default=3, help="Number of months to display (default: 3)")
+    view_parser.add_argument("--summary", action="store_true", help="Summarize credit card payments into single monthly entries")
 
     # Export command
     export_parser = subparsers.add_parser("export", help="Export transactions to CSV")
@@ -384,7 +385,7 @@ def main():
         elif args.subcommand == "add-natural":
             handle_accounts_add_natural(conn, args)
     elif args.command == "view":
-        interface.view_transactions(conn, args.months)
+        interface.view_transactions(conn, args.months, args.summary)
     elif args.command == "export":
         interface.export_transactions_to_csv(conn, args.file_path, args.with_balance)
     elif args.command == "delete":
