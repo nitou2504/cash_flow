@@ -207,32 +207,60 @@ def handle_edit(conn: sqlite3.Connection, args: argparse.Namespace):
 
 
 def handle_delete(conn: sqlite3.Connection, args: argparse.Namespace):
-    """Deletes a transaction by its ID."""
+    """Deletes a transaction or a group of transactions by ID."""
     transaction_id = args.transaction_id
-    
-    # Fetch the transaction to show details before deleting
-    transaction = repository.get_transaction_by_id(conn, transaction_id)
-    
-    if not transaction:
-        print(f"Error: Transaction with ID {transaction_id} not found.")
-        return
+    delete_group = args.all
 
     console = Console()
-    console.print("\n--- Transaction to Delete ---")
-    table = Table(show_header=False, box=None)
-    table.add_row("ID:", str(transaction['id']))
-    table.add_row("Date:", str(transaction['date_payed']))
-    table.add_row("Description:", transaction['description'])
-    table.add_row("Account:", transaction['account'])
-    table.add_row("Amount:", f"{transaction['amount']:.2f}")
-    console.print(table)
+    
+    try:
+        if delete_group:
+            # We need to import controller to use _get_transaction_group_info
+            group_info = controller._get_transaction_group_info(conn, transaction_id)
+            siblings = group_info.get("siblings", [])
+            if not siblings:
+                print(f"Error: No transactions found for group associated with ID {transaction_id}.")
+                return
 
-    confirm = input(f"\nAre you sure you want to permanently delete this transaction? [y/N] ")
-    if confirm.lower() == 'y':
-        controller.process_transaction_deletion(conn, transaction_id)
-        print(f"Successfully deleted transaction {transaction_id}.")
-    else:
-        print("Operation cancelled.")
+            console.print("\n--- Transaction Group to Delete ---")
+            table = Table(box=None)
+            table.add_column("ID")
+            table.add_column("Date")
+            table.add_column("Description")
+            table.add_column("Account")
+            table.add_column("Amount")
+            for t in siblings:
+                table.add_row(str(t['id']), str(t['date_payed']), t['description'], t['account'], f"{t['amount']:.2f}")
+            console.print(table)
+            
+            confirm_msg = f"\nAre you sure you want to permanently delete these {len(siblings)} transactions? [y/N] "
+
+        else:
+            transaction = repository.get_transaction_by_id(conn, transaction_id)
+            if not transaction:
+                print(f"Error: Transaction with ID {transaction_id} not found.")
+                return
+
+            console.print("\n--- Transaction to Delete ---")
+            table = Table(show_header=False, box=None)
+            table.add_row("ID:", str(transaction['id']))
+            table.add_row("Date:", str(transaction['date_payed']))
+            table.add_row("Description:", transaction['description'])
+            table.add_row("Account:", transaction['account'])
+            table.add_row("Amount:", f"{transaction['amount']:.2f}")
+            console.print(table)
+            
+            confirm_msg = f"\nAre you sure you want to permanently delete this transaction? [y/N] "
+
+        confirm = input(confirm_msg)
+        if confirm.lower() == 'y':
+            controller.process_transaction_deletion(conn, transaction_id, delete_group)
+            print(f"Successfully deleted transaction(s).")
+        else:
+            print("Operation cancelled.")
+
+    except ValueError as e:
+        print(f"Error: {e}")
 
 def handle_clear(conn: sqlite3.Connection, args: argparse.Namespace):
     """Clears a pending transaction by its ID."""
@@ -389,6 +417,7 @@ def main():
     # Delete command
     delete_parser = subparsers.add_parser("delete", help="Delete a transaction by its ID")
     delete_parser.add_argument("transaction_id", type=int, help="The ID of the transaction to delete")
+    delete_parser.add_argument("--all", action="store_true", help="Delete the entire transaction group (e.g., all installments)")
 
     # Edit command
     edit_parser = subparsers.add_parser("edit", help="Edit an existing transaction")

@@ -265,23 +265,38 @@ def process_transaction_update(conn: sqlite3.Connection, transaction_id: int, up
         _recalculate_and_update_budget(conn, budget_id, month_date)
 
 
-def process_transaction_deletion(conn: sqlite3.Connection, transaction_id: int):
+def process_transaction_deletion(conn: sqlite3.Connection, transaction_id: int, delete_group: bool = False):
     """
-    Deletes a transaction and correctly "returns" its value to any linked budget.
+    Deletes a transaction or a full group and correctly "returns" its value
+    to any linked budget.
     """
-    transaction_to_delete = repository.get_transaction_by_id(conn, transaction_id)
-    if not transaction_to_delete:
+    transactions_to_delete = []
+    budgets_to_recalculate = set()
+
+    if delete_group:
+        group_info = _get_transaction_group_info(conn, transaction_id)
+        transactions_to_delete = group_info.get("siblings", [])
+    else:
+        transaction = repository.get_transaction_by_id(conn, transaction_id)
+        if transaction:
+            transactions_to_delete.append(transaction)
+
+    if not transactions_to_delete:
+        print(f"Warning: No transactions found for ID {transaction_id}. Nothing to delete.")
         return
 
-    budget_id = transaction_to_delete.get("budget")
-    transaction_date = transaction_to_delete.get("date_payed")
+    # Collect all affected budgets before deleting
+    for t in transactions_to_delete:
+        if t.get("budget"):
+            budgets_to_recalculate.add((t["budget"], t["date_payed"]))
 
-    # Delete the transaction first
-    repository.delete_transaction(conn, transaction_id)
+    # Delete all identified transactions
+    for t in transactions_to_delete:
+        repository.delete_transaction(conn, t["id"])
 
-    # If there was a budget, trigger a full recalculation
-    if budget_id:
-        _recalculate_and_update_budget(conn, budget_id, transaction_date)
+    # After all deletions, trigger a full recalculation for each affected budget
+    for budget_id, month_date in budgets_to_recalculate:
+        _recalculate_and_update_budget(conn, budget_id, month_date)
 
 
 def process_transaction_clearance(conn: sqlite3.Connection, transaction_id: int):
