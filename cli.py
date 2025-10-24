@@ -180,6 +180,32 @@ def handle_add_batch(conn: sqlite3.Connection, args: argparse.Namespace):
     
     print("\nBatch processing finished.")
 
+def handle_edit(conn: sqlite3.Connection, args: argparse.Namespace):
+    """Handles the editing of a transaction."""
+    updates = {}
+    if args.description is not None:
+        updates["description"] = args.description
+    if args.amount is not None:
+        updates["amount"] = args.amount
+    if args.category is not None:
+        updates["category"] = args.category
+    if args.budget is not None:
+        updates["budget"] = args.budget
+    if args.status is not None:
+        updates["status"] = args.status
+
+    if not updates and not args.date:
+        print("No changes specified. Use --description, --amount, etc. to edit.")
+        return
+
+    try:
+        new_date = date.fromisoformat(args.date) if args.date else None
+        controller.process_transaction_edit(conn, args.transaction_id, updates, new_date)
+        print(f"Successfully updated transaction {args.transaction_id}.")
+    except (ValueError, sqlite3.Error) as e:
+        print(f"Error updating transaction: {e}")
+
+
 def handle_delete(conn: sqlite3.Connection, args: argparse.Namespace):
     """Deletes a transaction by its ID."""
     transaction_id = args.transaction_id
@@ -364,6 +390,16 @@ def main():
     delete_parser = subparsers.add_parser("delete", help="Delete a transaction by its ID")
     delete_parser.add_argument("transaction_id", type=int, help="The ID of the transaction to delete")
 
+    # Edit command
+    edit_parser = subparsers.add_parser("edit", help="Edit an existing transaction")
+    edit_parser.add_argument("transaction_id", type=int, help="The ID of the transaction to edit")
+    edit_parser.add_argument("--description", type=str, help="New description for the transaction")
+    edit_parser.add_argument("--amount", type=float, help="New amount for the transaction")
+    edit_parser.add_argument("--date", type=str, help="New creation date (YYYY-MM-DD) for the transaction")
+    edit_parser.add_argument("--category", type=str, help="New category for the transaction")
+    edit_parser.add_argument("--budget", type=str, help="New budget for the transaction")
+    edit_parser.add_argument("--status", type=str, choices=["committed", "pending", "planning", "forecast"], help="New status for the transaction")
+
     # Clear command
     clear_parser = subparsers.add_parser("clear", help="Clear a pending transaction by its ID")
     clear_parser.add_argument("transaction_id", type=int, help="The ID of the transaction to clear")
@@ -390,6 +426,8 @@ def main():
         interface.export_transactions_to_csv(conn, args.file_path, args.with_balance)
     elif args.command == "delete":
         handle_delete(conn, args)
+    elif args.command == "edit":
+        handle_edit(conn, args)
     elif args.command == "clear":
         handle_clear(conn, args)
 

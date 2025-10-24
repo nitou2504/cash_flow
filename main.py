@@ -142,6 +142,7 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
                 grace_period_months=request.get("grace_period_months", 0),
                 is_income=request.get("is_income", False),
                 is_pending=request.get("is_pending", False),
+                is_planning=request.get("is_planning", False),
             )
         )
     elif transaction_type == "installment":
@@ -172,6 +173,7 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
             total_installments=total_installments,
             is_income=request.get("is_income", False),
             is_pending=request.get("is_pending", False),
+            is_planning=request.get("is_planning", False),
         )
     elif transaction_type == "split":
         new_transactions = transactions.create_split_transactions(
@@ -181,6 +183,7 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
             transaction_date=effective_transaction_date,
             is_income=request.get("is_income", False),
             is_pending=request.get("is_pending", False),
+            is_planning=request.get("is_planning", False),
         )
     else:
         raise ValueError(f"Invalid transaction type: {transaction_type}")
@@ -216,6 +219,21 @@ def process_subscription_request(conn: sqlite3.Connection, subscription_data: Di
     horizon_str = repository.get_setting(conn, "forecast_horizon_months")
     horizon_months = int(horizon_str) if horizon_str else 6
     generate_forecasts(conn, horizon_months, from_date=subscription_data["start_date"])
+
+
+def process_transaction_edit(conn: sqlite3.Connection, transaction_id: int, updates: Dict[str, Any], new_date: date = None):
+    """
+    Orchestrates the editing of a transaction, deciding whether a simple update
+    or a full date change (delete and re-create) is necessary.
+    """
+    if new_date:
+        # If the date is changing, we must use the robust process that
+        # correctly recalculates budgets and payment dates across months.
+        process_transaction_date_update(conn, transaction_id, new_date, updates)
+    else:
+        # For any other change (amount, description, status, etc.), a direct
+        # update is sufficient.
+        process_transaction_update(conn, transaction_id, updates)
 
 
 def process_transaction_update(conn: sqlite3.Connection, transaction_id: int, updates: Dict[str, Any]):
@@ -491,12 +509,13 @@ def run_monthly_rollover(conn: sqlite3.Connection, process_date: date):
     print("Committed forecasts for the current month.")
 
 
-def process_transaction_date_update(conn: sqlite3.Connection, transaction_id: int, new_date: date):
+def process_transaction_date_update(conn: sqlite3.Connection, transaction_id: int, new_date: date, updates: Dict[str, Any] = None):
     """
     Handles the complex logic of changing a transaction's date, ensuring
     payment dates and budget allocations are correctly recalculated using a
-    "delete and re-create" pattern.
+    "delete and re-create" pattern. It can also apply other updates simultaneously.
     """
+    updates = updates or {}
     # 1. Identify the full transaction group
     group_info = _get_transaction_group_info(conn, transaction_id)
     
@@ -546,6 +565,9 @@ def process_transaction_date_update(conn: sqlite3.Connection, transaction_id: in
         recreation_context["type"] = "split"
         recreation_context["description"] = first_sibling["description"]
         recreation_context["splits"] = splits
+
+    # Apply any additional updates provided
+    recreation_context.update(updates)
 
     # 3. Heal: Identify affected budgets, delete old transactions, and recalculate
     budgets_to_heal = set()

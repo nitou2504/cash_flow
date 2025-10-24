@@ -41,6 +41,7 @@ Your output MUST be a single JSON object with a root-level `request_type` field,
 5.  **Date Logic:** Only include `date_created` if the user provides specific date information (e.g., 'yesterday', 'last Tuesday', 'on the 5th', 'each months 15th'). If NO DATE is mentioned, omit the field.
 - If a establishment or vendor name is mentioned, include it in the `description` field. Capitalize appropriately. E.g. "Amazon - School Supplies".
 7.  **Pending Logic:** If the user mentions 'pending', 'unconfirmed', 'not yet paid', 'waiting for', or similar terms, you MUST set `"is_pending": true`.
+8.  **Planning Logic:** If the user mentions 'plan for', 'planning', 'what if', 'tentative', or similar forward-looking, non-committed terms, you MUST set `"is_planning": true`.
 
 **Schema:**
 - `type`: (string) "simple", "installment", or "split".
@@ -56,6 +57,7 @@ Your output MUST be a single JSON object with a root-level `request_type` field,
 - `budget`: (string, optional) The budget this expense is linked to.
 - `is_income`: (boolean, optional) Set to true for income.
 - `is_pending`: (boolean, optional) Set to true for pending transactions.
+- `is_planning`: (boolean, optional) Set to true for planning/what-if scenarios.
 - `splits`: (array of objects, for "split" type only)
     - `amount`: (float) Amount for this part of the split.
     - `category`: (string) Category for this part.
@@ -174,6 +176,18 @@ User: "My friend owes me $25 for dinner, mark it as pending"
   "account": "Cash",
   "is_income": true,
   "is_pending": true
+}}
+
+User: "what if I buy a new TV for 800 next month on my Visa Produbanco"
+{{
+  "request_type": "transaction",
+  "type": "simple",
+  "description": "New TV",
+  "amount": 800,
+  "account": "Visa Produbanco",
+  "category": "electronics",
+  "is_planning": true,
+  "date_created": "2025-11-23"
 }}
 
 User: "I get a recurring monthly income of 1200 into my Cash account"

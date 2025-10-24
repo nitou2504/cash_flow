@@ -112,6 +112,8 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
             row_style, amount_style, balance_style = "dim", "grey50", "grey50"
         elif status == 'forecast':
             row_style, amount_style, balance_style = "italic", "cyan", "bright_blue"
+        elif status == 'planning':
+            row_style, amount_style, balance_style = "italic", "magenta", "magenta"
 
         table.add_row(
             str(t['id']), str(t['date_payed']), str(t['date_created']),
