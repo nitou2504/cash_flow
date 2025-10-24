@@ -67,7 +67,7 @@ Your output MUST be a single JSON object with a root-level `request_type` field,
 **Rules:**
 1.  You MUST generate a readable `id` from the name, prefixed with `sub_` or `budget_` (e.g., "Netflix" -> "sub_netflix", "Food Budget" -> "budget_food").
 2.  **`payment_account_id` is a mandatory field.** It must be one of the provided account names.
-3.  If the user's request mentions creating a "budget", you MUST set `"is_budget": true` and the `start_date` should be the 1st day of the relevant month.
+3.  If the user's request mentions creating a "budget", you MUST set `"is_budget": true` and the `start_date` should be the 1st day of the relevant month if no other date is provided.
 4.  If the user mentions recurring income or salary, you MUST set `"is_income": true`.
 5.  **Date Logic:** Only include `start_date` if the user provides date information (e.g., "next month", "starting September", "on the 5th"). If no date is mentioned, omit the field.
 
