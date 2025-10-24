@@ -1,18 +1,45 @@
 import sqlite3
 import csv
+from datetime import date
+from dateutil.relativedelta import relativedelta
 from rich.console import Console
 from rich.table import Table
 
 import repository
 
-def view_transactions(conn: sqlite3.Connection):
+def view_transactions(conn: sqlite3.Connection, months: int):
     """
-    Retrieves and displays all transactions in a formatted table,
-    with separators between months.
+    Retrieves and displays transactions for a given number of upcoming months.
     """
-    transactions = repository.get_transactions_with_running_balance(conn)
+    all_transactions = repository.get_transactions_with_running_balance(conn)
+
+    # --- Date Filtering ---
+    today = date.today()
+    # We want to show from the beginning of the current month
+    start_date = today.replace(day=1)
+    # And for the number of months specified
+    end_date = (start_date + relativedelta(months=months)) - relativedelta(days=1)
     
-    table = Table(title="Cash Flow Transactions", show_header=True, header_style="bold magenta")
+    # Filter transactions to show only the relevant period
+    transactions = [
+        t for t in all_transactions
+        if start_date <= t['date_payed'] <= end_date
+    ]
+    
+    # Find the running balance just before the start date to provide context
+    try:
+        last_transaction_before_period = next(
+            t for t in reversed(all_transactions) if t['date_payed'] < start_date
+        )
+        starting_balance = last_transaction_before_period['running_balance']
+    except StopIteration:
+        starting_balance = 0.0
+
+    table = Table(
+        title=f"Cash Flow: {today.strftime('%B %Y')} - {end_date.strftime('%B %Y')}",
+        show_header=True,
+        header_style="bold magenta"
+    )
     table.add_column("ID", style="dim")
     table.add_column("Date Payed", style="cyan")
     table.add_column("Date Created", style="dim")
@@ -24,16 +51,33 @@ def view_transactions(conn: sqlite3.Connection):
     table.add_column("Status")
     table.add_column("Running Balance", justify="right")
 
+    # Add a row for the starting balance
+    table.add_row(
+        "", "", "", "Starting Balance", "", "", "", "", "",
+        f"[bold green]{starting_balance:.2f}[/]"
+    )
+    table.add_section()
+
     last_month = None
     for t in transactions:
         current_month = t['date_payed'].strftime('%Y-%m')
         if last_month and current_month != last_month:
             table.add_section()
         
-        is_pending = t['status'] == 'pending'
-        row_style = "dim" if is_pending else ""
-        amount_style = "grey50" if is_pending else "yellow"
-        balance_style = "grey50" if is_pending else "green"
+        status = t['status']
+        
+        row_style = ""
+        amount_style = "yellow"
+        balance_style = "green"
+
+        if status == 'pending':
+            row_style = "dim"
+            amount_style = "grey50"
+            balance_style = "grey50"
+        elif status == 'forecast':
+            row_style = "italic"
+            amount_style = "cyan"
+            balance_style = "bright_blue"
 
         table.add_row(
             str(t['id']),

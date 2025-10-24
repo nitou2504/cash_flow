@@ -351,7 +351,8 @@ def main():
     acc_add_natural_parser.add_argument("description", help="The natural language description of the account")
 
     # View command
-    view_parser = subparsers.add_parser("view", help="View all transactions")
+    view_parser = subparsers.add_parser("view", help="View transactions for the upcoming months")
+    view_parser.add_argument("--months", type=int, default=3, help="Number of months to display (default: 3)")
 
     # Export command
     export_parser = subparsers.add_parser("export", help="Export transactions to CSV")
@@ -383,7 +384,7 @@ def main():
         elif args.subcommand == "add-natural":
             handle_accounts_add_natural(conn, args)
     elif args.command == "view":
-        interface.view_transactions(conn)
+        interface.view_transactions(conn, args.months)
     elif args.command == "export":
         interface.export_transactions_to_csv(conn, args.file_path, args.with_balance)
     elif args.command == "delete":
