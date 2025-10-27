@@ -7,7 +7,7 @@ from rich.table import Table
 
 import repository
 
-def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = False):
+def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = False, include_planning: bool = False):
     """
     Retrieves and displays transactions, with an optional summary mode for credit cards.
     """
@@ -23,9 +23,15 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
 
         summarized_payments = {}  # Key: (account, date_payed), Value: {'amount': float, 'statuses': set}
         other_transactions = []
+        planning_transactions = []
 
         for t in all_transactions:
             if t['account'] in credit_card_accounts:
+                # If not including planning in summary, separate them to be displayed individually
+                if not include_planning and t['status'] == 'planning':
+                    planning_transactions.append(t)
+                    continue
+
                 key = (t['account'], t['date_payed'])
                 if key not in summarized_payments:
                     summarized_payments[key] = {'amount': 0.0, 'statuses': set()}
@@ -41,6 +47,8 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
             status = 'forecast'
             if 'committed' in statuses: status = 'committed'
             elif 'pending' in statuses: status = 'pending'
+            elif 'planning' in statuses: status = 'planning'
+
 
             summary_trans = {
                 'id': '--', 'date_payed': date_payed, 'date_created': date_payed,
@@ -50,11 +58,12 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
             }
             summary_transactions.append(summary_trans)
             
-        combined = sorted(other_transactions + summary_transactions, key=lambda x: x['date_payed'])
+        combined = sorted(other_transactions + summary_transactions + planning_transactions, key=lambda x: x['date_payed'])
         
         running_balance = 0.0
         for t in combined:
-            if t["status"] != "pending":
+            # Planning transactions should not affect the running balance as they are not real cash movements
+            if t["status"] not in ["pending", "planning"]:
                 running_balance += t["amount"]
             t["running_balance"] = running_balance
             display_transactions.append(t)
