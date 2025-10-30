@@ -62,8 +62,9 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
         
         running_balance = 0.0
         for t in combined:
-            # Planning transactions should not affect the running balance as they are not real cash movements
-            if t["status"] not in ["pending", "planning"]:
+            # Pending transactions are not yet cleared and should not affect the running balance.
+            # Planning transactions should be included for forecasting purposes.
+            if t["status"] != "pending":
                 running_balance += t["amount"]
             t["running_balance"] = running_balance
             display_transactions.append(t)
