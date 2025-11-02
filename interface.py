@@ -74,6 +74,11 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
     today = date.today()
     start_date = today.replace(day=1)
     end_date = (start_date + relativedelta(months=months)) - relativedelta(days=1)
+
+    pending_from_past = [
+        t for t in display_transactions
+        if t['status'] == 'pending' and t['date_payed'] < start_date
+    ]
     
     transactions_in_period = [
         t for t in display_transactions
@@ -102,6 +107,22 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
     table.add_column("Budget")
     table.add_column("Status")
     table.add_column("Running Balance", justify="right")
+
+    if pending_from_past:
+        table.add_row(
+            "", "", "", "[bold yellow]Pending from Previous Months[/bold yellow]",
+            "", "", "", "", "", ""
+        )
+        for t in pending_from_past:
+            status = t['status']
+            row_style, amount_style, balance_style = "dim", "grey50", "grey50"
+            table.add_row(
+                str(t['id']), str(t['date_payed']), str(t['date_created']),
+                t['description'], t['account'], f"[{amount_style}]{t['amount']:.2f}[/]",
+                t['category'], t.get('budget', '') or '', t['status'],
+                f"[{balance_style}]{t['running_balance']:.2f}[/]", style=row_style
+            )
+        table.add_section()
 
     table.add_row(
         "", "", "", "Starting Balance", "", "", "", "", "",
