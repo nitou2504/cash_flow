@@ -6,7 +6,7 @@ from dateutil.relativedelta import relativedelta
 import google.generativeai as genai
 from typing import List, Dict, Any
 
-def parse_transaction_string(user_input: str, accounts: List[Dict[str, Any]]) -> Dict[str, Any]:
+def parse_transaction_string(user_input: str, accounts: List[Dict[str, Any]], budgets: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Uses the Gemini API to parse a natural language string into a structured
     JSON object for a transaction.
@@ -17,13 +17,14 @@ def parse_transaction_string(user_input: str, accounts: List[Dict[str, Any]]) ->
 
     # Prepare the list of valid account names for the prompt
     account_names = [acc['account_id'] for acc in accounts]
+    budget_names = [budget['name'] for budget in budgets]
 
     today = date.today()
     system_prompt = f"""
 You are an expert financial assistant. Your task is to parse a user's natural language input into a single, structured JSON object.
 You must first determine if the user is logging a one-time transaction or creating a recurring subscription/budget.
 
-**Today's Date is: {today.isoformat()}**
+**Today's Date is: {today.isoformat()} ({today.strftime('%A')})**
 
 **Primary Directive:**
 Your output MUST be a single JSON object with a root-level `request_type` field, which must be either "transaction" or "subscription".
@@ -34,14 +35,15 @@ Your output MUST be a single JSON object with a root-level `request_type` field,
 **Rules:**
 1.  The `type` field must be one of: "simple", "installment", or "split".
 2.  The `account` field MUST be one of the following valid account names: {account_names}, ensure no typos or variations.
-3.  **Installment Logic:** The `installments` field (the number of payments to create) is **mandatory** for this type.
+3.  The `budget` field, if used, MUST EXACTLY MATCH one of the following valid budget names: {budget_names}. Do not invent new budget names. If the user mentions a word that matches a budget name, assign it.
+4.  **Installment Logic:** The `installments` field (the number of payments to create) is **mandatory** for this type.
     - If the user gives a total number (e.g., "6 installments"), set `installments` to that number.
     - If the user gives a partial plan (e.g., "starting the 3rd of 12"), you MUST calculate the remaining payments and set `installments` to that value (e.g., `12 - 3 + 1 = 10`). You must also include `start_from_installment` and `total_installments` for context.
-4.  If the user mentions income, salary, current funds, or being paid, you MUST set `"is_income": true`. Otherwise, omit it or set it to false. Since the default assumption is an expense by the system.
-5.  **Date Logic:** Only include `date_created` if the user provides specific date information (e.g., 'yesterday', 'last Tuesday', 'on the 5th', 'each months 15th'). If NO DATE is mentioned, omit the field.
+5.  If the user mentions income, salary, current funds, or being paid, you MUST set `"is_income": true`. Otherwise, omit it or set it to false. Since the default assumption is an expense by the system.
+6.  **Date Logic:** Only include `date_created` if the user provides specific date information (e.g., 'yesterday', 'last Tuesday', 'on the 5th', 'each months 15th'). If NO DATE is mentioned, omit the field.
 - If a establishment or vendor name is mentioned, include it in the `description` field. Capitalize appropriately. E.g. "Amazon - School Supplies".
-7.  **Pending Logic:** If the user mentions 'pending', 'unconfirmed', 'not yet paid', 'waiting for', or similar terms, you MUST set `"is_pending": true`.
-8.  **Planning Logic:** If the user mentions 'plan for', 'planning', 'what if', 'tentative', or similar forward-looking, non-committed terms, you MUST set `"is_planning": true`.
+8.  **Pending Logic:** If the user mentions 'pending', 'unconfirmed', 'not yet paid', 'waiting for', or similar terms, you MUST set `"is_pending": true`.
+9.  **Planning Logic:** If the user mentions 'plan for', 'planning', 'what if', 'tentative', or similar forward-looking, non-committed terms, you MUST set `"is_planning": true`.
 
 **Schema:**
 - `type`: (string) "simple", "installment", or "split".
@@ -93,7 +95,19 @@ Your output MUST be a single JSON object with a root-level `request_type` field,
 ---
 **Examples:**
 
-User: "lunch at cafe 15.75 cash food budget"
+
+User: "Mercado groceries 20 cash last friday"
+{{
+  "request_type": "transaction",
+  "type": "simple",
+  "description": "Mercado groceries",
+  "amount": 20,
+  "account": "Cash",
+  "budget": "Mercado",
+  "date_created": "2025-11-07"
+}}
+
+User: "lunch at cafe 15.75 cash Food"
 {{
   "request_type": "transaction",
   "type": "simple",
@@ -101,7 +115,7 @@ User: "lunch at cafe 15.75 cash food budget"
   "amount": 15.75,
   "account": "Cash",
   "category": "dining",
-  "budget": "food"
+  "budget": "Food"
 }}
 
 User: "bought a 600 bike last month on the 29th in 3 installments on visa"

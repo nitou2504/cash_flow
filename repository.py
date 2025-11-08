@@ -320,6 +320,16 @@ def get_all_accounts(conn: Connection) -> List[Dict[str, Any]]:
     return [dict(row) for row in accounts]
 
 
+def get_all_budgets(conn: Connection) -> List[Dict[str, Any]]:
+    """
+    Retrieves all subscriptions that are marked as budgets.
+    """
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM subscriptions WHERE is_budget = 1 ORDER BY name")
+    budgets = cursor.fetchall()
+    return [dict(row) for row in budgets]
+
+
 def add_account(conn: Connection, account_id: str, account_type: str, cut_off_day: int = None, payment_day: int = None):
     """
     Inserts a new account into the accounts table.

@@ -1,13 +1,13 @@
 import sqlite3
 import csv
-from datetime import date
+from datetime import date, datetime
 from dateutil.relativedelta import relativedelta
 from rich.console import Console
 from rich.table import Table
 
 import repository
 
-def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = False, include_planning: bool = False):
+def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = False, include_planning: bool = False, start_from: str = None):
     """
     Retrieves and displays transactions, with an optional summary mode for credit cards.
     """
@@ -73,6 +73,17 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
     # --- Date Filtering ---
     today = date.today()
     start_date = today.replace(day=1)
+
+    if start_from:
+        try:
+            # Parse YYYY-MM and ensure it's the first of the month
+            start_date = datetime.strptime(start_from, '%Y-%m').date().replace(day=1)
+        except ValueError:
+            # Using Console for rich printing
+            console = Console()
+            console.print(f"[red]Error: Invalid date format for --from. Please use YYYY-MM. Defaulting to current month.[/red]")
+            # Keep default start_date which is already set
+
     end_date = (start_date + relativedelta(months=months)) - relativedelta(days=1)
 
     pending_from_past = [
@@ -130,16 +141,25 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
     )
     table.add_section()
 
+    budgets = repository.get_all_budgets(conn)
+    budget_ids = {b['id'] for b in budgets}
+
     last_month = None
     for t in transactions_in_period:
         current_month = t['date_payed'].strftime('%Y-%m')
         if last_month and current_month != last_month:
             table.add_section()
         
+        is_budget_allocation = t.get('origin_id') in budget_ids and t.get('budget') == t.get('origin_id')
+        
         status = t['status']
         row_style, amount_style, balance_style = "", "yellow", "green"
 
-        if status == 'pending':
+        if is_budget_allocation:
+            row_style = "bold blue"
+            amount_style = "bold blue"
+            balance_style = "green"
+        elif status == 'pending':
             row_style, amount_style, balance_style = "dim", "grey50", "grey50"
         elif status == 'forecast':
             row_style, amount_style, balance_style = "italic", "cyan", "bright_blue"

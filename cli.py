@@ -80,8 +80,10 @@ def handle_add(conn: sqlite3.Connection, args: argparse.Namespace):
         print("Error: No accounts found. Please add an account first using 'accounts add'.")
         return
 
+    budgets = repository.get_all_budgets(conn)
+
     print("Parsing your request with the LLM...")
-    request_json = llm_parser.parse_transaction_string(args.description, accounts)
+    request_json = llm_parser.parse_transaction_string(args.description, accounts, budgets)
 
     if request_json:
         console = Console()
@@ -93,6 +95,22 @@ def handle_add(conn: sqlite3.Connection, args: argparse.Namespace):
         if confirm.lower() == 'y' or confirm == '':
             request_type = request_json.get("request_type")
             if request_type == "transaction":
+                # --- Budget Name to ID Conversion ---
+                budget_name_to_id_map = {b['name']: b['id'] for b in budgets}
+                
+                # For simple and installment transactions
+                if 'budget' in request_json and request_json['budget'] in budget_name_to_id_map:
+                    budget_name = request_json['budget']
+                    request_json['budget'] = budget_name_to_id_map[budget_name]
+                
+                # For split transactions
+                if request_json.get('type') == 'split' and 'splits' in request_json:
+                    for split in request_json['splits']:
+                        if 'budget' in split and split['budget'] in budget_name_to_id_map:
+                            budget_name = split['budget']
+                            split['budget'] = budget_name_to_id_map[budget_name]
+                # --- End Conversion ---
+
                 transaction_date = None
                 if "date_created" in request_json:
                     transaction_date = date.fromisoformat(request_json["date_created"])
@@ -407,6 +425,7 @@ def main():
     # View command
     view_parser = subparsers.add_parser("view", help="View transactions for the upcoming months")
     view_parser.add_argument("--months", type=int, default=3, help="Number of months to display (default: 3)")
+    view_parser.add_argument("--from", dest="start_from", type=str, help="The starting month to display (e.g., '2025-10')")
     view_parser.add_argument("--summary", action="store_true", help="Summarize credit card payments into single monthly entries")
     view_parser.add_argument("--include-planning", action="store_true", help="Include 'planning' transactions in the summary totals")
 
@@ -451,7 +470,7 @@ def main():
         elif args.subcommand == "add-natural":
             handle_accounts_add_natural(conn, args)
     elif args.command == "view":
-        interface.view_transactions(conn, args.months, args.summary, args.include_planning)
+        interface.view_transactions(conn, args.months, args.summary, args.include_planning, args.start_from)
     elif args.command == "export":
         interface.export_transactions_to_csv(conn, args.file_path, args.with_balance)
     elif args.command == "delete":
