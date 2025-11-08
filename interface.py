@@ -109,9 +109,9 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
         show_header=True, header_style="bold magenta"
     )
     table.add_column("ID", style="dim")
-    table.add_column("Date Payed", style="cyan")
+    table.add_column("Date Payed")
     table.add_column("Date Created", style="dim")
-    table.add_column("Description", style="bold")
+    table.add_column("Description")
     table.add_column("Account")
     table.add_column("Amount", justify="right")
     table.add_column("Category")
@@ -125,13 +125,11 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
             "", "", "", "", "", ""
         )
         for t in pending_from_past:
-            status = t['status']
-            row_style, amount_style, balance_style = "dim", "grey50", "grey50"
             table.add_row(
                 str(t['id']), str(t['date_payed']), str(t['date_created']),
-                t['description'], t['account'], f"[{amount_style}]{t['amount']:.2f}[/]",
+                t['description'], t['account'], f"{t['amount']:.2f}",
                 t['category'], t.get('budget', '') or '', t['status'],
-                f"[{balance_style}]{t['running_balance']:.2f}[/]", style=row_style
+                f"{t['running_balance']:.2f}", style="grey50"
             )
         table.add_section()
 
@@ -151,26 +149,23 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
             table.add_section()
         
         is_budget_allocation = t.get('origin_id') in budget_ids and t.get('budget') == t.get('origin_id')
-        
         status = t['status']
-        row_style, amount_style, balance_style = "", "yellow", "green"
+        row_style = "" # Default style for committed transactions
 
         if is_budget_allocation:
-            row_style = "bold blue"
-            amount_style = "bold blue"
-            balance_style = "green"
+            row_style = "blue"
         elif status == 'pending':
-            row_style, amount_style, balance_style = "dim", "grey50", "grey50"
+            row_style = "grey50"
         elif status == 'forecast':
-            row_style, amount_style, balance_style = "italic", "cyan", "bright_blue"
+            row_style = "italic"
         elif status == 'planning':
-            row_style, amount_style, balance_style = "italic", "magenta", "magenta"
+            row_style = "italic magenta"
 
         table.add_row(
             str(t['id']), str(t['date_payed']), str(t['date_created']),
-            t['description'], t['account'], f"[{amount_style}]{t['amount']:.2f}[/]",
+            t['description'], t['account'], f"{t['amount']:.2f}",
             t['category'], t.get('budget', '') or '', t['status'],
-            f"[{balance_style}]{t['running_balance']:.2f}[/]", style=row_style
+            f"{t['running_balance']:.2f}", style=row_style
         )
         last_month = current_month
 
