@@ -281,7 +281,7 @@ def handle_delete(conn: sqlite3.Connection, args: argparse.Namespace):
         print(f"Error: {e}")
 
 def handle_clear(conn: sqlite3.Connection, args: argparse.Namespace):
-    """Clears a pending transaction by its ID."""
+    """Clears a pending or planning transaction by its ID, committing it."""
     transaction_id = args.transaction_id
     try:
         controller.process_transaction_clearance(conn, transaction_id)
@@ -450,7 +450,7 @@ def main():
     edit_parser.add_argument("--status", type=str, choices=["committed", "pending", "planning", "forecast"], help="New status for the transaction")
 
     # Clear command
-    clear_parser = subparsers.add_parser("clear", help="Clear a pending transaction by its ID")
+    clear_parser = subparsers.add_parser("clear", help="Commits a pending or planning transaction by its ID")
     clear_parser.add_argument("transaction_id", type=int, help="The ID of the transaction to clear")
 
     args = parser.parse_args()

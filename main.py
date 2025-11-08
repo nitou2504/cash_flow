@@ -301,20 +301,20 @@ def process_transaction_deletion(conn: sqlite3.Connection, transaction_id: int, 
 
 def process_transaction_clearance(conn: sqlite3.Connection, transaction_id: int):
     """
-    Changes a transaction's status from 'pending' to 'committed' and
-    recalculates the corresponding budget.
+    Changes a transaction's status from 'pending' or 'planning' to 'committed'
+    and recalculates the corresponding budget.
     """
     transaction_to_clear = repository.get_transaction_by_id(conn, transaction_id)
     if not transaction_to_clear:
         raise ValueError(f"Transaction with ID {transaction_id} not found.")
 
-    if transaction_to_clear['status'] != 'pending':
-        print(f"Warning: Transaction {transaction_id} is not pending.")
+    if transaction_to_clear['status'] not in ['pending', 'planning']:
+        print(f"Warning: Transaction {transaction_id} has status '{transaction_to_clear['status']}' and cannot be cleared.")
         return
 
     # 1. Update the transaction status
     repository.update_transaction(conn, transaction_id, {"status": "committed"})
-    print(f"Cleared transaction {transaction_id}.")
+    print(f"Cleared transaction {transaction_id} (status changed to 'committed').")
 
     # 2. If it's linked to a budget, trigger a full recalculation for that budget
     budget_id = transaction_to_clear.get("budget")
