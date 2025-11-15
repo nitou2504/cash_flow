@@ -73,6 +73,52 @@ def handle_accounts_add_natural(conn: sqlite3.Connection, args: argparse.Namespa
         else:
             print("Operation cancelled.")
 
+def handle_categories_list(conn: sqlite3.Connection):
+    """Displays a list of all valid categories."""
+    categories = repository.get_all_categories(conn)
+    table = Table(title="Valid Categories")
+    table.add_column("Category Name", style="bold")
+    table.add_column("Description")
+
+    for cat in categories:
+        table.add_row(cat['name'], cat['description'])
+
+    console = Console()
+    console.print(table)
+
+def handle_categories_add(conn: sqlite3.Connection, args: argparse.Namespace):
+    """Adds a new category manually."""
+    try:
+        repository.add_category(conn, args.name, args.description)
+        print(f"Successfully added category: {args.name}")
+    except ValueError as e:
+        print(f"Error: {e}")
+
+def handle_categories_edit(conn: sqlite3.Connection, args: argparse.Namespace):
+    """Edits the description of an existing category."""
+    try:
+        repository.update_category(conn, args.name, args.description)
+        print(f"Successfully updated category: {args.name}")
+    except ValueError as e:
+        print(f"Error: {e}")
+
+def handle_categories_delete(conn: sqlite3.Connection, args: argparse.Namespace):
+    """Deletes a category."""
+    try:
+        # Validate category exists before asking for confirmation
+        if not repository.category_exists(conn, args.name):
+            print(f"Error: Category '{args.name}' does not exist.")
+            return
+
+        confirm = input(f"Are you sure you want to delete category '{args.name}'? [y/N] ")
+        if confirm.lower() == 'y':
+            repository.delete_category(conn, args.name)
+            print(f"Successfully deleted category: {args.name}")
+        else:
+            print("Operation cancelled.")
+    except ValueError as e:
+        print(f"Error: {e}")
+
 def handle_add(conn: sqlite3.Connection, args: argparse.Namespace):
     """Parses a natural language string to add a transaction, subscription, or budget."""
     accounts = repository.get_all_accounts(conn)
@@ -83,7 +129,7 @@ def handle_add(conn: sqlite3.Connection, args: argparse.Namespace):
     budgets = repository.get_all_budgets(conn)
 
     print("Parsing your request with the LLM...")
-    request_json = llm_parser.parse_transaction_string(args.description, accounts, budgets)
+    request_json = llm_parser.parse_transaction_string(conn, args.description, accounts, budgets)
 
     if request_json:
         console = Console()
@@ -422,6 +468,23 @@ def main():
     acc_add_natural_parser = acc_subparsers.add_parser("add-natural", help="Add a new account using natural language")
     acc_add_natural_parser.add_argument("description", help="The natural language description of the account")
 
+    # Categories command
+    cat_parser = subparsers.add_parser("categories", help="Manage categories")
+    cat_subparsers = cat_parser.add_subparsers(dest="subcommand", required=True)
+
+    cat_list_parser = cat_subparsers.add_parser("list", help="List all valid categories")
+
+    cat_add_parser = cat_subparsers.add_parser("add", help="Add a new category manually")
+    cat_add_parser.add_argument("name", help="The name of the category")
+    cat_add_parser.add_argument("description", help="A description of what this category covers")
+
+    cat_edit_parser = cat_subparsers.add_parser("edit", help="Edit an existing category's description")
+    cat_edit_parser.add_argument("name", help="The name of the category to edit")
+    cat_edit_parser.add_argument("description", help="The new description for this category")
+
+    cat_delete_parser = cat_subparsers.add_parser("delete", help="Delete a category")
+    cat_delete_parser.add_argument("name", help="The name of the category to delete")
+
     # View command
     view_parser = subparsers.add_parser("view", help="View transactions for the upcoming months")
     view_parser.add_argument("--months", type=int, default=3, help="Number of months to display (default: 3)")
@@ -469,6 +532,15 @@ def main():
             handle_accounts_add_manual(conn, args)
         elif args.subcommand == "add-natural":
             handle_accounts_add_natural(conn, args)
+    elif args.command == "categories":
+        if args.subcommand == "list":
+            handle_categories_list(conn)
+        elif args.subcommand == "add":
+            handle_categories_add(conn, args)
+        elif args.subcommand == "edit":
+            handle_categories_edit(conn, args)
+        elif args.subcommand == "delete":
+            handle_categories_delete(conn, args)
     elif args.command == "view":
         interface.view_transactions(conn, args.months, args.summary, args.include_planning, args.start_from)
     elif args.command == "export":

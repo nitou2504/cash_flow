@@ -338,3 +338,68 @@ def add_account(conn: Connection, account_id: str, account_type: str, cut_off_da
     query = "INSERT OR IGNORE INTO accounts (account_id, account_type, cut_off_day, payment_day) VALUES (?, ?, ?, ?)"
     cursor.execute(query, (account_id, account_type, cut_off_day, payment_day))
     conn.commit()
+
+
+def get_all_categories(conn: Connection) -> List[Dict[str, Any]]:
+    """
+    Retrieves all categories from the database.
+    """
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM categories ORDER BY name")
+    categories = cursor.fetchall()
+    return [dict(row) for row in categories]
+
+
+def category_exists(conn: Connection, category_name: str) -> bool:
+    """
+    Checks if a category exists in the database.
+    Returns True if found, False otherwise.
+    """
+    if category_name is None:
+        return True  # Allow None/null categories
+
+    cursor = conn.cursor()
+    cursor.execute("SELECT 1 FROM categories WHERE name = ?", (category_name,))
+    return cursor.fetchone() is not None
+
+
+def add_category(conn: Connection, name: str, description: str):
+    """
+    Inserts a new category into the categories table.
+    Raises ValueError if the category already exists.
+    """
+    if category_exists(conn, name):
+        raise ValueError(f"Category '{name}' already exists.")
+
+    cursor = conn.cursor()
+    query = "INSERT INTO categories (name, description) VALUES (?, ?)"
+    cursor.execute(query, (name, description))
+    conn.commit()
+
+
+def update_category(conn: Connection, name: str, new_description: str):
+    """
+    Updates the description of an existing category.
+    Raises ValueError if the category doesn't exist.
+    """
+    if not category_exists(conn, name):
+        raise ValueError(f"Category '{name}' does not exist.")
+
+    cursor = conn.cursor()
+    query = "UPDATE categories SET description = ? WHERE name = ?"
+    cursor.execute(query, (new_description, name))
+    conn.commit()
+
+
+def delete_category(conn: Connection, name: str):
+    """
+    Deletes a category from the categories table.
+    Raises ValueError if the category doesn't exist.
+    """
+    if not category_exists(conn, name):
+        raise ValueError(f"Category '{name}' does not exist.")
+
+    cursor = conn.cursor()
+    query = "DELETE FROM categories WHERE name = ?"
+    cursor.execute(query, (name,))
+    conn.commit()

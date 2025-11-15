@@ -5,8 +5,10 @@ from datetime import date
 from dateutil.relativedelta import relativedelta
 import google.generativeai as genai
 from typing import List, Dict, Any
+from sqlite3 import Connection
+import repository
 
-def parse_transaction_string(user_input: str, accounts: List[Dict[str, Any]], budgets: List[Dict[str, Any]]) -> Dict[str, Any]:
+def parse_transaction_string(conn: Connection, user_input: str, accounts: List[Dict[str, Any]], budgets: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Uses the Gemini API to parse a natural language string into a structured
     JSON object for a transaction.
@@ -15,9 +17,11 @@ def parse_transaction_string(user_input: str, accounts: List[Dict[str, Any]], bu
     if not api_key:
         raise ValueError("GEMINI_API_KEY environment variable not set.")
 
-    # Prepare the list of valid account names for the prompt
+    # Prepare the list of valid account names, budgets, and categories for the prompt
     account_names = [acc['account_id'] for acc in accounts]
     budget_names = [budget['name'] for budget in budgets]
+    categories = repository.get_all_categories(conn)
+    category_names = [cat['name'] for cat in categories]
 
     today = date.today()
     system_prompt = f"""
@@ -35,15 +39,16 @@ Your output MUST be a single JSON object with a root-level `request_type` field,
 **Rules:**
 1.  The `type` field must be one of: "simple", "installment", or "split".
 2.  The `account` field MUST be one of the following valid account names: {account_names}, ensure no typos or variations.
-3.  The `budget` field, if used, MUST EXACTLY MATCH one of the following valid budget names: {budget_names}. Do not invent new budget names. If the user mentions a word that matches a budget name, assign it.
-4.  **Installment Logic:** The `installments` field (the number of payments to create) is **mandatory** for this type.
+3.  The `category` field is MANDATORY and MUST EXACTLY MATCH one of the following valid categories: {category_names}. Do not invent new categories. Always select the most appropriate category from this list.
+4.  The `budget` field, if used, MUST EXACTLY MATCH one of the following valid budget names: {budget_names}. Do not invent new budget names. If the user mentions a word that matches a budget name, assign it.
+5.  **Installment Logic:** The `installments` field (the number of payments to create) is **mandatory** for this type.
     - If the user gives a total number (e.g., "6 installments"), set `installments` to that number.
     - If the user gives a partial plan (e.g., "starting the 3rd of 12"), you MUST calculate the remaining payments and set `installments` to that value (e.g., `12 - 3 + 1 = 10`). You must also include `start_from_installment` and `total_installments` for context.
-5.  If the user mentions income, salary, current funds, or being paid, you MUST set `"is_income": true`. Otherwise, omit it or set it to false. Since the default assumption is an expense by the system.
-6.  **Date Logic:** Only include `date_created` if the user provides specific date information (e.g., 'yesterday', 'last Tuesday', 'on the 5th', 'each months 15th'). If NO DATE is mentioned, omit the field.
-- If a establishment or vendor name is mentioned, include it in the `description` field. Capitalize appropriately. E.g. "Amazon - School Supplies".
-8.  **Pending Logic:** If the user mentions 'pending', 'unconfirmed', 'not yet paid', 'waiting for', or similar terms, you MUST set `"is_pending": true`.
-9.  **Planning Logic:** If the user mentions 'plan for', 'planning', 'what if', 'tentative', or similar forward-looking, non-committed terms, you MUST set `"is_planning": true`.
+6.  If the user mentions income, salary, current funds, or being paid, you MUST set `"is_income": true`. Otherwise, omit it or set it to false. Since the default assumption is an expense by the system.
+7.  **Date Logic:** Only include `date_created` if the user provides specific date information (e.g., 'yesterday', 'last Tuesday', 'on the 5th', 'each months 15th'). If NO DATE is mentioned, omit the field.
+8.  If a establishment or vendor name is mentioned, include it in the `description` field. Capitalize appropriately. E.g. "Amazon - School Supplies".
+9.  **Pending Logic:** If the user mentions 'pending', 'unconfirmed', 'not yet paid', 'waiting for', or similar terms, you MUST set `"is_pending": true`.
+10. **Planning Logic:** If the user mentions 'plan for', 'planning', 'what if', 'tentative', or similar forward-looking, non-committed terms, you MUST set `"is_planning": true`.
 
 **Schema:**
 - `type`: (string) "simple", "installment", or "split".
@@ -55,14 +60,14 @@ Your output MUST be a single JSON object with a root-level `request_type` field,
 - `start_from_installment`: (int, optional) For existing installment plans.
 - `total_installments`: (int, optional) For existing installment plans.
 - `account`: (string) The account name. Must be one of {account_names}.
-- `category`: (string, optional) The category of the expense.
+- `category`: (string, REQUIRED) The category of the transaction. Must be one of {category_names}.
 - `budget`: (string, optional) The budget this expense is linked to.
 - `is_income`: (boolean, optional) Set to true for income.
 - `is_pending`: (boolean, optional) Set to true for pending transactions.
 - `is_planning`: (boolean, optional) Set to true for planning/what-if scenarios.
 - `splits`: (array of objects, for "split" type only)
     - `amount`: (float) Amount for this part of the split.
-    - `category`: (string) Category for this part.
+    - `category`: (string, REQUIRED) Category for this part. Must be one of {category_names}.
     - `budget`: (string, optional) Budget for this part.
 
 ---
@@ -114,7 +119,7 @@ User: "lunch at cafe 15.75 cash Food"
   "description": "Lunch at cafe",
   "amount": 15.75,
   "account": "Cash",
-  "category": "dining",
+  "category": "Dining-Snacks",
   "budget": "Food"
 }}
 
@@ -126,7 +131,7 @@ User: "bought a 600 bike last month on the 29th in 3 installments on visa"
   "total_amount": 600,
   "installments": 3,
   "account": "Visa Produbanco",
-  "category": "sports",
+  "category": "Personal",
   "date_created": "2025-09-29"
 }}
 
@@ -137,8 +142,8 @@ User: "Grocery store amex produbanco 80 for groceries on the food budget and 15 
   "description": "Grocery Store",
   "account": "Amex Produbanco",
   "splits": [
-    {{ "amount": 80, "category": "groceries", "budget": "food" }},
-    {{ "amount": 15, "category": "household", "budget": "home" }}
+    {{ "amount": 80, "category": "Home Groceries", "budget": "food" }},
+    {{ "amount": 15, "category": "Home Groceries", "budget": "home" }}
   ]
 }}
 
@@ -199,7 +204,7 @@ User: "what if I buy a new TV for 800 next month on my Visa Produbanco"
   "description": "New TV",
   "amount": 800,
   "account": "Visa Produbanco",
-  "category": "electronics",
+  "category": "Personal",
   "is_planning": true,
   "date_created": "2025-11-23"
 }}
@@ -210,7 +215,7 @@ User: "I get a recurring monthly income of 1200 into my Cash account"
   "details": {{
     "id": "sub_recurrent_income",
     "name": "Recurrent Income",
-    "category": "income",
+    "category": "Income",
     "monthly_amount": 1200.0,
     "payment_account_id": "Cash",
     "is_income": true

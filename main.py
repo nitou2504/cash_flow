@@ -121,10 +121,22 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
     """
     transaction_type = request.get("type")
     account_name = request.get("account")
-    
+
     account = repository.get_account_by_name(conn, account_name)
     if not account:
         raise ValueError(f"Account '{account_name}' not found.")
+
+    # Validate categories if provided
+    category = request.get("category")
+    if category and not repository.category_exists(conn, category):
+        raise ValueError(f"Invalid category '{category}'. Use 'categories list' to see valid options.")
+
+    # For split transactions, validate each split's category
+    if transaction_type == "split" and "splits" in request:
+        for split in request["splits"]:
+            split_category = split.get("category")
+            if split_category and not repository.category_exists(conn, split_category):
+                raise ValueError(f"Invalid category '{split_category}' in split. Use 'categories list' to see valid options.")
 
     # Use the provided date or default to today
     effective_transaction_date = transaction_date or date.today()

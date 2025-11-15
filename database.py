@@ -72,6 +72,12 @@ def create_tables(conn: Connection):
             value TEXT NOT NULL
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS categories (
+            name TEXT PRIMARY KEY,
+            description TEXT NOT NULL
+        )
+    """)
     conn.commit()
 
 def insert_mock_data(conn: Connection):
@@ -87,6 +93,28 @@ def insert_mock_data(conn: Connection):
     cursor.executemany("INSERT OR IGNORE INTO accounts VALUES (?, ?, ?, ?)", accounts)
     conn.commit()
 
+def initialize_categories(conn: Connection):
+    """
+    Populates the 'categories' table with the predefined set of categories.
+    Uses INSERT OR IGNORE to safely work with existing databases.
+    """
+    cursor = conn.cursor()
+    categories = [
+        ("Housing", "Rent, mortgage, utilities, and home maintenance"),
+        ("Home Groceries", "Food and household items for home"),
+        ("Personal Groceries", "Food for personal diet or specific needs"),
+        ("Dining-Snacks", "Eating out, takeout, coffee, and social food/drinks"),
+        ("Transportation", "Costs for getting around"),
+        ("Health", "Medical, insurance, and fitness expenses"),
+        ("Personal", "Discretionary spending, entertainment, hobbies, self-care"),
+        ("Income", "Money received from work or investments"),
+        ("Savings", "Funds for savings or investments"),
+        ("Loans", "Money lent to others and repayments received"),
+        ("Others", "Miscellaneous or infrequent expenses"),
+    ]
+    cursor.executemany("INSERT OR IGNORE INTO categories VALUES (?, ?)", categories)
+    conn.commit()
+
 def initialize_database(db_path: str = "cash_flow.db"):
     """
     A master function that ensures the database and its tables exist.
@@ -94,14 +122,17 @@ def initialize_database(db_path: str = "cash_flow.db"):
     """
     conn = create_connection(db_path)
     create_tables(conn)
-    
+
     # Insert default settings
     cursor = conn.cursor()
     settings = [
         ("forecast_horizon_months", "6")
     ]
     cursor.executemany("INSERT OR IGNORE INTO settings VALUES (?, ?)", settings)
-    
+
+    # Initialize predefined categories
+    initialize_categories(conn)
+
     conn.commit()
     conn.close()
     print("Database initialized successfully.")
