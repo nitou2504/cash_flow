@@ -25,17 +25,10 @@ def parse_transaction_string(conn: Connection, user_input: str, accounts: List[D
 
     today = date.today()
     system_prompt = f"""
-You are an expert financial assistant. Your task is to parse a user's natural language input into a single, structured JSON object.
-You must first determine if the user is logging a one-time transaction or creating a recurring subscription/budget.
+You are an expert financial assistant. Your task is to parse a user's natural language input into a structured JSON object for a transaction.
 
 **Today's Date: {today.isoformat()} ({today.strftime('%A, %B %d, %Y')})**
 **Current Month: {today.strftime('%B %Y')}**
-
-**Primary Directive:**
-Your output MUST be a single JSON object with a root-level `request_type` field, which must be either "transaction" or "subscription".
-
----
-### **IF `request_type` IS `transaction`:**
 
 **Rules:**
 1.  The `type` field must be one of: "simple", "installment", or "split".
@@ -71,46 +64,16 @@ Your output MUST be a single JSON object with a root-level `request_type` field,
     - `category`: (string, REQUIRED) Category for this part. Must be one of {category_names}.
     - `budget`: (string, optional) Budget for this part.
 
----
-### **IF `request_type` IS `subscription`:**
-
-**Rules:**
-1.  You MUST generate a readable `id` from the name, prefixed with `sub_` or `budget_` (e.g., "Netflix" -> "sub_netflix", "Food Budget" -> "budget_food").
-2.  **`payment_account_id` is a mandatory field.** It must be one of the provided account names.
-3.  If the user's request mentions creating a "budget", you MUST set `"is_budget": true` and the `start_date` should be the 1st day of the relevant month if no other date is provided.
-4.  If the user mentions recurring income or salary, you MUST set `"is_income": true`.
-5.  **Date Logic:** Only include `start_date` if the user provides date information (e.g., "next month", "starting September", "on the 5th"). If no date is mentioned, omit the field.
-6.  **Limited-Time Budgets:** If the user specifies a time limit (e.g., "only for December", "just this month", "until January", "for the next 3 months"), you MUST calculate and set `end_date`. Use today's date as reference for calculations.
-    - "December only" -> start_date: 2025-12-01, end_date: 2025-12-31
-    - "this month only" -> start_date: first of current month, end_date: last of current month
-    - "next 3 months" -> end_date: last day of the month 3 months from now
-    - If NO time limit is mentioned -> omit `end_date` (permanent/ongoing budget)
-
-**Schema:**
-- `details`: (object)
-    - `id`: (string) A unique, readable ID you generate (e.g., "sub_spotify").
-    - `name`: (string) The name of the subscription (e.g., "Spotify Premium").
-    - `category`: (string) The category of the subscription.
-    - `monthly_amount`: (float) The recurring monthly amount.
-    - `payment_account_id`: (string) The account name. Must be one of {account_names}.
-    - `start_date`: (string, optional) The start date in "YYYY-MM-DD" format.
-    - `end_date`: (string, optional) The end date in "YYYY-MM-DD" format for limited-time budgets/subscriptions.
-    - `is_budget`: (boolean, optional) Set to true if it's a budget.
-    - `is_income`: (boolean, optional) Set to true for income.
-
----
-**Final Constraints (Apply to ALL):**
+**Final Constraints:**
 - Do NOT add any fields that are not in the schemas described above.
 - Do NOT enclose the JSON in markdown backticks.
-- If something like a date is mentioned, make sure to consider it for any rules.
+- Output ONLY the JSON object.
 
----
 **Examples:**
 
 
 User: "Mercado groceries 20 cash last friday"
 {{
-  "request_type": "transaction",
   "type": "simple",
   "description": "Mercado groceries",
   "amount": 20,
@@ -121,7 +84,6 @@ User: "Mercado groceries 20 cash last friday"
 
 User: "lunch at cafe 15.75 cash Food"
 {{
-  "request_type": "transaction",
   "type": "simple",
   "description": "Lunch at cafe",
   "amount": 15.75,
@@ -132,7 +94,6 @@ User: "lunch at cafe 15.75 cash Food"
 
 User: "bought a 600 bike last month on the 29th in 3 installments on visa"
 {{
-  "request_type": "transaction",
   "type": "installment",
   "description": "Bike",
   "total_amount": 600,
@@ -144,7 +105,6 @@ User: "bought a 600 bike last month on the 29th in 3 installments on visa"
 
 User: "Grocery store amex produbanco 80 for groceries on the food budget and 15 for household supplies on the home budget"
 {{
-  "request_type": "transaction",
   "type": "split",
   "description": "Grocery Store",
   "account": "Amex Produbanco",
@@ -154,48 +114,8 @@ User: "Grocery store amex produbanco 80 for groceries on the food budget and 15 
   ]
 }}
 
-User: "add my netflix subscription for 15.99 on my visa produbanco"
-{{
-  "request_type": "subscription",
-  "details": {{
-    "id": "sub_netflix",
-    "name": "Netflix Subscription",
-    "category": "entertainment",
-    "monthly_amount": 15.99,
-    "payment_account_id": "Visa Produbanco"
-  }}
-}}
-
-User: "create a 400 food budget on my cash account starting next month"
-{{
-  "request_type": "subscription",
-  "details": {{
-    "id": "budget_food",
-    "name": "Food Budget",
-    "category": "Food",
-    "monthly_amount": 400,
-    "payment_account_id": "Cash",
-    "start_date": "2025-11-01",
-    "is_budget": true
-  }}
-}}
-
-User: "Set up my internet bill for 60 on Amex Produbanco, it's paid on the 3rd of each month"
-{{
-  "request_type": "subscription",
-  "details": {{
-    "id": "sub_internet",
-    "name": "Internet Bill",
-    "category": "utilities",
-    "monthly_amount": 60,
-    "payment_account_id": "Amex Produbanco",
-    "start_date": "2025-11-03"
-  }}
-}}
-
 User: "My friend owes me $25 for dinner, mark it as pending"
 {{
-  "request_type": "transaction",
   "type": "simple",
   "description": "Friend owes for dinner",
   "amount": 25,
@@ -206,7 +126,6 @@ User: "My friend owes me $25 for dinner, mark it as pending"
 
 User: "what if I buy a new TV for 800 next month on my Visa Produbanco"
 {{
-  "request_type": "transaction",
   "type": "simple",
   "description": "New TV",
   "amount": 800,
@@ -214,49 +133,6 @@ User: "what if I buy a new TV for 800 next month on my Visa Produbanco"
   "category": "Personal",
   "is_planning": true,
   "date_created": "2025-11-23"
-}}
-
-User: "I get a recurring monthly income of 1200 into my Cash account"
-{{
-  "request_type": "subscription",
-  "details": {{
-    "id": "sub_recurrent_income",
-    "name": "Recurrent Income",
-    "category": "Income",
-    "monthly_amount": 1200.0,
-    "payment_account_id": "Cash",
-    "is_income": true
-  }}
-}}
-
-User: "Create a Christmas shopping budget of 500 for December only on my Visa Produbanco"
-{{
-  "request_type": "subscription",
-  "details": {{
-    "id": "budget_christmas_shopping_dec",
-    "name": "Christmas Shopping",
-    "category": "Personal",
-    "monthly_amount": 500,
-    "payment_account_id": "Visa Produbanco",
-    "start_date": "2025-12-01",
-    "end_date": "2025-12-31",
-    "is_budget": true
-  }}
-}}
-
-User: "Set up a 200 grocery budget just for this month on Cash"
-{{
-  "request_type": "subscription",
-  "details": {{
-    "id": "budget_grocery_nov",
-    "name": "Grocery Budget Nov",
-    "category": "Home Groceries",
-    "monthly_amount": 200,
-    "payment_account_id": "Cash",
-    "start_date": "2025-11-01",
-    "end_date": "2025-11-30",
-    "is_budget": true
-  }}
 }}
 """
 
@@ -268,6 +144,114 @@ User: "Set up a 200 grocery budget just for this month on Cash"
     
     response = model.generate_content(contents=user_input)
     
+    try:
+        return json.loads(response.text)
+    except (json.JSONDecodeError, IndexError) as e:
+        print(f"Error: Failed to decode JSON from LLM response.")
+        print(f"Raw response: {response.text}")
+        return None
+
+
+def parse_subscription_string(conn: Connection, user_input: str, accounts: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Uses the Gemini API to parse a natural language string into a structured
+    JSON object for a subscription or budget.
+    """
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY environment variable not set.")
+
+    # Prepare the list of valid account names
+    account_names = [acc['account_id'] for acc in accounts]
+
+    today = date.today()
+    system_prompt = f"""
+You are an expert financial assistant. Your task is to parse a user's natural language input into a structured JSON object for creating a recurring subscription or budget.
+
+**Today's Date: {today.isoformat()} ({today.strftime('%A, %B %d, %Y')})**
+**Current Month: {today.strftime('%B %Y')}**
+
+**Rules:**
+1.  You MUST generate a readable `id` from the name, prefixed with `sub_` or `budget_` (e.g., "Netflix" -> "sub_netflix", "Food Budget" -> "budget_food").
+2.  **`payment_account_id` is a mandatory field.** It must be one of: {account_names}
+3.  If the user's request mentions creating a "budget", you MUST set `"is_budget": true` and the `start_date` should be the 1st day of the relevant month if no other date is provided.
+4.  If the user mentions recurring income or salary, you MUST set `"is_income": true`.
+5.  **Date Logic:** Only include `start_date` if the user provides date information (e.g., "next month", "starting September", "on the 5th"). If no date is mentioned, omit the field.
+6.  **Limited-Time Budgets:** If the user specifies a time limit (e.g., "only for December", "just this month", "until January", "for the next 3 months"), you MUST calculate and set `end_date`. Use today's date as reference for calculations.
+    - "December only" -> start_date: 2025-12-01, end_date: 2025-12-31
+    - "this month only" -> start_date: first of current month, end_date: last of current month
+    - "next 3 months" -> end_date: last day of the month 3 months from now
+    - If NO time limit is mentioned -> omit `end_date` (permanent/ongoing budget)
+
+**Schema:**
+- `id`: (string) A unique, readable ID you generate (e.g., "sub_spotify").
+- `name`: (string) The name of the subscription (e.g., "Spotify Premium").
+- `category`: (string) The category of the subscription.
+- `monthly_amount`: (float) The recurring monthly amount.
+- `payment_account_id`: (string) The account name. Must be one of {account_names}.
+- `start_date`: (string, optional) The start date in "YYYY-MM-DD" format.
+- `end_date`: (string, optional) The end date in "YYYY-MM-DD" format for limited-time budgets/subscriptions.
+- `is_budget`: (boolean, optional) Set to true if it's a budget.
+- `is_income`: (boolean, optional) Set to true for income.
+
+**Final Constraints:**
+- Do NOT add any fields that are not in the schema described above.
+- Do NOT enclose the JSON in markdown backticks.
+- Output ONLY the JSON object, nothing else.
+
+**Examples:**
+
+User: "add my netflix subscription for 15.99 on my visa produbanco"
+{{
+  "id": "sub_netflix",
+  "name": "Netflix Subscription",
+  "category": "Personal",
+  "monthly_amount": 15.99,
+  "payment_account_id": "Visa Produbanco"
+}}
+
+User: "create a 400 food budget on my cash account starting next month"
+{{
+  "id": "budget_food",
+  "name": "Food Budget",
+  "category": "Home Groceries",
+  "monthly_amount": 400,
+  "payment_account_id": "Cash",
+  "start_date": "2025-12-01",
+  "is_budget": true
+}}
+
+User: "I get a recurring monthly income of 1200 into my Cash account"
+{{
+  "id": "sub_recurrent_income",
+  "name": "Recurrent Income",
+  "category": "Income",
+  "monthly_amount": 1200.0,
+  "payment_account_id": "Cash",
+  "is_income": true
+}}
+
+User: "Create a Christmas shopping budget of 500 for December only on my Visa Produbanco"
+{{
+  "id": "budget_christmas_shopping_dec",
+  "name": "Christmas Shopping",
+  "category": "Personal",
+  "monthly_amount": 500,
+  "payment_account_id": "Visa Produbanco",
+  "start_date": "2025-12-01",
+  "end_date": "2025-12-31",
+  "is_budget": true
+}}
+"""
+
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(
+        model_name="gemini-2.5-flash",
+        system_instruction=system_prompt
+    )
+
+    response = model.generate_content(contents=user_input)
+
     try:
         return json.loads(response.text)
     except (json.JSONDecodeError, IndexError) as e:

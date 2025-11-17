@@ -202,6 +202,34 @@ def handle_subscriptions_add_manual(conn: sqlite3.Connection, args: argparse.Nam
         print(f"Error adding budget: {e}")
 
 
+def handle_subscriptions_add_llm(conn: sqlite3.Connection, args: argparse.Namespace):
+    """Parses a natural language string to add a subscription or budget using LLM."""
+    accounts = repository.get_all_accounts(conn)
+    if not accounts:
+        print("Error: No accounts found. Please add an account first using 'accounts add'.")
+        return
+
+    print("Parsing your request with the LLM...")
+    subscription_json = llm_parser.parse_subscription_string(conn, args.description, accounts)
+
+    if subscription_json:
+        console = Console()
+        syntax = Syntax(json.dumps(subscription_json, indent=4), "json", theme="default", line_numbers=True)
+        console.print("\nGenerated Subscription/Budget:")
+        console.print(syntax)
+
+        confirm = input("\nProceed with this request? [Y/n] ")
+        if confirm.lower() == 'y' or confirm == '':
+            try:
+                controller.process_subscription_request(conn, subscription_json)
+                # Rerun rollover to immediately commit forecasts for the new subscription
+                controller.run_monthly_rollover(conn, date.today())
+            except Exception as e:
+                print(f"Error creating subscription/budget: {e}")
+        else:
+            print("Operation cancelled.")
+
+
 def handle_subscriptions_edit(conn: sqlite3.Connection, args: argparse.Namespace):
     """Edits an existing subscription's properties."""
     from datetime import datetime
@@ -278,7 +306,7 @@ def handle_subscriptions_delete(conn: sqlite3.Connection, args: argparse.Namespa
 
 
 def handle_add(conn: sqlite3.Connection, args: argparse.Namespace):
-    """Parses a natural language string to add a transaction, subscription, or budget."""
+    """Parses a natural language string to add a transaction using LLM."""
     accounts = repository.get_all_accounts(conn)
     if not accounts:
         print("Error: No accounts found. Please add an account first using 'accounts add'.")
@@ -292,39 +320,31 @@ def handle_add(conn: sqlite3.Connection, args: argparse.Namespace):
     if request_json:
         console = Console()
         syntax = Syntax(json.dumps(request_json, indent=4), "json", theme="default", line_numbers=True)
-        console.print("\nGenerated Request:")
+        console.print("\nGenerated Transaction:")
         console.print(syntax)
 
         confirm = input("\nProceed with this request? [Y/n] ")
         if confirm.lower() == 'y' or confirm == '':
-            request_type = request_json.get("request_type")
-            if request_type == "transaction":
-                # --- Budget Name to ID Conversion ---
-                budget_name_to_id_map = {b['name']: b['id'] for b in budgets}
-                
-                # For simple and installment transactions
-                if 'budget' in request_json and request_json['budget'] in budget_name_to_id_map:
-                    budget_name = request_json['budget']
-                    request_json['budget'] = budget_name_to_id_map[budget_name]
-                
-                # For split transactions
-                if request_json.get('type') == 'split' and 'splits' in request_json:
-                    for split in request_json['splits']:
-                        if 'budget' in split and split['budget'] in budget_name_to_id_map:
-                            budget_name = split['budget']
-                            split['budget'] = budget_name_to_id_map[budget_name]
-                # --- End Conversion ---
+            # --- Budget Name to ID Conversion ---
+            budget_name_to_id_map = {b['name']: b['id'] for b in budgets}
 
-                transaction_date = None
-                if "date_created" in request_json:
-                    transaction_date = date.fromisoformat(request_json["date_created"])
-                controller.process_transaction_request(conn, request_json, transaction_date=transaction_date)
-            elif request_type == "subscription":
-                controller.process_subscription_request(conn, request_json["details"])
-                # Rerun rollover to immediately commit forecasts for the new sub
-                controller.run_monthly_rollover(conn, date.today())
-            else:
-                print(f"Error: Unknown request type '{request_type}'.")
+            # For simple and installment transactions
+            if 'budget' in request_json and request_json['budget'] in budget_name_to_id_map:
+                budget_name = request_json['budget']
+                request_json['budget'] = budget_name_to_id_map[budget_name]
+
+            # For split transactions
+            if request_json.get('type') == 'split' and 'splits' in request_json:
+                for split in request_json['splits']:
+                    if 'budget' in split and split['budget'] in budget_name_to_id_map:
+                        budget_name = split['budget']
+                        split['budget'] = budget_name_to_id_map[budget_name]
+            # --- End Conversion ---
+
+            transaction_date = None
+            if "date_created" in request_json:
+                transaction_date = date.fromisoformat(request_json["date_created"])
+            controller.process_transaction_request(conn, request_json, transaction_date=transaction_date)
         else:
             print("Operation cancelled.")
 
@@ -660,6 +680,9 @@ def main():
     subscriptions_add_parser.add_argument("--end", type=str, help="End date (YYYY-MM-DD) for limited-time budgets. Omit for ongoing budgets")
     subscriptions_add_parser.add_argument("--underspend", choices=["keep", "return"], help="What to do with underspent funds (default: keep)")
 
+    subscriptions_add_llm_parser = subscriptions_subparsers.add_parser("add", help="Add subscription/budget using natural language")
+    subscriptions_add_llm_parser.add_argument("description", help="Natural language description of the subscription/budget")
+
     subscriptions_edit_parser = subscriptions_subparsers.add_parser("edit", help="Edit an existing subscription")
     subscriptions_edit_parser.add_argument("subscription_id", help="Subscription ID to edit")
     subscriptions_edit_parser.add_argument("--name", help="New name for the subscription")
@@ -734,6 +757,8 @@ def main():
             handle_subscriptions_list(conn, args)
         elif args.subcommand == "add-manual":
             handle_subscriptions_add_manual(conn, args)
+        elif args.subcommand == "add":
+            handle_subscriptions_add_llm(conn, args)
         elif args.subcommand == "edit":
             handle_subscriptions_edit(conn, args)
         elif args.subcommand == "delete":
