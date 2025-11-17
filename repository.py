@@ -367,6 +367,50 @@ def get_all_budgets_with_status(conn: Connection, reference_date: date = None) -
     return budgets_with_status
 
 
+def get_all_subscriptions(conn: Connection) -> List[Dict[str, Any]]:
+    """
+    Retrieves all subscriptions (both budgets and regular subscriptions).
+    """
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM subscriptions ORDER BY name")
+    subscriptions = cursor.fetchall()
+    return [dict(row) for row in subscriptions]
+
+
+def get_all_subscriptions_with_status(conn: Connection, reference_date: date = None) -> List[Dict[str, Any]]:
+    """
+    Retrieves all subscriptions with their status (Active or Expired) as of a reference date.
+    If reference_date is None, uses today's date.
+
+    Status logic:
+    - Active: Subscription is usable (includes current and future subscriptions)
+    - Expired: end_date < ref_date (subscription has ended)
+    """
+    from datetime import date as date_module
+
+    if reference_date is None:
+        reference_date = date_module.today()
+
+    subscriptions = get_all_subscriptions(conn)
+
+    subscriptions_with_status = []
+    for subscription in subscriptions:
+        sub_dict = dict(subscription)
+
+        # Determine status
+        end_date = sub_dict.get('end_date')
+
+        if end_date and end_date < reference_date:
+            status = "Expired"
+        else:
+            status = "Active"  # Includes current and future subscriptions
+
+        sub_dict['status'] = status
+        subscriptions_with_status.append(sub_dict)
+
+    return subscriptions_with_status
+
+
 def add_account(conn: Connection, account_id: str, account_type: str, cut_off_day: int = None, payment_day: int = None):
     """
     Inserts a new account into the accounts table.
@@ -439,4 +483,50 @@ def delete_category(conn: Connection, name: str):
     cursor = conn.cursor()
     query = "DELETE FROM categories WHERE name = ?"
     cursor.execute(query, (name,))
+    conn.commit()
+
+
+def rename_subscription_with_transactions(conn: Connection, old_id: str, new_id: str):
+    """
+    Renames a subscription ID and updates all transaction references.
+    This is used when ending a subscription to free up the original name.
+    """
+    cursor = conn.cursor()
+
+    # Check if new_id already exists
+    existing = get_subscription_by_id(conn, new_id)
+    if existing:
+        raise ValueError(f"Cannot rename: subscription with ID '{new_id}' already exists")
+
+    # Update all transactions that reference this subscription
+    # Both budget field (for budget allocations) and origin_id (for forecast transactions)
+    cursor.execute("UPDATE transactions SET budget = ? WHERE budget = ?", (new_id, old_id))
+    cursor.execute("UPDATE transactions SET origin_id = ? WHERE origin_id = ?", (new_id, old_id))
+
+    # Update the subscription ID itself
+    cursor.execute("UPDATE subscriptions SET id = ? WHERE id = ?", (new_id, old_id))
+
+    conn.commit()
+
+
+def get_transaction_count_by_budget(conn: Connection, budget_id: str) -> Dict[str, int]:
+    """
+    Returns count of transactions by status for a specific budget.
+    Used to validate safe deletion (no committed transactions).
+    """
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT status, COUNT(*) FROM transactions
+        WHERE budget = ?
+        GROUP BY status
+    """, (budget_id,))
+    counts = {row[0]: row[1] for row in cursor.fetchall()}
+    return counts
+
+
+def delete_subscription(conn: Connection, subscription_id: str):
+    """Permanently removes a subscription from the database."""
+    cursor = conn.cursor()
+    query = "DELETE FROM subscriptions WHERE id = ?"
+    cursor.execute(query, (subscription_id,))
     conn.commit()

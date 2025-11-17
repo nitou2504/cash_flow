@@ -373,48 +373,113 @@ def process_transaction_conversion(conn: sqlite3.Connection, transaction_id: int
     process_transaction_request(conn, request, transaction_date=original_date)
 
 
-def process_budget_update(conn: sqlite3.Connection, budget_id: str, new_amount: float, effective_date: date):
+def process_budget_update(conn: sqlite3.Connection, budget_id: str, updates: Dict[str, Any]):
     """
-    Changes the monthly allocation for a budget from a specific date onward,
-    regenerating all future forecasts.
+    Updates a budget/subscription and regenerates forecasts if amount changes.
+    Automatically renames the subscription ID when end_date is first set.
     """
-    # First, ensure the budget we are trying to update actually exists.
-    budget_subscription = repository.get_subscription_by_id(conn, budget_id)
-    if not budget_subscription:
-        print(f"Warning: Budget with ID '{budget_id}' not found. No update performed.")
-        return
+    # Retrieve the current subscription
+    subscription = repository.get_subscription_by_id(conn, budget_id)
+    if not subscription:
+        raise ValueError(f"Budget '{budget_id}' not found")
 
-    # Part A: Handle the effective_date month
-    # 1. Always update the master subscription record first
-    repository.update_subscription(conn, budget_id, {"monthly_amount": new_amount})
+    # AUTOMATIC RENAME LOGIC: If setting end_date for the first time
+    if 'end_date' in updates and updates['end_date'] and not subscription.get('end_date'):
+        end_date = updates['end_date']
 
-    # 2. Check if the effective_date is in a "live" (committed) month
-    effective_month_start = effective_date.replace(day=1)
-    allocation_for_effective_month = repository.get_budget_allocation_for_month(conn, budget_id, effective_month_start)
+        # Generate new ID with end date suffix (YYYYMM format)
+        new_id = f"{budget_id}_{end_date.strftime('%Y%m')}"
 
-    if allocation_for_effective_month and allocation_for_effective_month['status'] == 'committed':
-        # It's the current, active month. We need to recalculate the live balance.
-        total_spent = repository.get_total_spent_for_budget_in_month(conn, budget_id, effective_month_start)
-        
-        # New balance is the new budget minus what's already been spent, capped at 0
-        new_live_balance = -abs(new_amount) + total_spent
-        if new_live_balance > 0:
-            new_live_balance = 0
-        
-        repository.update_transaction_amount(conn, allocation_for_effective_month['id'], new_live_balance)
+        # Rename subscription and update all transaction references
+        repository.rename_subscription_with_transactions(conn, budget_id, new_id)
 
-    # Part B: Wipe and Regenerate the Future
-    # 1. Define the starting point for the wipe
-    wipe_start_date = effective_month_start
+        # Update budget_id for subsequent operations
+        budget_id = new_id
 
-    # 2. Delete all old forecasts from that point onward
-    repository.delete_future_budget_allocations(conn, budget_id, wipe_start_date)
+        print(f"Subscription renamed to '{new_id}' (freed up original name for reuse)")
 
-    # 3. Regenerate new forecasts up to the horizon
-    horizon_str = repository.get_setting(conn, "forecast_horizon_months")
-    horizon_months = int(horizon_str) if horizon_str else 6
-    # Use the effective_date to ensure forecasts are generated from the correct point in time
-    generate_forecasts(conn, horizon_months, from_date=effective_date)
+    # Apply the updates to the subscription
+    repository.update_subscription(conn, budget_id, updates)
+
+    # If amount changed, recalculate current month and regenerate forecasts
+    if 'monthly_amount' in updates:
+        new_amount = updates['monthly_amount']
+        current_month = date.today().replace(day=1)
+
+        # Recalculate current month if it's committed
+        allocation = repository.get_budget_allocation_for_month(conn, budget_id, current_month)
+        if allocation and allocation['status'] == 'committed':
+            total_spent = repository.get_total_spent_for_budget_in_month(conn, budget_id, current_month)
+
+            # New balance is the new budget minus what's already been spent, capped at 0
+            new_live_balance = -abs(new_amount) + total_spent
+            if new_live_balance > 0:
+                new_live_balance = 0
+
+            repository.update_transaction_amount(conn, allocation['id'], new_live_balance)
+
+        # Delete future forecasts and regenerate
+        wipe_start_date = current_month + relativedelta(months=1)
+        repository.delete_future_budget_allocations(conn, budget_id, wipe_start_date)
+
+        horizon_str = repository.get_setting(conn, "forecast_horizon_months")
+        horizon_months = int(horizon_str) if horizon_str else 6
+        generate_forecasts(conn, horizon_months, from_date=wipe_start_date)
+
+        print(f"Updated budget amount to ${new_amount:.2f} and regenerated forecasts")
+
+    # If payment_account_id changed, update future forecasts
+    if 'payment_account_id' in updates:
+        new_account = updates['payment_account_id']
+        current_month = date.today().replace(day=1)
+        next_month = current_month + relativedelta(months=1)
+        repository.update_future_forecasts_account(conn, budget_id, next_month, new_account)
+        print(f"Updated payment account to '{new_account}' for future transactions")
+
+    print(f"Successfully updated budget '{subscription['name']}'")
+
+
+def process_budget_deletion(conn: sqlite3.Connection, budget_id: str):
+    """
+    Safely deletes a budget after validating no committed transactions exist.
+
+    Deletion rules:
+    - PREVENT deletion if committed transactions exist (data integrity)
+    - DELETE forecast/planning transactions before deleting budget
+    - ALLOW deletion if only forecast/planning transactions exist
+    """
+    # Check if budget exists
+    budget = repository.get_subscription_by_id(conn, budget_id)
+    if not budget:
+        raise ValueError(f"Budget '{budget_id}' not found")
+
+    # Get transaction counts by status
+    tx_counts = repository.get_transaction_count_by_budget(conn, budget_id)
+
+    # Prevent deletion if committed transactions exist
+    committed_count = tx_counts.get('committed', 0)
+    if committed_count > 0:
+        raise ValueError(
+            f"Cannot delete budget '{budget['name']}': "
+            f"{committed_count} committed transaction(s) exist.\n"
+            f"Suggestion: Set an end_date instead to mark it as expired."
+        )
+
+    # Check for forecast/planning transactions
+    forecast_count = tx_counts.get('forecast', 0)
+    planning_count = tx_counts.get('planning', 0)
+    total_future = forecast_count + planning_count
+
+    if total_future > 0:
+        print(f"Deleting {total_future} forecast/planning transaction(s) linked to this budget...")
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM transactions WHERE budget = ?", (budget_id,))
+
+    # Delete the subscription
+    repository.delete_subscription(conn, budget_id)
+    conn.commit()
+
+    print(f"Successfully deleted budget '{budget['name']}'")
 
 
 def generate_forecasts(conn: sqlite3.Connection, horizon_months: int, from_date: date = None):
