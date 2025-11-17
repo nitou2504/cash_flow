@@ -401,6 +401,21 @@ def process_budget_update(conn: sqlite3.Connection, budget_id: str, updates: Dic
     # Apply the updates to the subscription
     repository.update_subscription(conn, budget_id, updates)
 
+    # If name changed, update allocation transaction descriptions
+    # (only updates system-generated allocations where origin_id = budget_id)
+    if 'name' in updates:
+        new_name = updates['name']
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE transactions
+            SET description = ?
+            WHERE origin_id = ?
+        """, (new_name, budget_id))
+        updated_count = cursor.rowcount
+        conn.commit()
+        if updated_count > 0:
+            print(f"Updated {updated_count} allocation transaction description(s) to '{new_name}'")
+
     # If amount changed, recalculate current month and regenerate forecasts
     if 'monthly_amount' in updates:
         new_amount = updates['monthly_amount']
