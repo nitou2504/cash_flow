@@ -28,7 +28,8 @@ def parse_transaction_string(conn: Connection, user_input: str, accounts: List[D
 You are an expert financial assistant. Your task is to parse a user's natural language input into a single, structured JSON object.
 You must first determine if the user is logging a one-time transaction or creating a recurring subscription/budget.
 
-**Today's Date is: {today.isoformat()} ({today.strftime('%A')})**
+**Today's Date: {today.isoformat()} ({today.strftime('%A, %B %d, %Y')})**
+**Current Month: {today.strftime('%B %Y')}**
 
 **Primary Directive:**
 Your output MUST be a single JSON object with a root-level `request_type` field, which must be either "transaction" or "subscription".
@@ -79,6 +80,11 @@ Your output MUST be a single JSON object with a root-level `request_type` field,
 3.  If the user's request mentions creating a "budget", you MUST set `"is_budget": true` and the `start_date` should be the 1st day of the relevant month if no other date is provided.
 4.  If the user mentions recurring income or salary, you MUST set `"is_income": true`.
 5.  **Date Logic:** Only include `start_date` if the user provides date information (e.g., "next month", "starting September", "on the 5th"). If no date is mentioned, omit the field.
+6.  **Limited-Time Budgets:** If the user specifies a time limit (e.g., "only for December", "just this month", "until January", "for the next 3 months"), you MUST calculate and set `end_date`. Use today's date as reference for calculations.
+    - "December only" -> start_date: 2025-12-01, end_date: 2025-12-31
+    - "this month only" -> start_date: first of current month, end_date: last of current month
+    - "next 3 months" -> end_date: last day of the month 3 months from now
+    - If NO time limit is mentioned -> omit `end_date` (permanent/ongoing budget)
 
 **Schema:**
 - `details`: (object)
@@ -88,6 +94,7 @@ Your output MUST be a single JSON object with a root-level `request_type` field,
     - `monthly_amount`: (float) The recurring monthly amount.
     - `payment_account_id`: (string) The account name. Must be one of {account_names}.
     - `start_date`: (string, optional) The start date in "YYYY-MM-DD" format.
+    - `end_date`: (string, optional) The end date in "YYYY-MM-DD" format for limited-time budgets/subscriptions.
     - `is_budget`: (boolean, optional) Set to true if it's a budget.
     - `is_income`: (boolean, optional) Set to true for income.
 
@@ -219,6 +226,36 @@ User: "I get a recurring monthly income of 1200 into my Cash account"
     "monthly_amount": 1200.0,
     "payment_account_id": "Cash",
     "is_income": true
+  }}
+}}
+
+User: "Create a Christmas shopping budget of 500 for December only on my Visa Produbanco"
+{{
+  "request_type": "subscription",
+  "details": {{
+    "id": "budget_christmas_shopping_dec",
+    "name": "Christmas Shopping",
+    "category": "Personal",
+    "monthly_amount": 500,
+    "payment_account_id": "Visa Produbanco",
+    "start_date": "2025-12-01",
+    "end_date": "2025-12-31",
+    "is_budget": true
+  }}
+}}
+
+User: "Set up a 200 grocery budget just for this month on Cash"
+{{
+  "request_type": "subscription",
+  "details": {{
+    "id": "budget_grocery_nov",
+    "name": "Grocery Budget Nov",
+    "category": "Home Groceries",
+    "monthly_amount": 200,
+    "payment_account_id": "Cash",
+    "start_date": "2025-11-01",
+    "end_date": "2025-11-30",
+    "is_budget": true
   }}
 }}
 """

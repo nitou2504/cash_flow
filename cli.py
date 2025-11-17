@@ -119,6 +119,79 @@ def handle_categories_delete(conn: sqlite3.Connection, args: argparse.Namespace)
     except ValueError as e:
         print(f"Error: {e}")
 
+def handle_budgets_list(conn: sqlite3.Connection, args: argparse.Namespace):
+    """Displays a list of all budgets with their status."""
+    budgets = repository.get_all_budgets_with_status(conn)
+
+    # Filter by active-only if requested
+    if args.active_only:
+        budgets = [b for b in budgets if b['status'] == 'Active']
+
+    table = Table(title="Budgets")
+    table.add_column("Name", style="bold")
+    table.add_column("Amount", justify="right")
+    table.add_column("Account")
+    table.add_column("Start Date")
+    table.add_column("End Date")
+    table.add_column("Status")
+
+    for budget in budgets:
+        # Format end_date display
+        end_date_str = str(budget['end_date']) if budget['end_date'] else "Ongoing"
+
+        # Color code status
+        status = budget['status']
+        if status == 'Active':
+            status_style = "[green]Active[/green]"
+        else:  # Expired
+            status_style = "[red]Expired[/red]"
+
+        table.add_row(
+            budget['name'],
+            f"${budget['monthly_amount']:.2f}",
+            budget['payment_account_id'],
+            str(budget['start_date']),
+            end_date_str,
+            status_style
+        )
+
+    console = Console()
+    console.print(table)
+
+def handle_budgets_add_manual(conn: sqlite3.Connection, args: argparse.Namespace):
+    """Adds a new budget manually with optional end date for limited-time budgets."""
+    from datetime import datetime
+
+    # Parse dates if provided
+    start_date = datetime.strptime(args.start, '%Y-%m-%d').date() if args.start else date.today().replace(day=1)
+    end_date = datetime.strptime(args.end, '%Y-%m-%d').date() if args.end else None
+
+    # Generate a readable ID from the name
+    budget_id = f"budget_{args.name.lower().replace(' ', '_')}"
+
+    budget_data = {
+        "id": budget_id,
+        "name": args.name,
+        "category": args.category,
+        "monthly_amount": args.amount,
+        "payment_account_id": args.account,
+        "start_date": start_date,
+        "end_date": end_date,
+        "is_budget": True,
+        "underspend_behavior": args.underspend if hasattr(args, 'underspend') and args.underspend else "keep"
+    }
+
+    try:
+        repository.add_subscription(conn, budget_data)
+        budget_type = "limited-time" if end_date else "ongoing"
+        print(f"Successfully added {budget_type} budget: {args.name}")
+
+        # Generate forecasts for the new budget
+        controller.generate_forecasts(conn, horizon_months=6, from_date=start_date)
+        print(f"Generated forecast allocations for '{args.name}'.")
+    except Exception as e:
+        print(f"Error adding budget: {e}")
+
 def handle_add(conn: sqlite3.Connection, args: argparse.Namespace):
     """Parses a natural language string to add a transaction, subscription, or budget."""
     accounts = repository.get_all_accounts(conn)
@@ -485,6 +558,22 @@ def main():
     cat_delete_parser = cat_subparsers.add_parser("delete", help="Delete a category")
     cat_delete_parser.add_argument("name", help="The name of the category to delete")
 
+    # Budgets command
+    budgets_parser = subparsers.add_parser("budgets", help="Manage budgets")
+    budgets_subparsers = budgets_parser.add_subparsers(dest="subcommand", required=True)
+
+    budgets_list_parser = budgets_subparsers.add_parser("list", help="List all budgets with status")
+    budgets_list_parser.add_argument("--active-only", action="store_true", help="Show only active budgets")
+
+    budgets_add_parser = budgets_subparsers.add_parser("add-manual", help="Add a new budget manually")
+    budgets_add_parser.add_argument("name", help="The name of the budget")
+    budgets_add_parser.add_argument("amount", type=float, help="The monthly budget amount")
+    budgets_add_parser.add_argument("account", help="The account to use for this budget")
+    budgets_add_parser.add_argument("category", help="The category for this budget")
+    budgets_add_parser.add_argument("--start", type=str, help="Start date (YYYY-MM-DD). Defaults to first of current month")
+    budgets_add_parser.add_argument("--end", type=str, help="End date (YYYY-MM-DD) for limited-time budgets. Omit for ongoing budgets")
+    budgets_add_parser.add_argument("--underspend", choices=["keep", "return"], help="What to do with underspent funds (default: keep)")
+
     # View command
     view_parser = subparsers.add_parser("view", help="View transactions for the upcoming months")
     view_parser.add_argument("--months", type=int, default=3, help="Number of months to display (default: 3)")
@@ -541,6 +630,11 @@ def main():
             handle_categories_edit(conn, args)
         elif args.subcommand == "delete":
             handle_categories_delete(conn, args)
+    elif args.command == "budgets":
+        if args.subcommand == "list":
+            handle_budgets_list(conn, args)
+        elif args.subcommand == "add-manual":
+            handle_budgets_add_manual(conn, args)
     elif args.command == "view":
         interface.view_transactions(conn, args.months, args.summary, args.include_planning, args.start_from)
     elif args.command == "export":

@@ -330,6 +330,43 @@ def get_all_budgets(conn: Connection) -> List[Dict[str, Any]]:
     return [dict(row) for row in budgets]
 
 
+def get_all_budgets_with_status(conn: Connection, reference_date: date = None) -> List[Dict[str, Any]]:
+    """
+    Retrieves all budgets with their status (Active or Expired) as of a reference date.
+    If reference_date is None, uses today's date.
+
+    Status logic:
+    - Active: Budget is usable (includes current and future budgets with forecasts)
+    - Expired: end_date < ref_date (budget has ended)
+
+    Since the system creates forecast allocations in advance, future budgets
+    are considered "Active" rather than having a separate "Upcoming" status.
+    """
+    from datetime import date as date_module
+
+    if reference_date is None:
+        reference_date = date_module.today()
+
+    budgets = get_all_budgets(conn)
+
+    budgets_with_status = []
+    for budget in budgets:
+        budget_dict = dict(budget)
+
+        # Determine status
+        end_date = budget_dict.get('end_date')
+
+        if end_date and end_date < reference_date:
+            status = "Expired"
+        else:
+            status = "Active"  # Includes current and future budgets
+
+        budget_dict['status'] = status
+        budgets_with_status.append(budget_dict)
+
+    return budgets_with_status
+
+
 def add_account(conn: Connection, account_id: str, account_type: str, cut_off_day: int = None, payment_day: int = None):
     """
     Inserts a new account into the accounts table.
