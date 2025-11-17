@@ -233,7 +233,9 @@ def handle_subscriptions_edit(conn: sqlite3.Connection, args: argparse.Namespace
         return
 
     try:
-        controller.process_budget_update(conn, args.subscription_id, updates)
+        # Pass retroactive flag for amount updates
+        retroactive = args.retroactive if hasattr(args, 'retroactive') else False
+        controller.process_budget_update(conn, args.subscription_id, updates, retroactive=retroactive)
     except Exception as e:
         print(f"Error editing subscription: {e}")
 
@@ -665,6 +667,7 @@ def main():
     subscriptions_edit_parser.add_argument("--account", help="New payment account")
     subscriptions_edit_parser.add_argument("--end", help='New end date (YYYY-MM-DD) or "none" to remove')
     subscriptions_edit_parser.add_argument("--underspend", choices=["keep", "rollover"], help="Underspend behavior")
+    subscriptions_edit_parser.add_argument("--retroactive", action="store_true", help="Update all past allocations (use for corrections, not price changes)")
 
     subscriptions_delete_parser = subscriptions_subparsers.add_parser("delete", help="Delete a subscription (only if no committed transactions exist)")
     subscriptions_delete_parser.add_argument("subscription_id", help="Subscription ID to delete")

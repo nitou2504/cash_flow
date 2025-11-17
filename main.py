@@ -373,10 +373,14 @@ def process_transaction_conversion(conn: sqlite3.Connection, transaction_id: int
     process_transaction_request(conn, request, transaction_date=original_date)
 
 
-def process_budget_update(conn: sqlite3.Connection, budget_id: str, updates: Dict[str, Any]):
+def process_budget_update(conn: sqlite3.Connection, budget_id: str, updates: Dict[str, Any], retroactive: bool = False):
     """
     Updates a budget/subscription and regenerates forecasts if amount changes.
     Automatically renames the subscription ID when end_date is first set.
+
+    Args:
+        retroactive: If True and amount changes, updates ALL past allocations (use for corrections).
+                    If False (default), only updates current and future allocations (use for price changes).
     """
     # Retrieve the current subscription
     subscription = repository.get_subscription_by_id(conn, budget_id)
@@ -416,22 +420,39 @@ def process_budget_update(conn: sqlite3.Connection, budget_id: str, updates: Dic
         if updated_count > 0:
             print(f"Updated {updated_count} allocation transaction description(s) to '{new_name}'")
 
-    # If amount changed, recalculate current month and regenerate forecasts
+    # If amount changed, update allocations based on retroactive flag
     if 'monthly_amount' in updates:
         new_amount = updates['monthly_amount']
         current_month = date.today().replace(day=1)
 
-        # Recalculate current month if it's committed
+        if retroactive:
+            # RETROACTIVE MODE: Update ALL past allocations (based on date_created, not status)
+            # This catches allocations regardless of payment date or committed status
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE transactions
+                SET amount = ?
+                WHERE origin_id = ?
+                AND date(date_created) < ?
+            """, (-abs(new_amount), budget_id, current_month))
+            past_updated = cursor.rowcount
+            conn.commit()
+            if past_updated > 0:
+                print(f"Retroactively updated {past_updated} past allocation(s) to ${new_amount:.2f}")
+
+        # Handle current month allocation
         allocation = repository.get_budget_allocation_for_month(conn, budget_id, current_month)
-        if allocation and allocation['status'] == 'committed':
-            total_spent = repository.get_total_spent_for_budget_in_month(conn, budget_id, current_month)
-
-            # New balance is the new budget minus what's already been spent, capped at 0
-            new_live_balance = -abs(new_amount) + total_spent
-            if new_live_balance > 0:
-                new_live_balance = 0
-
-            repository.update_transaction_amount(conn, allocation['id'], new_live_balance)
+        if allocation:
+            if retroactive:
+                # Retroactive: Set to full new amount (ignore spending and status)
+                repository.update_transaction_amount(conn, allocation['id'], -abs(new_amount))
+            elif allocation['status'] == 'committed':
+                # Default (committed only): Recalculate based on spending
+                total_spent = repository.get_total_spent_for_budget_in_month(conn, budget_id, current_month)
+                new_live_balance = -abs(new_amount) + total_spent
+                if new_live_balance > 0:
+                    new_live_balance = 0
+                repository.update_transaction_amount(conn, allocation['id'], new_live_balance)
 
         # Delete future forecasts and regenerate
         wipe_start_date = current_month + relativedelta(months=1)
