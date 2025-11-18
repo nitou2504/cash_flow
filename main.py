@@ -425,6 +425,10 @@ def process_budget_update(conn: sqlite3.Connection, budget_id: str, updates: Dic
         new_amount = updates['monthly_amount']
         current_month = date.today().replace(day=1)
 
+        # Determine sign based on whether this is income or expense
+        is_income = subscription.get('is_income', False)
+        signed_amount = abs(new_amount) if is_income else -abs(new_amount)
+
         if retroactive:
             # RETROACTIVE MODE: Update ALL past allocations (based on date_created, not status)
             # This catches allocations regardless of payment date or committed status
@@ -434,7 +438,7 @@ def process_budget_update(conn: sqlite3.Connection, budget_id: str, updates: Dic
                 SET amount = ?
                 WHERE origin_id = ?
                 AND date(date_created) < ?
-            """, (-abs(new_amount), budget_id, current_month))
+            """, (signed_amount, budget_id, current_month))
             past_updated = cursor.rowcount
             conn.commit()
             if past_updated > 0:
@@ -445,12 +449,12 @@ def process_budget_update(conn: sqlite3.Connection, budget_id: str, updates: Dic
         if allocation:
             if retroactive:
                 # Retroactive: Set to full new amount (ignore spending and status)
-                repository.update_transaction_amount(conn, allocation['id'], -abs(new_amount))
+                repository.update_transaction_amount(conn, allocation['id'], signed_amount)
             elif allocation['status'] == 'committed':
                 # Default (committed only): Recalculate based on spending
                 total_spent = repository.get_total_spent_for_budget_in_month(conn, budget_id, current_month)
-                new_live_balance = -abs(new_amount) + total_spent
-                if new_live_balance > 0:
+                new_live_balance = signed_amount + total_spent
+                if not is_income and new_live_balance > 0:
                     new_live_balance = 0
                 repository.update_transaction_amount(conn, allocation['id'], new_live_balance)
 

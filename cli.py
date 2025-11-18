@@ -132,6 +132,7 @@ def handle_subscriptions_list(conn: sqlite3.Connection, args: argparse.Namespace
         subscriptions = [s for s in subscriptions if s['is_budget']]
 
     table = Table(title="Subscriptions")
+    table.add_column("ID", style="cyan")
     table.add_column("Name", style="bold")
     table.add_column("Type")
     table.add_column("Amount", justify="right")
@@ -155,6 +156,7 @@ def handle_subscriptions_list(conn: sqlite3.Connection, args: argparse.Namespace
             status_style = "[red]Expired[/red]"
 
         table.add_row(
+            sub['id'],
             sub['name'],
             sub_type,
             f"${sub['monthly_amount']:.2f}",
@@ -686,7 +688,7 @@ def main():
     subscriptions_edit_parser = subscriptions_subparsers.add_parser("edit", aliases=["e"], help="Edit an existing subscription")
     subscriptions_edit_parser.add_argument("subscription_id", help="Subscription ID to edit")
     subscriptions_edit_parser.add_argument("--name", "-n", help="New name for the subscription")
-    subscriptions_edit_parser.add_argument("--amount", "-A", type=float, help="New monthly amount")
+    subscriptions_edit_parser.add_argument("--amount", "-a", type=float, help="New monthly amount")
     subscriptions_edit_parser.add_argument("--account", "-c", help="New payment account")
     subscriptions_edit_parser.add_argument("--end", "-e", help='New end date (YYYY-MM-DD) or "none" to remove')
     subscriptions_edit_parser.add_argument("--underspend", "-u", choices=["keep", "rollover"], help="Underspend behavior")
