@@ -522,6 +522,71 @@ def process_budget_deletion(conn: sqlite3.Connection, budget_id: str):
     print(f"Successfully deleted budget '{budget['name']}'")
 
 
+def process_balance_adjustment(conn: sqlite3.Connection, actual_balance: float, account_id: str = "Cash"):
+    """
+    Creates an adjustment transaction to reconcile the calculated balance with the actual balance.
+
+    This is useful when there are small discrepancies (e.g., cents off due to rounding,
+    forgotten small transactions, etc.).
+
+    Args:
+        actual_balance: The actual total balance the user has right now
+        account_id: The account to apply the adjustment to (default: Cash)
+
+    Returns:
+        The difference that was adjusted (positive if added money, negative if removed)
+    """
+    # Verify account exists
+    account = repository.get_account_by_name(conn, account_id)
+    if not account:
+        raise ValueError(f"Account '{account_id}' not found")
+
+    # Calculate current system balance using the same logic as the view
+    # This matches what the user sees in their running balance
+    transactions_with_balance = repository.get_transactions_with_running_balance(conn)
+    today = date.today()
+    calculated_balance = 0.0
+
+    # Find the running balance as of today (last transaction on or before today)
+    for t in transactions_with_balance:
+        if t['date_payed'] <= today:
+            calculated_balance = t['running_balance']
+        else:
+            break  # Stop at future transactions
+
+    # Calculate the difference
+    difference = actual_balance - calculated_balance
+
+    # If difference is zero or very close to zero, no adjustment needed
+    if abs(difference) < 0.01:
+        print(f"No adjustment needed. Balance matches (difference: ${difference:.2f})")
+        return 0.0
+
+    # Create adjustment transaction
+    adjustment_transaction = {
+        "date_created": date.today(),
+        "date_payed": date.today(),
+        "description": f"Balance Adjustment - {account_id}",
+        "account": account_id,
+        "amount": difference,
+        "category": "Balance Adjustment",
+        "budget": None,
+        "status": "committed",
+        "origin_id": None,
+    }
+
+    repository.add_transactions(conn, [adjustment_transaction])
+    conn.commit()
+
+    action = "added" if difference > 0 else "removed"
+    print(f"✓ Balance adjusted: {action} ${abs(difference):.2f}")
+    print(f"  Previous balance: ${calculated_balance:.2f}")
+    print(f"  Actual balance:   ${actual_balance:.2f}")
+    print(f"  New balance:      ${actual_balance:.2f}")
+
+    return difference
+
+
 def generate_forecasts(conn: sqlite3.Connection, horizon_months: int, from_date: date = None):
     """
     A scheduler job that creates and maintains forecast transactions up to a

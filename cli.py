@@ -514,6 +514,14 @@ def handle_clear(conn: sqlite3.Connection, args: argparse.Namespace):
     except ValueError as e:
         print(f"Error: {e}")
 
+def handle_fix(conn: sqlite3.Connection, args: argparse.Namespace):
+    """Creates a balance adjustment transaction to match actual balance."""
+    try:
+        account = args.account if hasattr(args, 'account') and args.account else "Cash"
+        controller.process_balance_adjustment(conn, args.actual_balance, account)
+    except ValueError as e:
+        print(f"Error: {e}")
+
 def handle_add_installments(conn: sqlite3.Connection, args: argparse.Namespace):
     """
     Adds multiple transactions from a CSV file, designed to handle
@@ -729,6 +737,12 @@ def main():
     clear_parser = subparsers.add_parser("clear", aliases=["cl"], help="Commits a pending or planning transaction by its ID")
     clear_parser.add_argument("transaction_id", type=int, help="The ID of the transaction to clear")
 
+    # Fix command
+    fix_parser = subparsers.add_parser("fix", aliases=["f"], help="Adjust balance to match actual total balance")
+    fix_parser.add_argument("actual_balance", type=float, help="Your actual current total balance (all accounts combined)")
+    fix_parser.add_argument("--account", "-a", default="Cash",
+                           help="Account where the discrepancy occurred (e.g., use 'Visa Produbanco' for card fees/interest, 'Cash' for lost cash or forgotten purchases). Default: Cash")
+
     args = parser.parse_args()
 
     # --- Command Handling ---
@@ -775,6 +789,8 @@ def main():
         handle_edit(conn, args)
     elif args.command in ["clear", "cl"]:
         handle_clear(conn, args)
+    elif args.command in ["fix", "f"]:
+        handle_fix(conn, args)
 
     conn.close()
 
