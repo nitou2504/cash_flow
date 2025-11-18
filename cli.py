@@ -1,4 +1,9 @@
 
+# Suppress Google AI SDK warnings before importing anything
+import os
+os.environ['GRPC_VERBOSITY'] = 'ERROR'
+os.environ['GLOG_minloglevel'] = '2'
+
 import argparse
 import sqlite3
 import json

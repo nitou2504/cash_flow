@@ -1,12 +1,33 @@
 
 import os
+import sys
 import json
 from datetime import date
 from dateutil.relativedelta import relativedelta
+from contextlib import contextmanager
+
 import google.generativeai as genai
 from typing import List, Dict, Any
 from sqlite3 import Connection
 import repository
+
+@contextmanager
+def suppress_stderr():
+    """Temporarily suppress stderr output at the file descriptor level."""
+    # Save original stderr file descriptor
+    stderr_fd = sys.stderr.fileno()
+    original_stderr_fd = os.dup(stderr_fd)
+
+    try:
+        # Redirect stderr to /dev/null
+        devnull_fd = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull_fd, stderr_fd)
+        os.close(devnull_fd)
+        yield
+    finally:
+        # Restore original stderr
+        os.dup2(original_stderr_fd, stderr_fd)
+        os.close(original_stderr_fd)
 
 def parse_transaction_string(conn: Connection, user_input: str, accounts: List[Dict[str, Any]], budgets: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
@@ -142,7 +163,8 @@ User: "what if I buy a new TV for 800 next month on my Visa Produbanco"
         system_instruction=system_prompt
     )
     
-    response = model.generate_content(contents=user_input)
+    with suppress_stderr():
+        response = model.generate_content(contents=user_input)
     
     try:
         return json.loads(response.text)
@@ -244,13 +266,13 @@ User: "Create a Christmas shopping budget of 500 for December only on my Visa Pr
 }}
 """
 
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(
-        model_name="gemini-2.5-flash",
-        system_instruction=system_prompt
-    )
-
-    response = model.generate_content(contents=user_input)
+    with suppress_stderr():
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(
+            model_name="gemini-2.5-flash",
+            system_instruction=system_prompt
+        )
+        response = model.generate_content(contents=user_input)
 
     try:
         return json.loads(response.text)
@@ -315,7 +337,8 @@ User: "new credit card called Amex Gold"
         system_instruction=system_prompt
     )
     
-    response = model.generate_content(contents=user_input)
+    with suppress_stderr():
+        response = model.generate_content(contents=user_input)
     
     try:
         return json.loads(response.text)
