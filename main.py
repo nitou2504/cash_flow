@@ -587,6 +587,88 @@ def process_balance_adjustment(conn: sqlite3.Connection, actual_balance: float, 
     return difference
 
 
+def process_billing_cycle_adjustment(
+    conn: sqlite3.Connection,
+    account_id: str,
+    reference_month: date,
+    temp_cut_off_day: int,
+    temp_payment_day: int = None
+):
+    """
+    Adjusts credit card payment dates for a specific billing cycle when the
+    cut-off date varies temporarily (e.g., by a day or two).
+
+    This handles the common scenario where a credit card's billing cycle cut-off
+    date shifts slightly in a particular month without permanently changing the
+    account's billing parameters.
+
+    Args:
+        account_id: The credit card account to adjust
+        reference_month: A date in the month whose billing cycle was affected
+        temp_cut_off_day: The actual cut-off day that occurred for this cycle
+        temp_payment_day: Optional temporary payment day (if None, uses account's normal payment day)
+
+    Returns:
+        Number of transactions updated
+    """
+    # Get account details
+    account = repository.get_account_by_name(conn, account_id)
+    if not account:
+        raise ValueError(f"Account '{account_id}' not found")
+
+    if account['account_type'] != 'credit_card':
+        raise ValueError(f"Account '{account_id}' is not a credit card. This operation is only for credit cards.")
+
+    normal_cut_off = account['cut_off_day']
+    normal_payment = account['payment_day']
+
+    # Use normal payment day if temporary one not specified
+    actual_temp_payment = temp_payment_day if temp_payment_day is not None else normal_payment
+
+    print(f"\nAdjusting billing cycle for {account_id}")
+    print(f"  Normal billing: cut-off day {normal_cut_off}, payment day {normal_payment}")
+    print(f"  Temporary:      cut-off day {temp_cut_off_day}, payment day {actual_temp_payment}")
+
+    # Calculate the affected date range (2 months before and after reference month)
+    start_search = (reference_month - relativedelta(months=2)).replace(day=1)
+    end_search = (reference_month + relativedelta(months=2)).replace(day=1) + relativedelta(months=1) - relativedelta(days=1)
+
+    # Use existing repository function and filter in Python
+    all_transactions = repository.get_all_transactions(conn)
+    affected_transactions = [
+        t for t in all_transactions
+        if t['account'] == account_id and start_search <= t['date_created'] <= end_search
+    ]
+
+    updates_count = 0
+    print(f"\nChecking {len(affected_transactions)} transaction(s) in range {start_search} to {end_search}...")
+
+    for trans in affected_transactions:
+        trans_date = trans['date_created']
+        old_payment_date = trans['date_payed']
+
+        # Calculate what the payment date should be with TEMPORARY billing dates
+        # using the existing backend calculation logic
+        temp_payment_date = transactions._calculate_credit_card_payment_date(
+            trans_date, temp_cut_off_day, actual_temp_payment
+        )
+
+        # If the payment date changes when using temporary billing dates, update it
+        if temp_payment_date != old_payment_date:
+            # Use existing repository function
+            repository.update_transaction(conn, trans['id'], {"date_payed": temp_payment_date})
+            updates_count += 1
+            print(f"  ✓ Transaction {trans['id']} ({trans['description']}): "
+                  f"{trans_date} → payment changed from {old_payment_date} to {temp_payment_date}")
+
+    if updates_count == 0:
+        print("No transactions needed adjustment.")
+    else:
+        print(f"\n✓ Updated {updates_count} transaction(s)")
+
+    return updates_count
+
+
 def generate_forecasts(conn: sqlite3.Connection, horizon_months: int, from_date: date = None):
     """
     A scheduler job that creates and maintains forecast transactions up to a

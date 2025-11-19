@@ -78,6 +78,25 @@ def handle_accounts_add_natural(conn: sqlite3.Connection, args: argparse.Namespa
         else:
             print("Operation cancelled.")
 
+def handle_accounts_adjust_billing(conn: sqlite3.Connection, args: argparse.Namespace):
+    """Adjusts credit card billing cycle for a specific month."""
+    try:
+        # Parse the month string to a date object (use first day of month)
+        month_date = datetime.strptime(args.month, "%Y-%m").date()
+
+        # Call the controller function
+        controller.process_billing_cycle_adjustment(
+            conn,
+            args.account_id,
+            month_date,
+            args.cut_off_day,
+            args.payment_day
+        )
+    except ValueError as e:
+        print(f"Error: {e}")
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+
 def handle_categories_list(conn: sqlite3.Connection):
     """Displays a list of all valid categories."""
     categories = repository.get_all_categories(conn)
@@ -661,6 +680,12 @@ def main():
     acc_add_natural_parser = acc_subparsers.add_parser("add-natural", aliases=["an"], help="Add a new account using natural language")
     acc_add_natural_parser.add_argument("description", help="The natural language description of the account")
 
+    acc_adjust_billing_parser = acc_subparsers.add_parser("adjust-billing", aliases=["ab"], help="Adjust credit card billing cycle for a specific month")
+    acc_adjust_billing_parser.add_argument("account_id", help="The credit card account to adjust")
+    acc_adjust_billing_parser.add_argument("month", help="The month whose billing cycle was affected (YYYY-MM)")
+    acc_adjust_billing_parser.add_argument("cut_off_day", type=int, help="The actual cut-off day that occurred this month")
+    acc_adjust_billing_parser.add_argument("--payment-day", "-p", type=int, help="Temporary payment day (if also changed)")
+
     # Categories command
     cat_parser = subparsers.add_parser("categories", aliases=["cat", "c"], help="Manage categories")
     cat_subparsers = cat_parser.add_subparsers(dest="subcommand", required=True)
@@ -764,6 +789,8 @@ def main():
             handle_accounts_add_manual(conn, args)
         elif args.subcommand in ["add-natural", "an"]:
             handle_accounts_add_natural(conn, args)
+        elif args.subcommand in ["adjust-billing", "ab"]:
+            handle_accounts_adjust_billing(conn, args)
     elif args.command in ["categories", "cat", "c"]:
         if args.subcommand in ["list", "ls", "l"]:
             handle_categories_list(conn)
