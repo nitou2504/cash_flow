@@ -538,11 +538,211 @@ def handle_clear(conn: sqlite3.Connection, args: argparse.Namespace):
     except ValueError as e:
         print(f"Error: {e}")
 
+def get_smart_payment_month(conn: sqlite3.Connection, account_id: str) -> date:
+    """
+    Determines the appropriate month for payment fix based on current date and cut-off day.
+
+    For credit cards:
+    - If today >= cut-off day: Return next month (you're working on next bill)
+    - If today < cut-off day: Return current month (still on current bill)
+
+    For cash accounts:
+    - Always return current month
+    """
+    account = repository.get_account_by_name(conn, account_id)
+    if not account:
+        # Default to current month if account not found (error will be caught later)
+        return date.today().replace(day=1)
+
+    today = date.today()
+
+    if account['account_type'] == 'credit_card':
+        cut_off_day = account['cut_off_day']
+
+        if today.day >= cut_off_day:
+            # Past cut-off, working on next month's bill
+            next_month = today + relativedelta(months=1)
+            return next_month.replace(day=1)
+        else:
+            # Before cut-off, still on current month's bill
+            return today.replace(day=1)
+    else:
+        # Cash account, use current month
+        return today.replace(day=1)
+
+
 def handle_fix(conn: sqlite3.Connection, args: argparse.Namespace):
-    """Creates a balance adjustment transaction to match actual balance."""
+    """Routes to balance fix or payment fix based on flags."""
+
+    if args.balance:
+        # Balance fix mode
+        try:
+            controller.process_balance_adjustment(conn, args.balance, args.account)
+        except ValueError as e:
+            print(f"Error: {e}")
+
+    elif args.payment:
+        # Payment fix mode
+        # Smart detection: if month looks like a number, it's actually the amount
+        actual_month = None
+        actual_amount = args.amount
+
+        if args.month:
+            # Try to parse as month first
+            try:
+                actual_month = datetime.strptime(args.month, "%Y-%m").date()
+            except ValueError:
+                # Not a valid month format, might be the amount instead
+                try:
+                    actual_amount = float(args.month)
+                    # Smart month selection based on cut-off day
+                    actual_month = get_smart_payment_month(conn, args.payment)
+                except ValueError:
+                    print("Error: Invalid month format. Use YYYY-MM (e.g., 2025-11)")
+                    return
+        else:
+            # No month provided, use smart selection
+            actual_month = get_smart_payment_month(conn, args.payment)
+
+        if args.interactive:
+            # Interactive mode
+            handle_statement_fix_interactive(conn, args.payment, actual_month)
+        else:
+            # Non-interactive mode
+            if not actual_amount:
+                print("Error: Statement amount required (or use -i for interactive)")
+                return
+            handle_statement_fix_noninteractive(conn, args.payment, actual_month, actual_amount)
+
+
+def handle_statement_fix_noninteractive(
+    conn: sqlite3.Connection,
+    account_id: str,
+    month: date,
+    statement_amount: float
+):
+    """Non-interactive payment fix - no preview, no confirmation, just do it."""
+
     try:
-        account = args.account if hasattr(args, 'account') and args.account else "Cash"
-        controller.process_balance_adjustment(conn, args.actual_balance, account)
+        result = controller.process_statement_adjustment(
+            conn, account_id, month, statement_amount
+        )
+
+        if result:
+            # Success message
+            diff = result['difference']
+            adjustment_amount = -diff
+            adj_sign = "+" if adjustment_amount >= 0 else "-"
+            diff_sign = "+" if diff >= 0 else "-"
+            print(f"✓ Payment adjusted for {account_id} ({result['payment_date']})")
+            print(f"  Previous: ${result['current_total']:.2f}  →  "
+                  f"Statement: ${statement_amount:.2f}  →  "
+                  f"Difference: {diff_sign}${abs(diff):.2f}")
+            print(f"  Transaction created: Payment Adjustment - {account_id} ({adj_sign}${abs(adjustment_amount):.2f})")
+        else:
+            print(f"✓ No adjustment needed - statement matches current total")
+
+    except ValueError as e:
+        print(f"Error: {e}")
+
+
+def handle_statement_fix_interactive(
+    conn: sqlite3.Connection,
+    account_id: str,
+    month: date
+):
+    """Interactive payment fix - shows table, asks for amount, confirms."""
+
+    try:
+        # Get account and determine payment date
+        account = repository.get_account_by_name(conn, account_id)
+        if not account:
+            print(f"Error: Account '{account_id}' not found")
+            return
+
+        if account['account_type'] == 'credit_card':
+            payment_date = date(month.year, month.month, account['payment_day'])
+        else:
+            # Cash account: use last day of month
+            next_month = month + relativedelta(months=1)
+            payment_date = next_month.replace(day=1) - relativedelta(days=1)
+
+        # Get transactions on payment date
+        all_trans = repository.get_all_transactions(conn)
+        payment_trans = [
+            t for t in all_trans
+            if t['account'] == account_id
+            and t['date_payed'] == payment_date
+            and t['status'] in ['committed', 'forecast']
+        ]
+
+        current_total = sum(abs(t['amount']) for t in payment_trans)
+
+        # Display header
+        print(f"\nStatement Adjustment for {account_id} - {month.strftime('%B %Y')}")
+        print(f"Payment date: {payment_date}\n")
+
+        # Show table with transactions
+        if payment_trans:
+            table = Table(title=f"Transactions on {payment_date}")
+            table.add_column("ID", style="cyan", width=6)
+            table.add_column("Date", style="dim", width=12)
+            table.add_column("Description")
+            table.add_column("Amount", justify="right", width=10)
+
+            for t in payment_trans:
+                table.add_row(
+                    str(t['id']),
+                    str(t['date_created']),
+                    t['description'],
+                    f"{t['amount']:.2f}"
+                )
+
+            table.add_row("", "", "CURRENT TOTAL", f"-{current_total:.2f}", style="bold")
+
+            console = Console()
+            console.print(table)
+        else:
+            print(f"⚠ No transactions found on {payment_date}")
+            print(f"Current total: $0.00")
+
+        print()
+
+        # Ask for statement amount
+        try:
+            statement_amount = float(input("Enter actual statement amount: "))
+        except (ValueError, EOFError):
+            print("Operation cancelled")
+            return
+
+        # Calculate difference
+        difference = statement_amount - current_total
+
+        if abs(difference) < 0.01:
+            print("\n✓ No adjustment needed - statement matches current total!")
+            return
+
+        # Show adjustment summary
+        adjustment_amount = -difference
+        adj_sign = "+" if adjustment_amount >= 0 else "-"
+        diff_sign = "+" if difference >= 0 else "-"
+        print(f"\nAdjustment: ${current_total:.2f} → ${statement_amount:.2f} (difference: {diff_sign}${abs(difference):.2f})")
+
+        # Confirm
+        confirm = input("Proceed? [Y/n]: ")
+        if confirm.lower() not in ['y', '']:
+            print("Operation cancelled")
+            return
+
+        # Process
+        result = controller.process_statement_adjustment(
+            conn, account_id, month, statement_amount
+        )
+
+        if result:
+            print(f"\n✓ Payment adjusted for {account_id} ({payment_date})")
+            print(f"  Transaction created: Payment Adjustment - {account_id} ({adj_sign}${abs(adjustment_amount):.2f})")
+
     except ValueError as e:
         print(f"Error: {e}")
 
@@ -768,10 +968,26 @@ def main():
     clear_parser.add_argument("transaction_id", type=int, help="The ID of the transaction to clear")
 
     # Fix command
-    fix_parser = subparsers.add_parser("fix", aliases=["f"], help="Adjust balance to match actual total balance")
-    fix_parser.add_argument("actual_balance", type=float, help="Your actual current total balance (all accounts combined)")
+    fix_parser = subparsers.add_parser("fix", aliases=["f"], help="Fix balance or payment discrepancies")
+    fix_group = fix_parser.add_mutually_exclusive_group(required=True)
+
+    # Balance fix flag
+    fix_group.add_argument("--balance", "-b", type=float, metavar="AMOUNT",
+                          help="Fix total balance to this amount")
+
+    # Payment fix flag
+    fix_group.add_argument("--payment", "-p", metavar="ACCOUNT",
+                          help="Fix monthly payment/statement for this account")
+
+    # Arguments for payment fix
+    fix_parser.add_argument("month", nargs="?", help="Month for payment fix (YYYY-MM)")
+    fix_parser.add_argument("amount", nargs="?", type=float, help="Statement amount")
+
+    # Options
     fix_parser.add_argument("--account", "-a", default="Cash",
-                           help="Account where the discrepancy occurred (e.g., use 'Visa Produbanco' for card fees/interest, 'Cash' for lost cash or forgotten purchases). Default: Cash")
+                           help="Account for balance fix (default: Cash)")
+    fix_parser.add_argument("--interactive", "-i", action="store_true",
+                           help="Interactive mode for payment fix (shows transactions, asks for amount)")
 
     args = parser.parse_args()
 

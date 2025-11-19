@@ -587,6 +587,83 @@ def process_balance_adjustment(conn: sqlite3.Connection, actual_balance: float, 
     return difference
 
 
+def process_statement_adjustment(
+    conn: sqlite3.Connection,
+    account_id: str,
+    month: date,
+    statement_amount: float
+) -> Dict[str, Any]:
+    """
+    Creates an adjustment transaction to match statement amount.
+
+    Works for both credit cards (uses payment_day) and cash accounts (uses last day of month).
+
+    Args:
+        account_id: The account to adjust
+        month: The month of the statement
+        statement_amount: The actual statement total
+
+    Returns:
+        Dict with adjustment details, or None if no adjustment needed
+    """
+
+    # 1. Get account
+    account = repository.get_account_by_name(conn, account_id)
+    if not account:
+        raise ValueError(f"Account '{account_id}' not found")
+
+    # 2. Determine payment date
+    if account['account_type'] == 'credit_card':
+        payment_date = date(month.year, month.month, account['payment_day'])
+    else:
+        # For cash accounts, use last day of month
+        next_month = month + relativedelta(months=1)
+        payment_date = next_month.replace(day=1) - relativedelta(days=1)
+
+    # 3. Get all transactions on payment date for this account
+    all_trans = repository.get_all_transactions(conn)
+    payment_trans = [
+        t for t in all_trans
+        if t['account'] == account_id
+        and t['date_payed'] == payment_date
+        and t['status'] in ['committed', 'forecast']
+    ]
+
+    # 4. Calculate current total (use absolute values)
+    current_total = sum(abs(t['amount']) for t in payment_trans)
+
+    # 5. Calculate difference
+    difference = statement_amount - current_total
+
+    # 6. Check if adjustment needed
+    if abs(difference) < 0.01:
+        return None
+
+    # 7. Create adjustment transaction
+    adjustment = {
+        'date_created': payment_date,
+        'date_payed': payment_date,
+        'description': f'Payment Adjustment - {account_id}',
+        'account': account_id,
+        'amount': -difference,  # Negative of difference (preserves correct sign)
+        'category': 'Payment Adjustment',
+        'budget': None,
+        'status': 'committed',
+        'origin_id': None
+    }
+
+    repository.add_transactions(conn, [adjustment])
+    conn.commit()
+
+    return {
+        'account': account_id,
+        'payment_date': payment_date,
+        'current_total': current_total,
+        'statement_amount': statement_amount,
+        'difference': difference
+    }
+
+
 def process_billing_cycle_adjustment(
     conn: sqlite3.Connection,
     account_id: str,
