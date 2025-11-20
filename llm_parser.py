@@ -29,10 +29,63 @@ def suppress_stderr():
         os.dup2(original_stderr_fd, stderr_fd)
         os.close(original_stderr_fd)
 
-def parse_transaction_string(conn: Connection, user_input: str, accounts: List[Dict[str, Any]], budgets: List[Dict[str, Any]]) -> Dict[str, Any]:
+
+def pre_parse_date_and_account(user_input: str, accounts: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Quick LLM call to extract just the date and account from user input.
+    Used to calculate payment date before the main parse.
+    """
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY environment variable not set.")
+
+    account_names = [acc['account_id'] for acc in accounts]
+    today = date.today()
+
+    system_prompt = f"""
+You are a quick parser. Extract ONLY the date and account from the user's input.
+
+**Today's Date: {today.isoformat()}**
+
+**Rules:**
+1. `account` MUST be one of: {account_names}
+2. `date` should be in "YYYY-MM-DD" format. If no date mentioned, use today's date.
+3. Parse relative dates: "yesterday" = {(today - relativedelta(days=1)).isoformat()}, "last friday", etc.
+
+**Output ONLY this JSON (no markdown):**
+{{"date": "YYYY-MM-DD", "account": "account_name"}}
+
+**Examples:**
+User: "yesterday pichincha 50 groceries"
+{{"date": "{(today - relativedelta(days=1)).isoformat()}", "account": "Visa Pichincha"}}
+
+User: "cash 20 lunch"
+{{"date": "{today.isoformat()}", "account": "Cash"}}
+"""
+
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(
+        model_name="gemini-2.5-flash",
+        system_instruction=system_prompt
+    )
+
+    with suppress_stderr():
+        response = model.generate_content(contents=user_input)
+
+    try:
+        return json.loads(response.text)
+    except (json.JSONDecodeError, IndexError):
+        # Fallback to defaults
+        return {"date": today.isoformat(), "account": accounts[0]['account_id'] if accounts else None}
+
+
+def parse_transaction_string(conn: Connection, user_input: str, accounts: List[Dict[str, Any]], budgets: List[Dict[str, Any]], payment_month: date = None) -> Dict[str, Any]:
     """
     Uses the Gemini API to parse a natural language string into a structured
     JSON object for a transaction.
+
+    Args:
+        payment_month: The month when this transaction will be paid (for budget selection context)
     """
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
@@ -40,22 +93,52 @@ def parse_transaction_string(conn: Connection, user_input: str, accounts: List[D
 
     # Prepare the list of valid account names, budgets, and categories for the prompt
     account_names = [acc['account_id'] for acc in accounts]
-    budget_names = [budget['name'] for budget in budgets]
+
+    # Build budget info with IDs and active periods
+    budget_info = []
+    for b in budgets:
+        end_str = str(b['end_date']) if b.get('end_date') else "ongoing"
+        budget_info.append({
+            "id": b['id'],
+            "name": b['name'],
+            "category": b.get('category', ''),
+            "active_from": str(b['start_date']),
+            "active_until": end_str
+        })
+
+    # Filter budgets to those active in payment month if provided
+    if payment_month:
+        active_budgets = []
+        for b in budget_info:
+            start = date.fromisoformat(b['active_from'])
+            end = date.fromisoformat(b['active_until']) if b['active_until'] != 'ongoing' else date(2099, 12, 31)
+            if start <= payment_month <= end:
+                active_budgets.append(b)
+        budget_info = active_budgets if active_budgets else budget_info  # Fallback to all if none active
+
     categories = repository.get_all_categories(conn)
     category_names = [cat['name'] for cat in categories]
 
     today = date.today()
+    payment_context = ""
+    if payment_month:
+        payment_context = f"\n**Payment Month: {payment_month.strftime('%B %Y')}** - Select budgets active during this month.\n"
     system_prompt = f"""
 You are an expert financial assistant. Your task is to parse a user's natural language input into a structured JSON object for a transaction.
 
 **Today's Date: {today.isoformat()} ({today.strftime('%A, %B %d, %Y')})**
 **Current Month: {today.strftime('%B %Y')}**
-
+{payment_context}
 **Rules:**
 1.  The `type` field must be one of: "simple", "installment", or "split".
 2.  The `account` field MUST be one of the following valid account names: {account_names}, ensure no typos or variations.
 3.  The `category` field is MANDATORY and MUST EXACTLY MATCH one of the following valid categories: {category_names}. Do not invent new categories. Always select the most appropriate category from this list.
-4.  The `budget` field, if used, MUST EXACTLY MATCH one of the following valid budget names: {budget_names}. Do not invent new budget names. If the user mentions a word that matches a budget name, assign it.
+4.  **Budget Selection:** The `budget` field must be the budget **ID** (not the name). Available budgets: {json.dumps(budget_info, indent=2)}
+    - Match the user's words to the budget **name** field, then return that budget's **id**.
+    - Be precise: "Mercado" budget is different from "Home Groceries" budget. Only select "Mercado" if user explicitly says "mercado".
+    - If user says "Home Groceries budget", look for a budget with "Home Groceries" or "Groceries" in the name (not "Mercado").
+    - Prefer budgets whose active period includes the payment month.
+    - If no exact match, select the closest match by name that is active in the payment month.
 5.  **Installment Logic:** The `installments` field (the number of payments to create) is **mandatory** for this type.
     - If the user gives a total number (e.g., "6 installments"), set `installments` to that number.
     - If the user gives a partial plan (e.g., "starting the 3rd of 12"), you MUST calculate the remaining payments and set `installments` to that value (e.g., `12 - 3 + 1 = 10`). You must also include `start_from_installment` and `total_installments` for context.
@@ -76,7 +159,7 @@ You are an expert financial assistant. Your task is to parse a user's natural la
 - `total_installments`: (int, optional) For existing installment plans.
 - `account`: (string) The account name. Must be one of {account_names}.
 - `category`: (string, REQUIRED) The category of the transaction. Must be one of {category_names}.
-- `budget`: (string, optional) The budget this expense is linked to.
+- `budget`: (string, optional) The budget **ID** (not name) this expense is linked to.
 - `is_income`: (boolean, optional) Set to true for income.
 - `is_pending`: (boolean, optional) Set to true for pending transactions.
 - `is_planning`: (boolean, optional) Set to true for planning/what-if scenarios.
@@ -99,18 +182,19 @@ User: "Mercado groceries 20 cash last friday"
   "description": "Mercado groceries",
   "amount": 20,
   "account": "Cash",
-  "budget": "Mercado",
+  "category": "Home Groceries",
+  "budget": "budget_mercado",
   "date_created": "2025-11-07"
 }}
 
-User: "lunch at cafe 15.75 cash Food"
+User: "lunch at cafe 15.75 cash Food budget"
 {{
   "type": "simple",
   "description": "Lunch at cafe",
   "amount": 15.75,
   "account": "Cash",
   "category": "Dining-Snacks",
-  "budget": "Food"
+  "budget": "budget_food"
 }}
 
 User: "bought a 600 bike last month on the 29th in 3 installments on visa"
@@ -130,8 +214,8 @@ User: "Grocery store amex produbanco 80 for groceries on the food budget and 15 
   "description": "Grocery Store",
   "account": "Amex Produbanco",
   "splits": [
-    {{ "amount": 80, "category": "Home Groceries", "budget": "food" }},
-    {{ "amount": 15, "category": "Home Groceries", "budget": "home" }}
+    {{ "amount": 80, "category": "Home Groceries", "budget": "budget_food" }},
+    {{ "amount": 15, "category": "Home Groceries", "budget": "budget_home" }}
   ]
 }}
 

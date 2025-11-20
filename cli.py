@@ -333,6 +333,8 @@ def handle_subscriptions_delete(conn: sqlite3.Connection, args: argparse.Namespa
 
 def handle_add(conn: sqlite3.Connection, args: argparse.Namespace):
     """Parses a natural language string to add a transaction using LLM."""
+    import transactions as tx_module
+
     accounts = repository.get_all_accounts(conn)
     if not accounts:
         print("Error: No accounts found. Please add an account first using 'accounts add'.")
@@ -341,32 +343,90 @@ def handle_add(conn: sqlite3.Connection, args: argparse.Namespace):
     budgets = repository.get_all_budgets(conn)
 
     print("Parsing your request with the LLM...")
-    request_json = llm_parser.parse_transaction_string(conn, args.description, accounts, budgets)
+
+    # Phase 1: Pre-parse to get date and account for payment calculation
+    pre_parsed = llm_parser.pre_parse_date_and_account(args.description, accounts)
+
+    # Calculate payment date for budget context
+    payment_month = None
+    if pre_parsed:
+        try:
+            trans_date = date.fromisoformat(pre_parsed.get('date', date.today().isoformat()))
+            account_name = pre_parsed.get('account')
+            account = next((a for a in accounts if a['account_id'] == account_name), None)
+            if account:
+                payment_date = tx_module.simulate_payment_date(account, trans_date)
+                payment_month = payment_date.replace(day=1)
+        except (ValueError, KeyError):
+            pass  # Fall back to no payment context
+
+    # Phase 2: Full parse with payment context
+    request_json = llm_parser.parse_transaction_string(conn, args.description, accounts, budgets, payment_month)
 
     if request_json:
         console = Console()
-        syntax = Syntax(json.dumps(request_json, indent=4), "json", theme="default", line_numbers=True)
-        console.print("\nGenerated Transaction:")
-        console.print(syntax)
+
+        # Display as a transaction preview table instead of JSON
+        transaction_date = date.fromisoformat(request_json.get("date_created", date.today().isoformat()))
+        account_name = request_json.get('account', 'Unknown')
+        account = next((a for a in accounts if a['account_id'] == account_name), None)
+
+        # Calculate actual payment date for display
+        if account:
+            payment_date = tx_module.simulate_payment_date(account, transaction_date)
+        else:
+            payment_date = transaction_date
+
+        # Create preview table
+        table = Table(title="Transaction Preview", show_header=True, header_style="bold cyan")
+        table.add_column("Field", style="dim")
+        table.add_column("Value")
+
+        # Display based on transaction type
+        tx_type = request_json.get('type', 'simple')
+
+        if tx_type == 'simple':
+            amount = request_json.get('amount', 0)
+            table.add_row("Date Created", str(transaction_date))
+            table.add_row("Date Payed", str(payment_date))
+            table.add_row("Description", request_json.get('description', ''))
+            table.add_row("Account", account_name)
+            table.add_row("Amount", f"-{abs(amount):.2f}" if not request_json.get('is_income') else f"+{abs(amount):.2f}")
+            table.add_row("Category", request_json.get('category', '') or '')
+            table.add_row("Budget", request_json.get('budget', '') or '')
+            if request_json.get('is_pending'):
+                table.add_row("Status", "pending")
+            elif request_json.get('is_planning'):
+                table.add_row("Status", "planning")
+
+        elif tx_type == 'installment':
+            total = request_json.get('total_amount', 0)
+            installments = request_json.get('installments', 1)
+            per_installment = total / installments if installments else total
+            table.add_row("Type", "Installment")
+            table.add_row("Date Created", str(transaction_date))
+            table.add_row("First Payment", str(payment_date))
+            table.add_row("Description", request_json.get('description', ''))
+            table.add_row("Account", account_name)
+            table.add_row("Total Amount", f"-{abs(total):.2f}")
+            table.add_row("Installments", f"{installments}x of {per_installment:.2f}")
+            table.add_row("Category", request_json.get('category', '') or '')
+            table.add_row("Budget", request_json.get('budget', '') or '')
+
+        elif tx_type == 'split':
+            table.add_row("Type", "Split Transaction")
+            table.add_row("Date Created", str(transaction_date))
+            table.add_row("Date Payed", str(payment_date))
+            table.add_row("Description", request_json.get('description', ''))
+            table.add_row("Account", account_name)
+            for i, split in enumerate(request_json.get('splits', []), 1):
+                table.add_row(f"Split {i}", f"-{abs(split.get('amount', 0)):.2f} | {split.get('category', '')} | {split.get('budget', '') or ''}")
+
+        console.print(table)
 
         confirm = input("\nProceed with this request? [Y/n] ")
         if confirm.lower() == 'y' or confirm == '':
-            # --- Budget Name to ID Conversion ---
-            budget_name_to_id_map = {b['name']: b['id'] for b in budgets}
-
-            # For simple and installment transactions
-            if 'budget' in request_json and request_json['budget'] in budget_name_to_id_map:
-                budget_name = request_json['budget']
-                request_json['budget'] = budget_name_to_id_map[budget_name]
-
-            # For split transactions
-            if request_json.get('type') == 'split' and 'splits' in request_json:
-                for split in request_json['splits']:
-                    if 'budget' in split and split['budget'] in budget_name_to_id_map:
-                        budget_name = split['budget']
-                        split['budget'] = budget_name_to_id_map[budget_name]
-            # --- End Conversion ---
-
+            # LLM now returns budget IDs directly, no conversion needed
             transaction_date = None
             if "date_created" in request_json:
                 transaction_date = date.fromisoformat(request_json["date_created"])

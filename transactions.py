@@ -10,6 +10,19 @@ def _generate_origin_id() -> str:
     """
     return f"{date.today().strftime('%Y%m%d')}-{uuid.uuid4().hex[:4].upper()}"
 
+def simulate_payment_date(account: Dict[str, Any], transaction_date: date) -> date:
+    """
+    Public function to calculate the payment date for any account type.
+    For credit cards, uses cut-off/payment day logic.
+    For cash accounts, returns the transaction date.
+    """
+    if account.get("account_type") == "credit_card":
+        return _calculate_credit_card_payment_date(
+            transaction_date, account["cut_off_day"], account["payment_day"]
+        )
+    return transaction_date
+
+
 def _calculate_credit_card_payment_date(
     transaction_date: date, cut_off_day: int, payment_day: int
 ) -> date:
