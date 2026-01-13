@@ -629,8 +629,8 @@ def process_statement_adjustment(
         and t['status'] in ['committed', 'forecast']
     ]
 
-    # 4. Calculate current total (use absolute values)
-    current_total = sum(abs(t['amount']) for t in payment_trans)
+    # 4. Calculate current total
+    current_total = sum(t['amount'] for t in payment_trans)
 
     # 5. Calculate difference
     difference = statement_amount - current_total
@@ -645,7 +645,7 @@ def process_statement_adjustment(
         'date_payed': payment_date,
         'description': f'Payment Adjustment - {account_id}',
         'account': account_id,
-        'amount': -difference,  # Negative of difference (preserves correct sign)
+        'amount': difference,  # Adjustment to match statement
         'category': 'Payment Adjustment',
         'budget': None,
         'status': 'committed',
@@ -761,7 +761,7 @@ def generate_forecasts(conn: sqlite3.Connection, horizon_months: int, from_date:
         # Find the last forecast date for this subscription
         last_forecast_date = None
         for t in reversed(all_transactions):
-            if t['origin_id'] == sub['id'] and t['status'] == 'forecast':
+            if t['origin_id'] == sub['id'] and t['status'] in ('forecast', 'committed'):
                 last_forecast_date = t['date_created']
                 break
         

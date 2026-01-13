@@ -736,7 +736,7 @@ def handle_statement_fix_interactive(
             and t['status'] in ['committed', 'forecast']
         ]
 
-        current_total = sum(abs(t['amount']) for t in payment_trans)
+        current_total = sum(t['amount'] for t in payment_trans)
 
         # Display header
         print(f"\nStatement Adjustment for {account_id} - {month.strftime('%B %Y')}")
@@ -758,7 +758,7 @@ def handle_statement_fix_interactive(
                     f"{t['amount']:.2f}"
                 )
 
-            table.add_row("", "", "CURRENT TOTAL", f"-{current_total:.2f}", style="bold")
+            table.add_row("", "", "CURRENT TOTAL", f"{current_total:.2f}", style="bold")
 
             console = Console()
             console.print(table)
