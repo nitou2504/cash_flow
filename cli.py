@@ -1061,6 +1061,7 @@ def main():
     edit_parser.add_argument("--category", "-c", type=str, help="New category for the transaction")
     edit_parser.add_argument("--budget", "-b", type=str, help="New budget for the transaction")
     edit_parser.add_argument("--status", "-s", type=str, choices=["committed", "pending", "planning", "forecast"], help="New status for the transaction")
+    edit_parser.add_argument("--all", action="store_true", help="Apply changes to all transactions in the group (e.g., all installments)")
 
     # Clear command
     clear_parser = subparsers.add_parser("clear", aliases=["cl"], help="Commits a pending or planning transaction by its ID")

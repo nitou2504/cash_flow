@@ -31,6 +31,14 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
         accounts = repository.get_all_accounts(conn)
         credit_card_accounts = {acc['account_id'] for acc in accounts if acc['account_type'] == 'credit_card'}
 
+        # Build a map of (account, date) -> running_balance from all_transactions
+        # This will be used to get the correct running balance for summary transactions
+        date_balance_map = {}
+        for t in all_transactions:
+            key = (t['account'], t['date_payed'])
+            # Store the running balance of the last transaction for this account/date
+            date_balance_map[key] = t['running_balance']
+
         summarized_payments = {}  # Key: (account, date_payed), Value: {'amount': float, 'statuses': set}
         other_transactions = []
         planning_transactions = []
@@ -44,13 +52,15 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
 
                 key = (t['account'], t['date_payed'])
                 if key not in summarized_payments:
-                    summarized_payments[key] = {'amount': 0.0, 'statuses': set()}
-                
+                    summarized_payments[key] = {'amount': 0.0, 'statuses': set(), 'running_balance': 0.0}
+
                 summarized_payments[key]['amount'] += t['amount']
                 summarized_payments[key]['statuses'].add(t['status'])
+                # Store the running balance from the last transaction with this date
+                summarized_payments[key]['running_balance'] = t['running_balance']
             else:
                 other_transactions.append(t)
-        
+
         summary_transactions = []
         for (account, date_payed), data in summarized_payments.items():
             statuses = data['statuses']
@@ -59,24 +69,20 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
             elif 'pending' in statuses: status = 'pending'
             elif 'planning' in statuses: status = 'planning'
 
-
             summary_trans = {
                 'id': '--', 'date_payed': date_payed, 'date_created': date_payed,
                 'description': f"{account} Payment", 'account': account,
                 'amount': data['amount'], 'category': 'Credit Card', 'budget': '',
-                'status': status, 'origin_id': None
+                'status': status, 'origin_id': None,
+                'running_balance': data['running_balance']  # Use the actual running balance
             }
             summary_transactions.append(summary_trans)
-            
-        combined = sorted(other_transactions + summary_transactions + planning_transactions, key=lambda x: x['date_payed'])
-        
-        running_balance = 0.0
+
+        # Combine and sort all transactions
+        combined = sorted(other_transactions + summary_transactions + planning_transactions, key=lambda x: (x['date_payed'], x.get('id', 0) if x.get('id') != '--' else 999999))
+
+        # Don't recalculate running balance - use the ones from original transactions
         for t in combined:
-            # Pending transactions are not yet cleared and should not affect the running balance.
-            # Planning transactions should be included for forecasting purposes.
-            if t["status"] != "pending":
-                running_balance += t["amount"]
-            t["running_balance"] = running_balance
             display_transactions.append(t)
         # --- End Summarization ---
 
