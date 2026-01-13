@@ -12,7 +12,17 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
     Retrieves and displays transactions, with an optional summary mode for credit cards.
     """
     all_transactions = repository.get_transactions_with_running_balance(conn)
-    
+
+    # Calculate monthly minimum balances from original transactions (before summarization)
+    # This ensures consistency across all view modes
+    monthly_minimums = {}
+    for t in all_transactions:
+        month_key = t['date_payed'].strftime('%Y-%m')
+        if month_key not in monthly_minimums:
+            monthly_minimums[month_key] = t['running_balance']
+        else:
+            monthly_minimums[month_key] = min(monthly_minimums[month_key], t['running_balance'])
+
     display_transactions = []
     if not summary:
         display_transactions = all_transactions
@@ -118,36 +128,45 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
     table.add_column("Budget")
     table.add_column("Status")
     table.add_column("Running Balance", justify="right")
+    table.add_column("MoM Change", justify="right")
 
     if pending_from_past:
         table.add_row(
             "", "", "", "[bold yellow]Pending from Previous Months[/bold yellow]",
-            "", "", "", "", "", ""
+            "", "", "", "", "", "", ""
         )
         for t in pending_from_past:
             table.add_row(
                 str(t['id']), str(t['date_payed']), str(t['date_created']),
                 t['description'], t['account'], f"{t['amount']:.2f}",
                 t['category'], t.get('budget', '') or '', t['status'],
-                f"{t['running_balance']:.2f}", style="grey50"
+                f"{t['running_balance']:.2f}", "", style="grey50"
             )
         table.add_section()
 
     table.add_row(
         "", "", "", "Starting Balance", "", "", "", "", "",
-        f"[bold green]{starting_balance:.2f}[/]"
+        f"[bold green]{starting_balance:.2f}[/]", ""
     )
     table.add_section()
 
     budgets = repository.get_all_budgets(conn)
     budget_ids = {b['id'] for b in budgets}
 
+    # Get sorted list of months in period for MoM calculation
+    sorted_months = sorted(monthly_minimums.keys())
+
     last_month = None
-    for t in transactions_in_period:
+    for i, t in enumerate(transactions_in_period):
         current_month = t['date_payed'].strftime('%Y-%m')
+
+        # Check if this is the last transaction of the month or last transaction overall
+        is_last_in_month = (i == len(transactions_in_period) - 1) or \
+                          (transactions_in_period[i + 1]['date_payed'].strftime('%Y-%m') != current_month)
+
         if last_month and current_month != last_month:
             table.add_section()
-        
+
         is_budget_allocation = t.get('origin_id') in budget_ids and t.get('budget') == t.get('origin_id')
         status = t['status']
         row_style = "" # Default style for committed transactions
@@ -161,11 +180,29 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
         elif status == 'planning':
             row_style = "italic magenta"
 
+        # Calculate MoM change for last transaction in month
+        mom_change_str = ""
+        if is_last_in_month:
+            current_min = monthly_minimums.get(current_month, t['running_balance'])
+            month_idx = sorted_months.index(current_month) if current_month in sorted_months else -1
+
+            if month_idx > 0:
+                prev_month = sorted_months[month_idx - 1]
+                prev_min = monthly_minimums.get(prev_month, 0.0)
+                mom_change = current_min - prev_min
+
+                if mom_change > 0:
+                    mom_change_str = f"[green]+{mom_change:.2f}[/green]"
+                elif mom_change < 0:
+                    mom_change_str = f"[red]{mom_change:.2f}[/red]"
+                else:
+                    mom_change_str = "0.00"
+
         table.add_row(
             str(t['id']), str(t['date_payed']), str(t['date_created']),
             t['description'], t['account'], f"{t['amount']:.2f}",
             t['category'], t.get('budget', '') or '', t['status'],
-            f"{t['running_balance']:.2f}", style=row_style
+            f"{t['running_balance']:.2f}", mom_change_str, style=row_style
         )
         last_month = current_month
 

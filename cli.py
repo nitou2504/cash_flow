@@ -528,8 +528,47 @@ def handle_edit(conn: sqlite3.Connection, args: argparse.Namespace):
 
     try:
         new_date = date.fromisoformat(args.date) if args.date else None
-        controller.process_transaction_edit(conn, args.transaction_id, updates, new_date)
-        print(f"Successfully updated transaction {args.transaction_id}.")
+
+        # Handle group edits (all installments)
+        if args.all:
+            group_info = controller._get_transaction_group_info(conn, args.transaction_id)
+            siblings = group_info.get("siblings", [])
+
+            if len(siblings) <= 1:
+                print(f"Transaction {args.transaction_id} is not part of a group. Editing single transaction.")
+                controller.process_transaction_edit(conn, args.transaction_id, updates, new_date)
+                print(f"Successfully updated transaction {args.transaction_id}.")
+            else:
+                # Show what will be updated
+                console = Console()
+                table = Table(title=f"Updating {len(siblings)} transactions in group")
+                table.add_column("ID")
+                table.add_column("Date")
+                table.add_column("Description")
+                table.add_column("Amount")
+
+                for t in siblings:
+                    table.add_row(
+                        str(t['id']),
+                        str(t['date_payed']),
+                        t['description'],
+                        f"{t['amount']:.2f}"
+                    )
+                console.print(table)
+
+                confirm = input(f"\nApply changes to all {len(siblings)} transactions? [y/N] ")
+                if confirm.lower() != 'y':
+                    print("Operation cancelled.")
+                    return
+
+                # Apply updates to all siblings
+                for sibling in siblings:
+                    controller.process_transaction_edit(conn, sibling['id'], updates, new_date)
+
+                print(f"Successfully updated {len(siblings)} transactions in group.")
+        else:
+            controller.process_transaction_edit(conn, args.transaction_id, updates, new_date)
+            print(f"Successfully updated transaction {args.transaction_id}.")
     except (ValueError, sqlite3.Error) as e:
         print(f"Error updating transaction: {e}")
 
