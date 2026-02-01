@@ -7,7 +7,7 @@ from rich.table import Table
 
 import repository
 
-def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = False, include_planning: bool = False, start_from: str = None):
+def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = False, include_planning: bool = False, start_from: str = None, sort_by: str = "date_payed"):
     """
     Retrieves and displays transactions, with an optional summary mode for credit cards.
     """
@@ -25,7 +25,11 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
 
     display_transactions = []
     if not summary:
-        display_transactions = all_transactions
+        # Sort transactions based on user preference
+        if sort_by == "date_created":
+            display_transactions = sorted(all_transactions, key=lambda x: (x['date_created'], x['id']))
+        else:  # default to date_payed
+            display_transactions = sorted(all_transactions, key=lambda x: (x['date_payed'], x['id']))
     else:
         # --- Summarization Logic ---
         accounts = repository.get_all_accounts(conn)
@@ -79,7 +83,11 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
             summary_transactions.append(summary_trans)
 
         # Combine and sort all transactions
-        combined = sorted(other_transactions + summary_transactions + planning_transactions, key=lambda x: (x['date_payed'], x.get('id', 0) if x.get('id') != '--' else 999999))
+        # Sort by the specified field (date_payed or date_created), then by ID
+        if sort_by == "date_created":
+            combined = sorted(other_transactions + summary_transactions + planning_transactions, key=lambda x: (x['date_created'], x.get('id', 0) if x.get('id') != '--' else 999999))
+        else:  # default to date_payed
+            combined = sorted(other_transactions + summary_transactions + planning_transactions, key=lambda x: (x['date_payed'], x.get('id', 0) if x.get('id') != '--' else 999999))
 
         # Don't recalculate running balance - use the ones from original transactions
         for t in combined:

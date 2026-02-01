@@ -632,8 +632,50 @@ def handle_delete(conn: sqlite3.Connection, args: argparse.Namespace):
 def handle_clear(conn: sqlite3.Connection, args: argparse.Namespace):
     """Clears a pending or planning transaction by its ID, committing it."""
     transaction_id = args.transaction_id
+
     try:
-        controller.process_transaction_clearance(conn, transaction_id)
+        # Handle group clears (all installments)
+        if args.all:
+            group_info = controller._get_transaction_group_info(conn, transaction_id)
+            siblings = group_info.get("siblings", [])
+
+            if len(siblings) <= 1:
+                print(f"Transaction {transaction_id} is not part of a group. Clearing single transaction.")
+                controller.process_transaction_clearance(conn, transaction_id)
+                print(f"Successfully cleared transaction {transaction_id}.")
+            else:
+                # Show what will be cleared
+                console = Console()
+                table = Table(title=f"Clearing {len(siblings)} transactions in group")
+                table.add_column("ID")
+                table.add_column("Date")
+                table.add_column("Description")
+                table.add_column("Status")
+                table.add_column("Amount")
+
+                for t in siblings:
+                    table.add_row(
+                        str(t['id']),
+                        str(t['date_payed']),
+                        t['description'],
+                        t['status'],
+                        f"{t['amount']:.2f}"
+                    )
+                console.print(table)
+
+                confirm = input(f"\nClear (commit) all {len(siblings)} transactions? [y/N] ")
+                if confirm.lower() != 'y':
+                    print("Operation cancelled.")
+                    return
+
+                # Clear all siblings
+                for sibling in siblings:
+                    controller.process_transaction_clearance(conn, sibling['id'])
+
+                print(f"Successfully cleared {len(siblings)} transactions in group.")
+        else:
+            controller.process_transaction_clearance(conn, transaction_id)
+            print(f"Successfully cleared transaction {transaction_id}.")
     except ValueError as e:
         print(f"Error: {e}")
 
@@ -949,145 +991,449 @@ def main():
     controller.run_monthly_rollover(conn, date.today())
 
     # --- Argument Parsing ---
-    parser = argparse.ArgumentParser(description="Personal Cash Flow CLI")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    parser = argparse.ArgumentParser(
+        prog="cash_flow",
+        description="""
+Personal Cash Flow Management System
+=====================================
+Track expenses, manage budgets, handle credit card payments, and forecast cash flow.
+Supports multiple accounts (cash and credit cards), installment tracking, and natural language input.
+        """,
+        epilog="""
+COMMON WORKFLOWS:
+  First-time setup:
+    1. cash_flow accounts add "Cash account"
+    2. cash_flow accounts add "Credit card with cut-off on 25th and payment on 5th"
+    3. cash_flow categories add groceries "Food and household items"
+
+  Daily usage:
+    cash_flow add "Spent 45.50 on groceries at Supermarket today"
+    cash_flow view                    # See upcoming transactions
+    cash_flow view -s                 # Summary view (aggregated credit card payments)
+
+  Managing budgets:
+    cash_flow subscriptions add "Monthly groceries budget of 300 on Cash"
+    cash_flow subscriptions list
+
+  Reconciliation:
+    cash_flow fix --payment MyCard -i              # Interactive statement reconciliation
+    cash_flow fix --balance 1500.00 --account Cash # Fix total balance
+
+  Transaction management:
+    cash_flow edit 123 --status pending            # Change one transaction
+    cash_flow edit 123 --status pending --all      # Change all installments
+    cash_flow delete 456 --all                     # Delete entire installment group
+
+ALIASES:
+  Most commands have short aliases (shown in brackets below):
+  - accounts [acc, a]    - subscriptions [sub, s]    - view [v]
+  - categories [cat, c]  - export [exp, x]           - edit [e]
+  - delete [del, d]      - clear [cl]                - fix [f]
+
+For detailed help on any command: cash_flow COMMAND -h
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    subparsers = parser.add_subparsers(
+        dest="command",
+        required=True,
+        title="Available Commands",
+        metavar="COMMAND"
+    )
+
+    # ==================== TRANSACTION COMMANDS ====================
 
     # Add command
-    add_parser = subparsers.add_parser("add", help="Add a transaction using natural language")
-    add_parser.add_argument("description", help="The natural language description of the transaction")
+    add_parser = subparsers.add_parser(
+        "add",
+        help="Add a transaction using natural language",
+        description="""
+Add a transaction using natural language description.
+Examples:
+  cash_flow add "Spent 45.50 on groceries at Walmart today"
+  cash_flow add "Bought TV for 600 in 12 installments on Visa card"
+  cash_flow add "Split purchase: 30 on groceries, 15 on snacks"
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    add_parser.add_argument("description", help="Natural language transaction description")
 
     # Add batch command
-    add_batch_parser = subparsers.add_parser("add-batch", aliases=["ab"], help="Add multiple transactions from a CSV file")
+    add_batch_parser = subparsers.add_parser(
+        "add-batch",
+        aliases=["ab"],
+        help="Import multiple transactions from CSV",
+        description="Import transactions from a CSV file (format: date,description,account,amount)"
+    )
     add_batch_parser.add_argument("file_path", help="Path to the CSV file")
 
     # Add installments command
-    add_installments_parser = subparsers.add_parser("add-installments", aliases=["ai"], help="Add multiple pre-existing installments from a CSV file")
+    add_installments_parser = subparsers.add_parser(
+        "add-installments",
+        aliases=["ai"],
+        help="Import installment transactions from CSV",
+        description="Import pre-existing installments from CSV (format: date,description,account,amount,current_installment,total_installments)"
+    )
     add_installments_parser.add_argument("file_path", help="Path to the CSV file")
 
+    # ==================== ACCOUNT MANAGEMENT ====================
+
     # Accounts command
-    acc_parser = subparsers.add_parser("accounts", aliases=["acc", "a"], help="Manage accounts")
-    acc_subparsers = acc_parser.add_subparsers(dest="subcommand", required=True)
-    
-    acc_list_parser = acc_subparsers.add_parser("list", aliases=["ls", "l"], help="List all accounts")
+    acc_parser = subparsers.add_parser(
+        "accounts",
+        aliases=["acc", "a"],
+        help="Manage payment accounts (cash and credit cards)",
+        description="Manage payment accounts including cash accounts and credit cards with billing cycles"
+    )
+    acc_subparsers = acc_parser.add_subparsers(
+        dest="subcommand",
+        required=True,
+        title="Account Operations"
+    )
 
-    acc_add_manual_parser = acc_subparsers.add_parser("add-manual", aliases=["am"], help="Add a new account manually")
-    acc_add_manual_parser.add_argument("id", help="The unique ID/name of the account")
-    acc_add_manual_parser.add_argument("type", choices=["cash", "credit_card"], help="The type of account")
-    acc_add_manual_parser.add_argument("--cut-off-day", "-c", type=int, help="Cut-off day (for credit cards)")
-    acc_add_manual_parser.add_argument("--payment-day", "-p", type=int, help="Payment day (for credit cards)")
+    acc_list_parser = acc_subparsers.add_parser(
+        "list",
+        aliases=["ls", "l"],
+        help="List all accounts with their details"
+    )
 
-    acc_add_natural_parser = acc_subparsers.add_parser("add-natural", aliases=["an"], help="Add a new account using natural language")
-    acc_add_natural_parser.add_argument("description", help="The natural language description of the account")
+    acc_add_manual_parser = acc_subparsers.add_parser(
+        "add-manual",
+        aliases=["am"],
+        help="Add account manually with specific parameters",
+        description="Add a new account with explicit parameters (use 'add-natural' for easier setup)"
+    )
+    acc_add_manual_parser.add_argument("id", help="Unique account ID/name (e.g., 'Cash', 'VisaCard')")
+    acc_add_manual_parser.add_argument("type", choices=["cash", "credit_card"], help="Account type")
+    acc_add_manual_parser.add_argument("--cut-off-day", "-c", type=int, help="Statement cut-off day (1-31, required for credit cards)")
+    acc_add_manual_parser.add_argument("--payment-day", "-p", type=int, help="Payment due day (1-31, required for credit cards)")
 
-    acc_adjust_billing_parser = acc_subparsers.add_parser("adjust-billing", aliases=["ab"], help="Adjust credit card billing cycle for a specific month")
-    acc_adjust_billing_parser.add_argument("account_id", help="The credit card account to adjust")
-    acc_adjust_billing_parser.add_argument("month", help="The month whose billing cycle was affected (YYYY-MM)")
-    acc_adjust_billing_parser.add_argument("cut_off_day", type=int, help="The actual cut-off day that occurred this month")
-    acc_adjust_billing_parser.add_argument("--payment-day", "-p", type=int, help="Temporary payment day (if also changed)")
+    acc_add_natural_parser = acc_subparsers.add_parser(
+        "add-natural",
+        aliases=["an"],
+        help="Add account using natural language (recommended)",
+        description="""
+Add a new account using natural language.
+Examples:
+  cash_flow accounts add "Cash account"
+  cash_flow accounts add "Visa card with cut-off on 25 and payment on 5"
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    acc_add_natural_parser.add_argument("description", help="Natural language account description")
+
+    acc_adjust_billing_parser = acc_subparsers.add_parser(
+        "adjust-billing",
+        aliases=["ab"],
+        help="Adjust billing cycle for a specific month (one-time change)",
+        description="Temporarily adjust credit card billing cycle for a month (e.g., when bank changes statement date)"
+    )
+    acc_adjust_billing_parser.add_argument("account_id", help="Credit card account ID")
+    acc_adjust_billing_parser.add_argument("month", help="Affected month (YYYY-MM format)")
+    acc_adjust_billing_parser.add_argument("cut_off_day", type=int, help="Actual cut-off day for this month (1-31)")
+    acc_adjust_billing_parser.add_argument("--payment-day", "-p", type=int, help="Temporary payment day if also changed (1-31)")
+
+    # ==================== CATEGORY MANAGEMENT ====================
 
     # Categories command
-    cat_parser = subparsers.add_parser("categories", aliases=["cat", "c"], help="Manage categories")
-    cat_subparsers = cat_parser.add_subparsers(dest="subcommand", required=True)
+    cat_parser = subparsers.add_parser(
+        "categories",
+        aliases=["cat", "c"],
+        help="Manage expense categories",
+        description="Manage transaction categories (groceries, utilities, entertainment, etc.)"
+    )
+    cat_subparsers = cat_parser.add_subparsers(
+        dest="subcommand",
+        required=True,
+        title="Category Operations"
+    )
 
-    cat_list_parser = cat_subparsers.add_parser("list", aliases=["ls", "l"], help="List all valid categories")
+    cat_list_parser = cat_subparsers.add_parser(
+        "list",
+        aliases=["ls", "l"],
+        help="List all available categories"
+    )
 
-    cat_add_parser = cat_subparsers.add_parser("add", aliases=["a"], help="Add a new category manually")
-    cat_add_parser.add_argument("name", help="The name of the category")
-    cat_add_parser.add_argument("description", help="A description of what this category covers")
+    cat_add_parser = cat_subparsers.add_parser(
+        "add",
+        aliases=["a"],
+        help="Create a new category",
+        description="Add a new expense category (e.g., 'groceries', 'utilities', 'entertainment')"
+    )
+    cat_add_parser.add_argument("name", help="Category name (lowercase, no spaces)")
+    cat_add_parser.add_argument("description", help="What this category covers")
 
-    cat_edit_parser = cat_subparsers.add_parser("edit", aliases=["e"], help="Edit an existing category's description")
-    cat_edit_parser.add_argument("name", help="The name of the category to edit")
-    cat_edit_parser.add_argument("description", help="The new description for this category")
+    cat_edit_parser = cat_subparsers.add_parser(
+        "edit",
+        aliases=["e"],
+        help="Update category description"
+    )
+    cat_edit_parser.add_argument("name", help="Category name to edit")
+    cat_edit_parser.add_argument("description", help="New description")
 
-    cat_delete_parser = cat_subparsers.add_parser("delete", aliases=["del", "d"], help="Delete a category")
-    cat_delete_parser.add_argument("name", help="The name of the category to delete")
+    cat_delete_parser = cat_subparsers.add_parser(
+        "delete",
+        aliases=["del", "d"],
+        help="Remove a category",
+        description="Delete a category (will fail if transactions are using it)"
+    )
+    cat_delete_parser.add_argument("name", help="Category name to delete")
+
+    # ==================== BUDGET & SUBSCRIPTION MANAGEMENT ====================
 
     # Subscriptions command
-    subscriptions_parser = subparsers.add_parser("subscriptions", aliases=["sub", "s"], help="Manage subscriptions and budgets")
-    subscriptions_subparsers = subscriptions_parser.add_subparsers(dest="subcommand", required=True)
+    subscriptions_parser = subparsers.add_parser(
+        "subscriptions",
+        aliases=["sub", "s"],
+        help="Manage recurring budgets and subscriptions",
+        description="""
+Manage monthly budgets and recurring subscriptions.
+Budgets automatically allocate funds each month and track spending against limits.
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    subscriptions_subparsers = subscriptions_parser.add_subparsers(
+        dest="subcommand",
+        required=True,
+        title="Budget Operations"
+    )
 
-    subscriptions_list_parser = subscriptions_subparsers.add_parser("list", aliases=["ls", "l"], help="List all subscriptions (active by default)")
-    subscriptions_list_parser.add_argument("--all", "-a", action="store_true", help="Show all subscriptions including expired")
-    subscriptions_list_parser.add_argument("--budgets-only", "-b", action="store_true", help="Show only budgets")
+    subscriptions_list_parser = subscriptions_subparsers.add_parser(
+        "list",
+        aliases=["ls", "l"],
+        help="List budgets and subscriptions",
+        description="Show active budgets/subscriptions by default (use --all to include expired)"
+    )
+    subscriptions_list_parser.add_argument("--all", "-a", action="store_true", help="Include expired budgets/subscriptions")
+    subscriptions_list_parser.add_argument("--budgets-only", "-b", action="store_true", help="Show only budgets (exclude subscriptions)")
 
-    subscriptions_add_parser = subscriptions_subparsers.add_parser("add-manual", aliases=["am"], help="Add a new budget manually")
-    subscriptions_add_parser.add_argument("name", help="The name of the budget")
-    subscriptions_add_parser.add_argument("amount", type=float, help="The monthly budget amount")
-    subscriptions_add_parser.add_argument("account", help="The account to use for this budget")
-    subscriptions_add_parser.add_argument("category", help="The category for this budget")
-    subscriptions_add_parser.add_argument("--start", "-s", type=str, help="Start date (YYYY-MM-DD). Defaults to first of current month")
-    subscriptions_add_parser.add_argument("--end", "-e", type=str, help="End date (YYYY-MM-DD) for limited-time budgets. Omit for ongoing budgets")
-    subscriptions_add_parser.add_argument("--underspend", "-u", choices=["keep", "return"], help="What to do with underspent funds (default: keep)")
+    subscriptions_add_parser = subscriptions_subparsers.add_parser(
+        "add-manual",
+        aliases=["am"],
+        help="Add budget/subscription with specific parameters",
+        description="Manually configure a budget or subscription with all parameters"
+    )
+    subscriptions_add_parser.add_argument("name", help="Budget name (e.g., 'Groceries', 'Netflix')")
+    subscriptions_add_parser.add_argument("amount", type=float, help="Monthly amount in dollars")
+    subscriptions_add_parser.add_argument("account", help="Account ID to charge")
+    subscriptions_add_parser.add_argument("category", help="Category name")
+    subscriptions_add_parser.add_argument("--start", "-s", type=str, help="Start date YYYY-MM-DD (default: today)")
+    subscriptions_add_parser.add_argument("--end", "-e", type=str, help="End date YYYY-MM-DD (omit for ongoing)")
+    subscriptions_add_parser.add_argument("--underspend", "-u", choices=["keep", "return"], help="Unused budget behavior: 'keep' (rollover) or 'return' (default: keep)")
 
-    subscriptions_add_llm_parser = subscriptions_subparsers.add_parser("add", aliases=["a"], help="Add subscription/budget using natural language")
-    subscriptions_add_llm_parser.add_argument("description", help="Natural language description of the subscription/budget")
+    subscriptions_add_llm_parser = subscriptions_subparsers.add_parser(
+        "add",
+        aliases=["a"],
+        help="Add budget/subscription using natural language (recommended)",
+        description="""
+Add a budget or subscription using natural language.
+Examples:
+  cash_flow subscriptions add "Monthly groceries budget of 300 on Cash"
+  cash_flow subscriptions add "Netflix subscription 15.99 on Visa"
+  cash_flow subscriptions add "Vacation fund 200/month until December"
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    subscriptions_add_llm_parser.add_argument("description", help="Natural language budget/subscription description")
 
-    subscriptions_edit_parser = subscriptions_subparsers.add_parser("edit", aliases=["e"], help="Edit an existing subscription")
-    subscriptions_edit_parser.add_argument("subscription_id", help="Subscription ID to edit")
-    subscriptions_edit_parser.add_argument("--name", "-n", help="New name for the subscription")
+    subscriptions_edit_parser = subscriptions_subparsers.add_parser(
+        "edit",
+        aliases=["e"],
+        help="Modify an existing budget/subscription",
+        description="Update budget parameters (amount, dates, behavior, etc.)"
+    )
+    subscriptions_edit_parser.add_argument("subscription_id", help="Budget/subscription ID to edit")
+    subscriptions_edit_parser.add_argument("--name", "-n", help="New name")
     subscriptions_edit_parser.add_argument("--amount", "-a", type=float, help="New monthly amount")
-    subscriptions_edit_parser.add_argument("--account", "-c", help="New payment account")
-    subscriptions_edit_parser.add_argument("--end", "-e", help='New end date (YYYY-MM-DD) or "none" to remove')
-    subscriptions_edit_parser.add_argument("--underspend", "-u", choices=["keep", "rollover"], help="Underspend behavior")
-    subscriptions_edit_parser.add_argument("--retroactive", "-r", action="store_true", help="Update all past allocations (use for corrections, not price changes)")
+    subscriptions_edit_parser.add_argument("--account", "-c", help="New account ID")
+    subscriptions_edit_parser.add_argument("--end", "-e", help='End date (YYYY-MM-DD) or "none" to make ongoing')
+    subscriptions_edit_parser.add_argument("--underspend", "-u", choices=["keep", "rollover"], help="Unused budget handling")
+    subscriptions_edit_parser.add_argument("--retroactive", "-r", action="store_true", help="Apply changes to past months (corrections only, not price changes)")
 
-    subscriptions_delete_parser = subscriptions_subparsers.add_parser("delete", aliases=["del", "d"], help="Delete a subscription (only if no committed transactions exist)")
-    subscriptions_delete_parser.add_argument("subscription_id", help="Subscription ID to delete")
+    subscriptions_delete_parser = subscriptions_subparsers.add_parser(
+        "delete",
+        aliases=["del", "d"],
+        help="Delete a budget/subscription",
+        description="Remove a budget or subscription (must have no committed transactions)"
+    )
+    subscriptions_delete_parser.add_argument("subscription_id", help="Budget/subscription ID")
     subscriptions_delete_parser.add_argument("--force", "-f", action="store_true", help="Skip confirmation prompt")
 
+    # ==================== VIEWING & REPORTING ====================
+
     # View command
-    view_parser = subparsers.add_parser("view", aliases=["v"], help="View transactions for the upcoming months")
+    view_parser = subparsers.add_parser(
+        "view",
+        aliases=["v"],
+        help="View transactions and cash flow forecast",
+        description="""
+Display transactions with running balance and month-over-month comparison.
+
+DISPLAY FEATURES:
+  - Running Balance: Cumulative balance after each transaction
+  - MoM Change: Month-over-month comparison of lowest balance points
+                (shown on last transaction of each month, color-coded green/red)
+  - Starting Balance: Balance before the displayed period begins
+  - Pending from Past: Old pending transactions shown separately at top
+  - Month Sections: Visual separators between months
+
+COLOR CODING:
+  - Blue: Budget allocation transactions
+  - Grey: Pending transactions (not yet committed)
+  - Italic: Forecast transactions (auto-generated predictions)
+  - Magenta Italic: Planning transactions (potential future expenses)
+  - Default: Committed transactions
+
+SUMMARY MODE (-s):
+  - Aggregates credit card transactions into monthly payment entries
+  - Shows "VisaCard Payment" instead of individual purchases
+  - Cash transactions and non-credit accounts shown normally
+  - Planning transactions shown individually unless -p is used
+
+SORTING:
+  --sort date_payed: Show transactions by payment date (default)
+                     Good for: seeing when money actually leaves your account
+  --sort date_created: Show transactions by purchase/creation date
+                       Good for: tracking when expenses actually happened
+
+Examples:
+  cash_flow view                         # Default: 3 months from today
+  cash_flow view -m 6                    # Show 6 months
+  cash_flow view --from 2025-10          # Start from October 2025
+  cash_flow view -s                      # Summary mode (cleaner view)
+  cash_flow view -s -p                   # Summary with planning included
+  cash_flow view --sort date_created     # Sort by purchase date
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     view_parser.add_argument("--months", "-m", type=int, default=3, help="Number of months to display (default: 3)")
-    view_parser.add_argument("--from", "-f", dest="start_from", type=str, help="The starting month to display (e.g., '2025-10')")
-    view_parser.add_argument("--summary", "-s", action="store_true", help="Summarize credit card payments into single monthly entries")
-    view_parser.add_argument("--include-planning", "-p", action="store_true", help="Include 'planning' transactions in the summary totals")
+    view_parser.add_argument("--from", "-f", dest="start_from", type=str, help="Starting month in YYYY-MM format (default: current month)")
+    view_parser.add_argument("--summary", "-s", action="store_true", help="Summary mode: aggregate credit card transactions into monthly payment entries")
+    view_parser.add_argument("--include-planning", "-p", action="store_true", help="In summary mode, include planning transactions in aggregated totals (default: show separately)")
+    view_parser.add_argument("--sort", choices=["date_payed", "date_created"], default="date_payed", help="Sort transactions by payment date (default) or creation date")
 
     # Export command
-    export_parser = subparsers.add_parser("export", aliases=["exp", "x"], help="Export transactions to CSV")
-    export_parser.add_argument("file_path", help="Path to the CSV file")
-    export_parser.add_argument("--with-balance", "-b", action="store_true", help="Include running balance")
+    export_parser = subparsers.add_parser(
+        "export",
+        aliases=["exp", "x"],
+        help="Export transactions to CSV file",
+        description="Export all transactions to CSV format for external analysis"
+    )
+    export_parser.add_argument("file_path", help="Output CSV file path")
+    export_parser.add_argument("--with-balance", "-b", action="store_true", help="Include running balance column")
+
+    # ==================== TRANSACTION EDITING ====================
 
     # Delete command
-    delete_parser = subparsers.add_parser("delete", aliases=["del", "d"], help="Delete a transaction by its ID")
-    delete_parser.add_argument("transaction_id", type=int, help="The ID of the transaction to delete")
-    delete_parser.add_argument("--all", "-a", action="store_true", help="Delete the entire transaction group (e.g., all installments)")
+    delete_parser = subparsers.add_parser(
+        "delete",
+        aliases=["del", "d"],
+        help="Delete a transaction or group",
+        description="""
+Delete a single transaction or an entire transaction group (installments).
+Use --all to delete all related transactions (e.g., all installments in a payment plan).
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    delete_parser.add_argument("transaction_id", type=int, help="Transaction ID to delete")
+    delete_parser.add_argument("--all", "-a", action="store_true", help="Delete entire transaction group (all installments/splits)")
 
     # Edit command
-    edit_parser = subparsers.add_parser("edit", aliases=["e"], help="Edit an existing transaction")
-    edit_parser.add_argument("transaction_id", type=int, help="The ID of the transaction to edit")
-    edit_parser.add_argument("--description", "-d", type=str, help="New description for the transaction")
-    edit_parser.add_argument("--amount", "-a", type=float, help="New amount for the transaction")
-    edit_parser.add_argument("--date", "-D", type=str, help="New creation date (YYYY-MM-DD) for the transaction")
-    edit_parser.add_argument("--category", "-c", type=str, help="New category for the transaction")
-    edit_parser.add_argument("--budget", "-b", type=str, help="New budget for the transaction")
-    edit_parser.add_argument("--status", "-s", type=str, choices=["committed", "pending", "planning", "forecast"], help="New status for the transaction")
-    edit_parser.add_argument("--all", action="store_true", help="Apply changes to all transactions in the group (e.g., all installments)")
+    edit_parser = subparsers.add_parser(
+        "edit",
+        aliases=["e"],
+        help="Modify transaction details",
+        description="""
+Edit transaction properties like status, amount, category, etc.
+Use --all to apply changes to all transactions in a group (e.g., mark all installments as pending).
+
+Transaction statuses:
+  - committed: Confirmed transaction (default)
+  - pending: Awaiting confirmation (doesn't affect running balance)
+  - planning: Future potential transaction (affects forecast)
+  - forecast: Auto-generated future transaction
+
+Examples:
+  cash_flow edit 123 --status pending
+  cash_flow edit 456 --status planning --all    # Change all installments
+  cash_flow edit 789 --category groceries --budget budget_food
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    edit_parser.add_argument("transaction_id", type=int, help="Transaction ID to edit")
+    edit_parser.add_argument("--description", "-d", type=str, help="New description")
+    edit_parser.add_argument("--amount", "-a", type=float, help="New amount")
+    edit_parser.add_argument("--date", "-D", type=str, help="New creation date (YYYY-MM-DD)")
+    edit_parser.add_argument("--category", "-c", type=str, help="New category")
+    edit_parser.add_argument("--budget", "-b", type=str, help="New budget ID")
+    edit_parser.add_argument("--status", "-s", type=str, choices=["committed", "pending", "planning", "forecast"], help="New status")
+    edit_parser.add_argument("--all", action="store_true", help="Apply changes to all transactions in group (installments/splits)")
 
     # Clear command
-    clear_parser = subparsers.add_parser("clear", aliases=["cl"], help="Commits a pending or planning transaction by its ID")
-    clear_parser.add_argument("transaction_id", type=int, help="The ID of the transaction to clear")
+    clear_parser = subparsers.add_parser(
+        "clear",
+        aliases=["cl"],
+        help="Commit a pending/planning transaction",
+        description="""
+Change transaction status from 'pending' or 'planning' to 'committed'.
+Use --all to clear all transactions in a group (e.g., all installments).
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    clear_parser.add_argument("transaction_id", type=int, help="Transaction ID to commit")
+    clear_parser.add_argument("--all", action="store_true", help="Clear all transactions in the group (e.g., all installments)")
+
+    # ==================== RECONCILIATION ====================
 
     # Fix command
-    fix_parser = subparsers.add_parser("fix", aliases=["f"], help="Fix balance or payment discrepancies")
+    fix_parser = subparsers.add_parser(
+        "fix",
+        aliases=["f"],
+        help="Reconcile balances and statements",
+        description="""
+Reconcile account balances or credit card statements.
+
+Balance Fix:
+  Adjust total cash balance to match actual amount (adds correction transaction).
+  Example: cash_flow fix --balance 1500.00
+
+Statement Fix:
+  Reconcile credit card statement against tracked transactions.
+  Interactive mode (-i) shows all transactions and asks for statement amount.
+  Non-interactive mode creates adjustment transaction automatically.
+
+  Smart Month Detection:
+    - If month omitted, auto-detects based on cut-off day
+    - Before cut-off: reconciles current month
+    - After cut-off: reconciles next month
+    - Cash accounts: always use current month
+
+  Examples:
+    cash_flow fix --payment VisaCard -i              # Interactive (auto-detects month)
+    cash_flow fix --payment VisaCard 450.50         # Amount only (auto-detects month)
+    cash_flow fix --payment VisaCard 2026-01 450.50 # Explicit month and amount
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     fix_group = fix_parser.add_mutually_exclusive_group(required=True)
 
     # Balance fix flag
     fix_group.add_argument("--balance", "-b", type=float, metavar="AMOUNT",
-                          help="Fix total balance to this amount")
+                          help="Fix total balance to this amount (creates adjustment transaction)")
 
     # Payment fix flag
     fix_group.add_argument("--payment", "-p", metavar="ACCOUNT",
-                          help="Fix monthly payment/statement for this account")
+                          help="Reconcile credit card statement for this account")
 
     # Arguments for payment fix
-    fix_parser.add_argument("month", nargs="?", help="Month for payment fix (YYYY-MM)")
-    fix_parser.add_argument("amount", nargs="?", type=float, help="Statement amount")
+    fix_parser.add_argument("month", nargs="?", help="Month for statement (YYYY-MM). Auto-detected if omitted.")
+    fix_parser.add_argument("amount", nargs="?", type=float, help="Statement amount (required unless using -i)")
 
     # Options
     fix_parser.add_argument("--account", "-a", default="Cash",
                            help="Account for balance fix (default: Cash)")
     fix_parser.add_argument("--interactive", "-i", action="store_true",
-                           help="Interactive mode for payment fix (shows transactions, asks for amount)")
+                           help="Interactive mode: show transactions and prompt for statement amount")
 
     args = parser.parse_args()
 
@@ -1128,7 +1474,7 @@ def main():
         elif args.subcommand in ["delete", "del", "d"]:
             handle_subscriptions_delete(conn, args)
     elif args.command in ["view", "v"]:
-        interface.view_transactions(conn, args.months, args.summary, args.include_planning, args.start_from)
+        interface.view_transactions(conn, args.months, args.summary, args.include_planning, args.start_from, args.sort)
     elif args.command in ["export", "exp", "x"]:
         interface.export_transactions_to_csv(conn, args.file_path, args.with_balance)
     elif args.command in ["delete", "del", "d"]:
