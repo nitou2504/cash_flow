@@ -177,7 +177,7 @@ def get_budget_allocation_for_month(
     
     query = """
         SELECT * FROM transactions
-        WHERE origin_id = ? AND date(date_created) BETWEEN ? AND ?
+        WHERE origin_id = ? AND date(date_payed) BETWEEN ? AND ?
     """
     cursor.execute(query, (budget_id, start_of_month, end_of_month))
     allocation = cursor.fetchone()
@@ -201,7 +201,7 @@ def get_total_spent_for_budget_in_month(
     query = """
         SELECT SUM(amount) FROM transactions
         WHERE budget = ?
-        AND date(date_created) BETWEEN ? AND ?
+        AND date(date_payed) BETWEEN ? AND ?
         AND (origin_id IS NULL OR origin_id != ?)
         AND status != 'pending'
     """
