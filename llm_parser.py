@@ -1,33 +1,58 @@
 
 import os
-import sys
 import json
+import logging
 from datetime import date
 from dateutil.relativedelta import relativedelta
-from contextlib import contextmanager
-
-import google.generativeai as genai
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from sqlite3 import Connection
 import repository
 
-@contextmanager
-def suppress_stderr():
-    """Temporarily suppress stderr output at the file descriptor level."""
-    # Save original stderr file descriptor
-    stderr_fd = sys.stderr.fileno()
-    original_stderr_fd = os.dup(stderr_fd)
+# Configure logging
+logger = logging.getLogger(__name__)
+
+
+def _call_llm(
+    system_prompt: str,
+    user_input: str,
+    function_name: str
+) -> Optional[str]:
+    """
+    Unified LLM call for all parsing functions.
+
+    This helper function provides a single point of integration with the
+    LLM backend, eliminating code duplication across parsing functions.
+
+    Args:
+        system_prompt: Complete system instruction for the LLM
+        user_input: User's natural language input
+        function_name: Name of calling function (for routing)
+
+    Returns:
+        str: LLM response text
+        None: If call fails after all retries
+
+    Example:
+        response = _call_llm(
+            system_prompt="You are a parser...",
+            user_input="spent 50 on groceries",
+            function_name="parse_transaction_string"
+        )
+    """
+    from llm_backend import LLMBackend
 
     try:
-        # Redirect stderr to /dev/null
-        devnull_fd = os.open(os.devnull, os.O_WRONLY)
-        os.dup2(devnull_fd, stderr_fd)
-        os.close(devnull_fd)
-        yield
-    finally:
-        # Restore original stderr
-        os.dup2(original_stderr_fd, stderr_fd)
-        os.close(original_stderr_fd)
+        backend = LLMBackend.get_instance()
+        response_text = backend.generate(
+            system_instruction=system_prompt,
+            user_input=user_input,
+            function_name=function_name
+        )
+        return response_text
+
+    except Exception as e:
+        logger.error(f"LLM call failed for {function_name}: {e}")
+        return None
 
 
 def pre_parse_date_and_account(user_input: str, accounts: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -35,10 +60,6 @@ def pre_parse_date_and_account(user_input: str, accounts: List[Dict[str, Any]]) 
     Quick LLM call to extract just the date and account from user input.
     Used to calculate payment date before the main parse.
     """
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY environment variable not set.")
-
     account_names = [acc['account_id'] for acc in accounts]
     today = date.today()
 
@@ -63,23 +84,22 @@ User: "cash 20 lunch"
 {{"date": "{today.isoformat()}", "account": "Cash"}}
 """
 
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(
-        model_name="gemini-2.5-flash",
-        system_instruction=system_prompt
+    # Call LLM via unified backend
+    response_text = _call_llm(
+        system_prompt=system_prompt,
+        user_input=user_input,
+        function_name="pre_parse_date_and_account"
     )
 
-    with suppress_stderr():
-        response = model.generate_content(contents=user_input)
+    # Handle response
+    if not response_text:
+        # Fallback to defaults on failure
+        print("Warning: LLM call failed for pre-parse. Using defaults.")
+        return {"date": today.isoformat(), "account": accounts[0]['account_id'] if accounts else None}
 
     try:
-        # Check if response has valid content
-        if not response.candidates or not response.candidates[0].content.parts:
-            print(f"Warning: Empty LLM response. Finish reason: {response.candidates[0].finish_reason if response.candidates else 'No candidates'}")
-            return {"date": today.isoformat(), "account": accounts[0]['account_id'] if accounts else None}
-
-        return json.loads(response.text)
-    except (json.JSONDecodeError, IndexError, AttributeError, ValueError) as e:
+        return json.loads(response_text)
+    except (json.JSONDecodeError, ValueError) as e:
         print(f"Warning: Failed to parse pre-parse response: {e}")
         # Fallback to defaults
         return {"date": today.isoformat(), "account": accounts[0]['account_id'] if accounts else None}
@@ -93,10 +113,6 @@ def parse_transaction_string(conn: Connection, user_input: str, accounts: List[D
     Args:
         payment_month: The month when this transaction will be paid (for budget selection context)
     """
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY environment variable not set.")
-
     # Prepare the list of valid account names, budgets, and categories for the prompt
     account_names = [acc['account_id'] for acc in accounts]
 
@@ -247,31 +263,25 @@ User: "what if I buy a new TV for 800 next month on my Visa Produbanco"
 }}
 """
 
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(
-        model_name="gemini-2.5-flash",
-        system_instruction=system_prompt
+    # Call LLM via unified backend
+    response_text = _call_llm(
+        system_prompt=system_prompt,
+        user_input=user_input,
+        function_name="parse_transaction_string"
     )
 
-    with suppress_stderr():
-        response = model.generate_content(contents=user_input)
+    # Handle response
+    if not response_text:
+        print("Error: LLM call failed for transaction parsing.")
+        print("This might be due to safety filters, rate limits, or API issues.")
+        print("Please try rephrasing your input or try again later.")
+        return None
 
     try:
-        # Check if response has valid content
-        if not response.candidates or not response.candidates[0].content.parts:
-            print(f"Error: Empty LLM response (finish_reason: {response.candidates[0].finish_reason if response.candidates else 'No candidates'})")
-            print("This might be due to safety filters, rate limits, or API issues.")
-            print("Please try rephrasing your input or try again later.")
-            return None
-
-        return json.loads(response.text)
-    except (json.JSONDecodeError, IndexError, AttributeError, ValueError) as e:
+        return json.loads(response_text)
+    except (json.JSONDecodeError, ValueError) as e:
         print(f"Error: Failed to decode JSON from LLM response: {e}")
-        try:
-            if response.candidates and response.candidates[0].content.parts:
-                print(f"Raw response: {response.text}")
-        except:
-            print("Could not access response text")
+        print(f"Raw response: {response_text}")
         return None
 
 
@@ -280,10 +290,6 @@ def parse_subscription_string(conn: Connection, user_input: str, accounts: List[
     Uses the Gemini API to parse a natural language string into a structured
     JSON object for a subscription or budget.
     """
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY environment variable not set.")
-
     # Prepare the list of valid account names
     account_names = [acc['account_id'] for acc in accounts]
 
@@ -367,28 +373,23 @@ User: "Create a Christmas shopping budget of 500 for December only on my Visa Pr
 }}
 """
 
-    with suppress_stderr():
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
-            system_instruction=system_prompt
-        )
-        response = model.generate_content(contents=user_input)
+    # Call LLM via unified backend
+    response_text = _call_llm(
+        system_prompt=system_prompt,
+        user_input=user_input,
+        function_name="parse_subscription_string"
+    )
+
+    # Handle response
+    if not response_text:
+        print("Error: LLM call failed for subscription/budget parsing.")
+        return None
 
     try:
-        # Check if response has valid content
-        if not response.candidates or not response.candidates[0].content.parts:
-            print(f"Error: Empty LLM response (finish_reason: {response.candidates[0].finish_reason if response.candidates else 'No candidates'})")
-            return None
-
-        return json.loads(response.text)
-    except (json.JSONDecodeError, IndexError, AttributeError, ValueError) as e:
+        return json.loads(response_text)
+    except (json.JSONDecodeError, ValueError) as e:
         print(f"Error: Failed to decode JSON from LLM response: {e}")
-        try:
-            if response.candidates and response.candidates[0].content.parts:
-                print(f"Raw response: {response.text}")
-        except:
-            print("Could not access response text")
+        print(f"Raw response: {response_text}")
         return None
 
 
@@ -397,10 +398,6 @@ def parse_account_string(user_input: str) -> Dict[str, Any]:
     Uses the Gemini API to parse a natural language string into a structured
     JSON object for creating a new account.
     """
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY environment variable not set.")
-
     system_prompt = f"""
 You are an expert financial assistant. Your task is to parse a user's natural language input into a single, structured JSON object to create a new financial account.
 
@@ -441,28 +438,22 @@ User: "new credit card called Amex Gold"
 }}
 """
 
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(
-        model_name="gemini-2.5-flash",
-        system_instruction=system_prompt
+    # Call LLM via unified backend
+    response_text = _call_llm(
+        system_prompt=system_prompt,
+        user_input=user_input,
+        function_name="parse_account_string"
     )
 
-    with suppress_stderr():
-        response = model.generate_content(contents=user_input)
+    # Handle response
+    if not response_text:
+        print("Error: LLM call failed for account parsing.")
+        return None
 
     try:
-        # Check if response has valid content
-        if not response.candidates or not response.candidates[0].content.parts:
-            print(f"Error: Empty LLM response (finish_reason: {response.candidates[0].finish_reason if response.candidates else 'No candidates'})")
-            return None
-
-        return json.loads(response.text)
-    except (json.JSONDecodeError, IndexError, AttributeError, ValueError) as e:
+        return json.loads(response_text)
+    except (json.JSONDecodeError, ValueError) as e:
         print(f"Error: Failed to decode JSON from LLM response: {e}")
-        try:
-            if response.candidates and response.candidates[0].content.parts:
-                print(f"Raw response: {response.text}")
-        except:
-            print("Could not access response text")
+        print(f"Raw response: {response_text}")
         return None
 

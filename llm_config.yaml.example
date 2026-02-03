@@ -1,0 +1,152 @@
+# LLM Configuration for Cash Flow Application
+# Copy this file to llm_config.yaml and customize for your setup
+
+# ============================================================================
+# DEFAULT PROVIDER SETTINGS
+# ============================================================================
+# These are used when no function-specific override is configured
+
+default_provider: "gemini"
+default_model: "gemini-2.5-flash"
+
+# ============================================================================
+# PROVIDER CONFIGURATIONS
+# ============================================================================
+# Define available LLM providers and their connection settings
+
+providers:
+  # Google Gemini (Cloud API)
+  gemini:
+    type: "litellm"
+    api_key_env: "GEMINI_API_KEY"  # Must be set in .env file
+    models:
+      - "gemini-2.5-flash"  # Recommended: Fast, accurate, cost-effective
+      - "gemini-1.5-flash"  # Alternative: Slightly older model
+      - "gemini-1.5-pro"    # High accuracy, slower, more expensive
+
+  # Ollama (Local LLMs via OpenWebUI)
+  ollama:
+    type: "litellm"
+    base_url: "http://localhost:3001/v1"  # OpenWebUI API endpoint
+    models:
+      - "phi4"       # Recommended for simple parsing (fast, accurate)
+      - "gemma:2b"   # Good for quick extractions
+      - "gemma:1b"   # Fastest, less accurate
+
+# ============================================================================
+# PER-FUNCTION MODEL ROUTING (Optional - Cost Optimization)
+# ============================================================================
+# Override which model to use for specific parsing functions
+# Comment out any function to use default_provider/default_model
+
+function_models:
+  # Pre-parse: Quick date/account extraction
+  # Recommendation: Use local model for speed and cost savings
+  pre_parse_date_and_account:
+    provider: "ollama"
+    model: "gemma:2b"
+    reason: "Simple extraction - fast local model sufficient"
+
+  # Transaction parsing: Complex JSON with budget matching
+  # Recommendation: Use Gemini for accuracy on complex task
+  parse_transaction_string:
+    provider: "gemini"
+    model: "gemini-2.5-flash"
+    reason: "Complex parsing requires high accuracy"
+
+  # Subscription/Budget parsing: Medium complexity
+  # Recommendation: Use Gemini for consistency
+  parse_subscription_string:
+    provider: "gemini"
+    model: "gemini-2.5-flash"
+    reason: "Budget creation needs accuracy"
+
+  # Account parsing: Simple extraction
+  # Recommendation: Use local model (rarely called anyway)
+  parse_account_string:
+    provider: "ollama"
+    model: "phi4"
+    reason: "Simple parsing - local model works well"
+
+# ============================================================================
+# FALLBACK CHAIN (Optional)
+# ============================================================================
+# If primary model fails, try these in order
+# Useful for high availability scenarios
+
+fallback_chain:
+  - provider: "ollama"
+    model: "phi4"
+  - provider: "gemini"
+    model: "gemini-2.5-flash"
+
+# ============================================================================
+# GLOBAL SETTINGS
+# ============================================================================
+
+timeout_seconds: 30        # Max time to wait for LLM response
+max_retries: 2            # Number of retries on transient failures
+temperature: 0.0          # Deterministic output (0.0 = consistent, 1.0 = creative)
+
+# ============================================================================
+# CONFIGURATION NOTES
+# ============================================================================
+
+# QUICK START (Gemini Only):
+# ---------------------------
+# 1. Copy this file: cp llm_config.yaml.example llm_config.yaml
+# 2. Set your API key in .env: GEMINI_API_KEY=your_key_here
+# 3. Delete the function_models section to use Gemini for everything
+# 4. Test: python3 cli.py add "test transaction"
+
+# COST OPTIMIZATION (Hybrid Setup):
+# ----------------------------------
+# 1. Ensure OpenWebUI/Ollama is running on port 3001
+# 2. Keep the function_models section as shown above
+# 3. Result: ~75% cost reduction vs all-Gemini setup
+#    - Pre-parse: Free (local)
+#    - Transaction: Gemini ($0.00015)
+#    - Subscription: Gemini ($0.00015)
+#    - Account: Free (local)
+
+# PERFORMANCE COMPARISON:
+# -----------------------
+# Pre-parse with Gemini:  ~800ms average
+# Pre-parse with Ollama:  ~200ms average (4x faster!)
+# Transaction parsing:    Similar speed (complexity matters more)
+
+# ACCURACY CONSIDERATIONS:
+# ------------------------
+# Local models (phi4, gemma) work well for:
+#   - Simple extractions (dates, account names)
+#   - Structured outputs with clear examples
+#   - Tasks with limited context requirements
+#
+# Use Gemini for:
+#   - Complex budget/category matching
+#   - Ambiguous inputs requiring reasoning
+#   - Multi-step parsing (installments, splits)
+
+# ENVIRONMENT VARIABLE OVERRIDES:
+# -------------------------------
+# You can also configure via .env (lower priority than this file):
+#   LLM_DEFAULT_PROVIDER=gemini
+#   LLM_DEFAULT_MODEL=gemini-2.5-flash
+#   LLM_OLLAMA_BASE_URL=http://localhost:3001/v1
+#
+# Per-function overrides (optional):
+#   LLM_PRE_PARSE_MODEL=ollama/gemma:2b
+#   LLM_TRANSACTION_PARSE_MODEL=gemini/gemini-2.5-flash
+
+# TROUBLESHOOTING:
+# ----------------
+# Error: "Connection refused to localhost:3001"
+#   -> Start OpenWebUI: docker start open-webui
+#
+# Error: "GEMINI_API_KEY not set"
+#   -> Add to .env file: echo "GEMINI_API_KEY=your_key" >> .env
+#
+# Models not working as expected:
+#   -> Check logs for model selection messages
+#   -> Verify model names match exactly (case-sensitive)
+#   -> Test individual models with simple inputs first
