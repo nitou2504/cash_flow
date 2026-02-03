@@ -344,23 +344,10 @@ def handle_add(conn: sqlite3.Connection, args: argparse.Namespace):
 
     print("Parsing your request with the LLM...")
 
-    # Phase 1: Pre-parse to get date and account for payment calculation
-    pre_parsed = llm_parser.pre_parse_date_and_account(args.description, accounts)
+    # Calculate payment month for budget filtering
+    payment_month = tx_module.calculate_payment_month(args.description, accounts)
 
-    # Calculate payment date for budget context
-    payment_month = None
-    if pre_parsed:
-        try:
-            trans_date = date.fromisoformat(pre_parsed.get('date', date.today().isoformat()))
-            account_name = pre_parsed.get('account')
-            account = next((a for a in accounts if a['account_id'] == account_name), None)
-            if account:
-                payment_date = tx_module.simulate_payment_date(account, trans_date)
-                payment_month = payment_date.replace(day=1)
-        except (ValueError, KeyError):
-            pass  # Fall back to no payment context
-
-    # Phase 2: Full parse with payment context
+    # Full parse with payment context
     request_json = llm_parser.parse_transaction_string(conn, args.description, accounts, budgets, payment_month)
 
     if request_json:

@@ -23,6 +23,55 @@ def simulate_payment_date(account: Dict[str, Any], transaction_date: date) -> da
     return transaction_date
 
 
+def calculate_payment_month(user_message: str, accounts: List[Dict[str, Any]]) -> Optional[date]:
+    """
+    Calculate the payment month for budget filtering based on user input.
+
+    This function:
+    1. Pre-parses the user message to extract date and account
+    2. Calculates the payment date using account billing rules
+    3. Returns the first day of the payment month
+
+    The payment month is used to filter budgets to only those active during
+    the month when the transaction will actually impact cash flow.
+
+    Args:
+        user_message: Natural language transaction description
+        accounts: List of account dictionaries with billing information
+
+    Returns:
+        date: First day of payment month (e.g., 2026-02-01 for February)
+        None: If calculation fails (graceful fallback)
+
+    Example:
+        >>> # Purchase on Jan 28 on credit card with cut-off 25, payment 5
+        >>> # Payment date: Feb 5 (after cut-off)
+        >>> # Payment month: Feb 1 (2026-02-01)
+        >>> calculate_payment_month("Spent 50 on groceries on Jan 28", accounts)
+        date(2026, 2, 1)
+    """
+    # Import here to avoid circular dependency
+    import llm_parser
+
+    pre_parsed = llm_parser.pre_parse_date_and_account(user_message, accounts)
+
+    if not pre_parsed:
+        return None
+
+    try:
+        trans_date = date.fromisoformat(pre_parsed.get('date', date.today().isoformat()))
+        account_name = pre_parsed.get('account')
+        account = next((a for a in accounts if a['account_id'] == account_name), None)
+
+        if account:
+            payment_date = simulate_payment_date(account, trans_date)
+            return payment_date.replace(day=1)
+    except (ValueError, KeyError):
+        pass
+
+    return None
+
+
 def _calculate_credit_card_payment_date(
     transaction_date: date, cut_off_day: int, payment_day: int
 ) -> date:

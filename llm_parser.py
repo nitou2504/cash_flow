@@ -73,8 +73,14 @@ User: "cash 20 lunch"
         response = model.generate_content(contents=user_input)
 
     try:
+        # Check if response has valid content
+        if not response.candidates or not response.candidates[0].content.parts:
+            print(f"Warning: Empty LLM response. Finish reason: {response.candidates[0].finish_reason if response.candidates else 'No candidates'}")
+            return {"date": today.isoformat(), "account": accounts[0]['account_id'] if accounts else None}
+
         return json.loads(response.text)
-    except (json.JSONDecodeError, IndexError):
+    except (json.JSONDecodeError, IndexError, AttributeError, ValueError) as e:
+        print(f"Warning: Failed to parse pre-parse response: {e}")
         # Fallback to defaults
         return {"date": today.isoformat(), "account": accounts[0]['account_id'] if accounts else None}
 
@@ -246,15 +252,26 @@ User: "what if I buy a new TV for 800 next month on my Visa Produbanco"
         model_name="gemini-2.5-flash",
         system_instruction=system_prompt
     )
-    
+
     with suppress_stderr():
         response = model.generate_content(contents=user_input)
-    
+
     try:
+        # Check if response has valid content
+        if not response.candidates or not response.candidates[0].content.parts:
+            print(f"Error: Empty LLM response (finish_reason: {response.candidates[0].finish_reason if response.candidates else 'No candidates'})")
+            print("This might be due to safety filters, rate limits, or API issues.")
+            print("Please try rephrasing your input or try again later.")
+            return None
+
         return json.loads(response.text)
-    except (json.JSONDecodeError, IndexError) as e:
-        print(f"Error: Failed to decode JSON from LLM response.")
-        print(f"Raw response: {response.text}")
+    except (json.JSONDecodeError, IndexError, AttributeError, ValueError) as e:
+        print(f"Error: Failed to decode JSON from LLM response: {e}")
+        try:
+            if response.candidates and response.candidates[0].content.parts:
+                print(f"Raw response: {response.text}")
+        except:
+            print("Could not access response text")
         return None
 
 
@@ -359,10 +376,19 @@ User: "Create a Christmas shopping budget of 500 for December only on my Visa Pr
         response = model.generate_content(contents=user_input)
 
     try:
+        # Check if response has valid content
+        if not response.candidates or not response.candidates[0].content.parts:
+            print(f"Error: Empty LLM response (finish_reason: {response.candidates[0].finish_reason if response.candidates else 'No candidates'})")
+            return None
+
         return json.loads(response.text)
-    except (json.JSONDecodeError, IndexError) as e:
-        print(f"Error: Failed to decode JSON from LLM response.")
-        print(f"Raw response: {response.text}")
+    except (json.JSONDecodeError, IndexError, AttributeError, ValueError) as e:
+        print(f"Error: Failed to decode JSON from LLM response: {e}")
+        try:
+            if response.candidates and response.candidates[0].content.parts:
+                print(f"Raw response: {response.text}")
+        except:
+            print("Could not access response text")
         return None
 
 
@@ -420,14 +446,23 @@ User: "new credit card called Amex Gold"
         model_name="gemini-2.5-flash",
         system_instruction=system_prompt
     )
-    
+
     with suppress_stderr():
         response = model.generate_content(contents=user_input)
-    
+
     try:
+        # Check if response has valid content
+        if not response.candidates or not response.candidates[0].content.parts:
+            print(f"Error: Empty LLM response (finish_reason: {response.candidates[0].finish_reason if response.candidates else 'No candidates'})")
+            return None
+
         return json.loads(response.text)
-    except (json.JSONDecodeError, IndexError) as e:
-        print(f"Error: Failed to decode JSON from LLM response.")
-        print(f"Raw response: {response.text}")
+    except (json.JSONDecodeError, IndexError, AttributeError, ValueError) as e:
+        print(f"Error: Failed to decode JSON from LLM response: {e}")
+        try:
+            if response.candidates and response.candidates[0].content.parts:
+                print(f"Raw response: {response.text}")
+        except:
+            print("Could not access response text")
         return None
 
