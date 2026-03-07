@@ -26,7 +26,11 @@ from ui.telegram_format import (
     format_summary_navigation_buttons,
     parse_month_from_args,
 )
-from cashflow.config import TELEGRAM_BOT_TOKEN, DB_PATH
+from cashflow.config import (
+    TELEGRAM_BOT_TOKEN, DB_PATH,
+    BACKUP_ENABLED, BACKUP_DIR, BACKUP_KEEP_TODAY, BACKUP_RECENT_DAYS, BACKUP_MAX_DAYS,
+)
+from cashflow import backup as db_backup
 
 # Configure logging
 logging.basicConfig(
@@ -292,6 +296,10 @@ async def handle_confirm(query, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
+        # Auto-backup before mutating
+        if BACKUP_ENABLED:
+            db_backup.auto_backup(DB_PATH, BACKUP_DIR, BACKUP_KEEP_TODAY, BACKUP_RECENT_DAYS, BACKUP_MAX_DAYS)
+
         # Process transaction
         trans_date = None
         if "date_created" in pending_tx:
@@ -538,6 +546,9 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     """Start the bot."""
     global db_conn
+
+    if not TELEGRAM_BOT_TOKEN:
+        raise ValueError("TELEGRAM_BOT_TOKEN not found in .env")
 
     # Initialize database
     initialize_database(DB_PATH)
