@@ -69,6 +69,36 @@ def _clean_llm_response(text: str) -> Optional[str]:
     return text
 
 
+def resolve_account(raw: str, accounts: List[Dict[str, Any]], default: str = "Cash") -> str:
+    """Match an LLM-returned account string to a real account name.
+
+    Handles exact matches, case-insensitive matches, substring matches,
+    and falls back to default for empty/invalid values like 'N/A'.
+    """
+    if not raw or raw.strip().lower() in ("n/a", "none", "null", ""):
+        return default
+
+    account_names = [a['account_id'] for a in accounts]
+    raw_lower = raw.strip().lower()
+
+    # Exact match
+    for name in account_names:
+        if name == raw.strip():
+            return name
+
+    # Case-insensitive match
+    for name in account_names:
+        if name.lower() == raw_lower:
+            return name
+
+    # Substring match (e.g. "pichincha" -> "Visa Pichincha")
+    for name in account_names:
+        if raw_lower in name.lower() or name.lower() in raw_lower:
+            return name
+
+    return default
+
+
 def _last_weekday(today: date, weekday: int) -> date:
     """Find the most recent past occurrence of a weekday (0=Mon, 6=Sun)."""
     d = today
@@ -146,11 +176,14 @@ def pre_parse_date_and_account(user_input: str, accounts: List[Dict[str, Any]]) 
         return {"date": today.isoformat(), "account": accounts[0]['account_id'] if accounts else None}
 
     try:
-        return json.loads(response_text)
+        result = json.loads(response_text)
     except (json.JSONDecodeError, ValueError) as e:
         print(f"Warning: Failed to parse pre-parse response: {e}")
         # Fallback to defaults
-        return {"date": today.isoformat(), "account": accounts[0]['account_id'] if accounts else None}
+        result = {"date": today.isoformat(), "account": accounts[0]['account_id'] if accounts else None}
+
+    result['account'] = resolve_account(result.get('account', ''), accounts)
+    return result
 
 
 def parse_transaction_string(conn: Connection, user_input: str, accounts: List[Dict[str, Any]], budgets: List[Dict[str, Any]], payment_month: date = None) -> Dict[str, Any]:
@@ -326,11 +359,14 @@ User: "what if I buy a new TV for 800 next month on my Visa Produbanco"
         return None
 
     try:
-        return json.loads(response_text)
+        result = json.loads(response_text)
     except (json.JSONDecodeError, ValueError) as e:
         print(f"Error: Failed to decode JSON from LLM response: {e}")
         print(f"Raw response: {response_text}")
         return None
+
+    result['account'] = resolve_account(result.get('account', ''), accounts)
+    return result
 
 
 def parse_subscription_string(conn: Connection, user_input: str, accounts: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -434,11 +470,14 @@ User: "Create a Christmas shopping budget of 500 for December only on my Visa Pr
         return None
 
     try:
-        return json.loads(response_text)
+        result = json.loads(response_text)
     except (json.JSONDecodeError, ValueError) as e:
         print(f"Error: Failed to decode JSON from LLM response: {e}")
         print(f"Raw response: {response_text}")
         return None
+
+    result['payment_account_id'] = resolve_account(result.get('payment_account_id', ''), accounts)
+    return result
 
 
 def parse_account_string(user_input: str) -> Dict[str, Any]:
