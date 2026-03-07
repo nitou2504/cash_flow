@@ -3,9 +3,10 @@ import unittest
 import sqlite3
 from datetime import date
 from unittest.mock import patch
+from dateutil.relativedelta import relativedelta
 
-from cashflow.controller import process_transaction_request, run_monthly_budget_reconciliation
-from cashflow.database import create_connection, create_tables, insert_mock_data
+from cashflow.controller import process_transaction_request, run_monthly_budget_reconciliation, run_monthly_rollover
+from cashflow.database import create_connection, create_tables, insert_mock_data, initialize_categories
 from cashflow.repository import add_subscription, get_all_transactions, add_transactions, get_budget_allocation_for_month
 
 class TestBudgetLogic(unittest.TestCase):
@@ -14,10 +15,11 @@ class TestBudgetLogic(unittest.TestCase):
         self.conn = create_connection(":memory:")
         create_tables(self.conn)
         insert_mock_data(self.conn)
+        initialize_categories(self.conn)
 
-        # 1. Create a budget subscription for "Food"
+        # 1. Create a budget subscription for "Home Groceries"
         self.food_budget_sub = {
-            "id": "budget_food", "name": "Food Budget", "category": "Food",
+            "id": "budget_food", "name": "Food Budget", "category": "Home Groceries",
             "monthly_amount": 300.00, "payment_account_id": "Cash",
             "start_date": date(2025, 1, 1), "is_budget": True,
             "underspend_behavior": "return"
@@ -30,7 +32,7 @@ class TestBudgetLogic(unittest.TestCase):
             "date_created": self.current_month_start,
             "date_payed": self.current_month_start,
             "description": "Food Budget", "account": "Cash", "amount": -300.00,
-            "category": "Food", "budget": "budget_food", "status": "committed",
+            "category": "Home Groceries", "budget": "budget_food", "status": "committed",
             "origin_id": "budget_food"
         }
         add_transactions(self.conn, [self.initial_allocation])
@@ -47,7 +49,7 @@ class TestBudgetLogic(unittest.TestCase):
         # A $50 grocery expense
         expense_request = {
             "type": "simple", "description": "Groceries", "amount": 50.00,
-            "account": "Cash", "category": "groceries", "budget": "budget_food"
+            "account": "Cash", "category": "Home Groceries", "budget": "budget_food"
         }
         process_transaction_request(self.conn, expense_request)
 
@@ -63,7 +65,7 @@ class TestBudgetLogic(unittest.TestCase):
         # A $400 expense, which is $100 over budget
         over_expense_request = {
             "type": "simple", "description": "Fancy Dinner", "amount": 400.00,
-            "account": "Cash", "category": "dining", "budget": "budget_food"
+            "account": "Cash", "category": "Dining-Snacks", "budget": "budget_food"
         }
         process_transaction_request(self.conn, over_expense_request)
 
@@ -80,7 +82,7 @@ class TestBudgetLogic(unittest.TestCase):
         # Log a $100 expense, leaving $200 in the budget
         expense = {
             "type": "simple", "description": "Groceries", "amount": 100.00,
-            "account": "Cash", "category": "groceries", "budget": "budget_food"
+            "account": "Cash", "category": "Home Groceries", "budget": "budget_food"
         }
         process_transaction_request(self.conn, expense)
 
@@ -110,7 +112,7 @@ class TestBudgetLogic(unittest.TestCase):
         # Log a $100 expense, leaving $200
         expense = {
             "type": "simple", "description": "Groceries", "amount": 100.00,
-            "account": "Cash", "category": "groceries", "budget": "budget_food"
+            "account": "Cash", "category": "Home Groceries", "budget": "budget_food"
         }
         process_transaction_request(self.conn, expense)
 
@@ -123,6 +125,94 @@ class TestBudgetLogic(unittest.TestCase):
 
         self.assertEqual(len(transactions), 2) # Initial Allocation + Expense
         self.assertAlmostEqual(original_allocation["amount"], -200.00) # Unchanged
+
+
+class TestRolloverBudgetReconciliation(unittest.TestCase):
+    """Integration tests for budget reconciliation triggered via run_monthly_rollover."""
+
+    def setUp(self):
+        self.conn = create_connection(":memory:")
+        create_tables(self.conn)
+        insert_mock_data(self.conn)
+        initialize_categories(self.conn)
+
+        # "return" budget starting two months ago
+        self.two_months_ago = date.today().replace(day=1) - relativedelta(months=2)
+        self.last_month = date.today().replace(day=1) - relativedelta(months=1)
+        self.current_month = date.today().replace(day=1)
+
+        self.budget_sub = {
+            "id": "budget_food", "name": "Food Budget", "category": "Home Groceries",
+            "monthly_amount": 300.00, "payment_account_id": "Cash",
+            "start_date": self.last_month, "is_budget": True,
+            "underspend_behavior": "return"
+        }
+        add_subscription(self.conn, self.budget_sub)
+
+    def tearDown(self):
+        self.conn.close()
+
+    def _create_allocation(self, month, amount=-300.00):
+        add_transactions(self.conn, [{
+            "date_created": month, "date_payed": month,
+            "description": "Food Budget", "account": "Cash",
+            "amount": amount, "category": "Home Groceries", "budget": "budget_food",
+            "status": "committed", "origin_id": "budget_food"
+        }])
+
+    def _create_expense(self, month, amount):
+        process_transaction_request(self.conn, {
+            "type": "simple", "description": "Groceries",
+            "amount": amount, "account": "Cash",
+            "category": "Home Groceries", "budget": "budget_food",
+        }, transaction_date=month.replace(day=15))
+
+    def test_rollover_triggers_return_for_past_month(self):
+        """run_monthly_rollover reconciles past months with 'return' underspend."""
+        # Allocation for last month, with $100 spent => $200 underspend
+        self._create_allocation(self.last_month)
+        self._create_expense(self.last_month, 100.00)
+
+        # Allocation for current month (should NOT be touched)
+        self._create_allocation(self.current_month)
+
+        run_monthly_rollover(self.conn, date.today())
+
+        transactions = get_all_transactions(self.conn)
+        releases = [t for t in transactions if "Budget Release" in t["description"]]
+        self.assertEqual(len(releases), 1)
+        self.assertAlmostEqual(releases[0]["amount"], 200.00)
+
+        # Current month allocation untouched
+        current_alloc = get_budget_allocation_for_month(self.conn, "budget_food", self.current_month)
+        self.assertAlmostEqual(current_alloc["amount"], -300.00)
+
+    def test_rollover_skips_current_month(self):
+        """Current month budget should NOT be reconciled."""
+        self._create_allocation(self.current_month)
+        self._create_expense(self.current_month, 100.00)
+
+        run_monthly_rollover(self.conn, date.today())
+
+        transactions = get_all_transactions(self.conn)
+        releases = [t for t in transactions if "Budget Release" in t["description"]]
+        self.assertEqual(len(releases), 0)
+
+        # Allocation still has underspend (not zeroed)
+        alloc = get_budget_allocation_for_month(self.conn, "budget_food", self.current_month)
+        self.assertAlmostEqual(alloc["amount"], -200.00)
+
+    def test_rollover_idempotent_for_return(self):
+        """Running rollover twice should not create duplicate releases."""
+        self._create_allocation(self.last_month)
+        self._create_expense(self.last_month, 100.00)
+
+        run_monthly_rollover(self.conn, date.today())
+        run_monthly_rollover(self.conn, date.today())
+
+        transactions = get_all_transactions(self.conn)
+        releases = [t for t in transactions if "Budget Release" in t["description"]]
+        self.assertEqual(len(releases), 1)
 
 
 if __name__ == "__main__":

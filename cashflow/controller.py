@@ -860,7 +860,23 @@ def run_monthly_rollover(conn: sqlite3.Connection, process_date: date):
     generate_forecasts(conn, horizon_months, process_date)
     print("Forecast generation complete.")
 
-    # 3. Commit forecasts for the given month
+    # 3. Run budget reconciliation for completed past months
+    current_month_start = process_date.replace(day=1)
+    return_budgets = [
+        s for s in repository.get_all_active_subscriptions(conn, current_month_start)
+        if s.get("is_budget") and s.get("underspend_behavior") == "return"
+    ]
+    if return_budgets:
+        earliest_start = min(
+            date.fromisoformat(s["start_date"]) if isinstance(s["start_date"], str) else s["start_date"]
+            for s in return_budgets
+        )
+        month = earliest_start.replace(day=1)
+        while month < current_month_start:
+            run_monthly_budget_reconciliation(conn, month)
+            month += relativedelta(months=1)
+
+    # 4. Commit forecasts for the given month
     repository.commit_past_and_current_forecasts(conn, process_date)
     print("Committed forecasts for the current month.")
 

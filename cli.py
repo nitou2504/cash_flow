@@ -164,6 +164,7 @@ def handle_subscriptions_list(conn: sqlite3.Connection, args: argparse.Namespace
     table.add_column("ID", style="cyan")
     table.add_column("Name", style="bold")
     table.add_column("Type")
+    table.add_column("Underspend")
     table.add_column("Amount", justify="right")
     table.add_column("Account")
     table.add_column("Start Date")
@@ -184,10 +185,13 @@ def handle_subscriptions_list(conn: sqlite3.Connection, args: argparse.Namespace
         else:  # Expired
             status_style = "[red]Expired[/red]"
 
+        underspend = sub.get('underspend_behavior', '') if sub['is_budget'] else ''
+
         table.add_row(
             sub['id'],
             sub['name'],
             sub_type,
+            underspend,
             f"${sub['monthly_amount']:.2f}",
             sub['payment_account_id'],
             str(sub['start_date']),
