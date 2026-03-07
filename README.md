@@ -1,6 +1,6 @@
 # Personal Cash Flow Tool
 
-A CLI and Telegram bot for managing personal finances with natural language input. Type what you spent in plain English and the app parses dates, accounts, categories, and amounts automatically. Built around budget envelopes, credit card billing-cycle awareness, and a single timeline that forecasts your real cash position into the future.
+A CLI and Telegram bot for managing personal finances with natural language input. Type what you spent in plain English and the app parses dates, accounts, categories, and amounts automatically. Parsing is powered by LLMs via [LiteLLM](https://github.com/BerriAI/litellm) — works out of the box with a free Gemini API key, or route tasks to local models via Ollama for zero cost. See [LLM Configuration](#llm-configuration). Built around budget envelopes, credit card billing-cycle awareness, and a single timeline that forecasts your real cash position into the future.
 
 ## See It In Action
 
@@ -35,6 +35,26 @@ python3 cli.py add "Bought laptop for 1200 in 12 installments on Visa Pichincha"
 
 Creates 12 monthly transactions of -100.00 each, with payment dates aligned to the card's billing cycle.
 
+```bash
+python3 cli.py add "Phone plan 600 starting the 5th of 12 installments on Visa Pichincha"
+```
+
+Creates 8 remaining installments (12 − 5 + 1), labeled "Phone plan (5/12)" through "Phone plan (12/12)", each at $50.00.
+
+### Pending & expected income
+
+```bash
+python3 cli.py add "Friend will pay me 100 on March 15, pending"
+```
+
+Shows up in the timeline but doesn't affect your running balance until you clear it with `cli.py clear <id>`.
+
+```bash
+python3 cli.py add "Alex will pay me 150 in 3 installments starting next month, pending"
+```
+
+Creates 3 pending income transactions of +$50 each. Clear them as payments arrive.
+
 ### Budget envelopes
 
 ```bash
@@ -66,6 +86,34 @@ Budget envelopes appear as line items but don't reduce the running balance—the
 ### Telegram bot
 
 Send a message like _"Lunch 12.50 on Cash"_ to your bot; it replies with a preview and inline buttons to confirm, edit, or cancel.
+
+**`/summary` — Budget envelope view:**
+
+```
+📊 Budgets: March 2026
+
+🟢 Home Groceries
+   $250.45 of $400.00 | $149.55 left
+
+🟡 Transportation
+   $85.00 of $100.00 | $15.00 left
+
+🔴 Dining-Snacks
+   $120.00 of $80.00 | $40.00 over
+```
+
+**`/summary` — Pending/planning toggle:**
+
+```
+⏳ Pending (2)
+Mar 15 | Friend owes dinner | +$25.00
+Apr 01 | Alex payment 1/3   | +$50.00
+
+📋 Planning: March 2026 (1)
+Mar 20 | New headphones      | -$80.00
+```
+
+Use navigation buttons to browse months or toggle between budget and planning views.
 
 ---
 
@@ -125,7 +173,7 @@ Send a message like _"Lunch 12.50 on Cash"_ to your bot; it replies with a previ
    python3 cli.py accounts add-manual Cash cash
    ```
 
-   The database ships with 11 default categories (Housing, Home Groceries, Personal Groceries, Dining-Snacks, Transportation, Health, Personal, Income, Savings, Loans, Others). You can add custom ones with `python3 cli.py categories add <name> "<description>"`.
+   The database ships with 11 default categories (Housing, Home Groceries, Personal Groceries, Dining-Snacks, Transportation, Health, Personal, Income, Savings, Loans, Others). You can add custom ones with `python3 cli.py categories add <name> "<description>"` — the description is a short explanation of what the category covers (e.g., "Eating out, takeout, coffee"), used for human reference when browsing categories.
 
 4. **Record your first income**
 
