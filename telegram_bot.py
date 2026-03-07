@@ -368,147 +368,88 @@ def get_balance_at_date(
 
 async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /summary [month] command."""
-    # Parse month argument if provided
-    start_month = None
+    target_month = None
     if context.args:
         args_str = ' '.join(context.args)
-        parsed_month = parse_month_from_args(args_str)
-        if parsed_month:
-            # If user specifies a month, show prev/current/next around that month
-            start_month = parsed_month - relativedelta(months=1)
+        target_month = parse_month_from_args(args_str)
 
-    # Default to previous/current/next month (centered on current month)
-    if start_month is None:
+    if target_month is None:
         today = date.today()
-        current_month = date(today.year, today.month, 1)
-        start_month = current_month - relativedelta(months=1)
+        target_month = date(today.year, today.month, 1)
 
-    # Calculate end month (2 months after start for 3-month range)
-    end_month = start_month + relativedelta(months=2)
-
-    await handle_summary_request(update, context, start_month, end_month, from_callback=False)
+    await handle_summary_request(update, context, target_month, from_callback=False)
 
 
 async def handle_summary_request(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
-    start_month: date,
-    end_month: date,
+    target_month: date,
     show_planning: bool = False,
     from_callback: bool = False
 ):
     """
-    Unified handler for summary requests.
+    Unified handler for summary requests showing a single month.
 
     Args:
         update: Telegram update object
         context: Context object
-        start_month: First day of first month to display
-        end_month: First day of last month to display
+        target_month: First day of month to display
         show_planning: If True, show planning/pending view; if False, show budget envelope view
         from_callback: True if called from button callback
     """
     try:
-        # Show processing indicator
         if from_callback:
             await update.callback_query.answer("Loading...")
         else:
             processing_msg = await update.message.reply_text("🔄 Loading...", parse_mode='Markdown')
 
-        # Fetch all transactions
-        all_transactions = repository.get_transactions_with_running_balance(db_conn)
-
-        # Convert date strings to date objects
-        for t in all_transactions:
-            if isinstance(t['date_payed'], str):
-                t['date_payed'] = date.fromisoformat(t['date_payed'])
-            if isinstance(t['date_created'], str):
-                t['date_created'] = date.fromisoformat(t['date_created'])
-
-        # Calculate period end (last day of end_month)
-        period_end = end_month + relativedelta(months=1) - timedelta(days=1)
-
-        # Filter transactions in date range
-        period_transactions = [
-            t for t in all_transactions
-            if start_month <= t['date_payed'] <= period_end
-        ]
-
-        # Format period string
-        if start_month.year == end_month.year:
-            if start_month.month == end_month.month:
-                period_str = start_month.strftime("%B %Y")
-            else:
-                period_str = f"{start_month.strftime('%b')} - {end_month.strftime('%b %Y')}"
-        else:
-            period_str = f"{start_month.strftime('%b %Y')} - {end_month.strftime('%b %Y')}"
+        period_end = (target_month + relativedelta(months=1)) - timedelta(days=1)
 
         if show_planning:
-            # Show planning and pending transactions
-            planning_pending = [
-                t for t in period_transactions
-                if t.get('status') in ['planning', 'pending']
-            ]
-            message_text = format_planning_pending(planning_pending, period_str)
+            all_transactions = repository.get_transactions_with_running_balance(db_conn)
+            all_pending = []
+            month_planning = []
+            for t in all_transactions:
+                dp = t['date_payed']
+                if isinstance(dp, str):
+                    dp = date.fromisoformat(dp)
+                t['date_payed'] = dp
+                if t.get('status') == 'pending':
+                    all_pending.append(t)
+                elif t.get('status') == 'planning' and target_month <= dp <= period_end:
+                    month_planning.append(t)
+            message_text = format_planning_pending(
+                all_pending, month_planning, target_month.strftime('%B %Y')
+            )
         else:
-            # Show budget envelopes using budget definitions
+            # Budget envelope view using repository functions
             all_budgets = repository.get_all_budgets(db_conn)
-            budget_ids = {b['id'] for b in all_budgets}
-            budget_definitions = {b['id']: b for b in all_budgets}
+            budget_data = []
 
-            # First pass: identify which budgets have activity in period
-            budgets_in_period = set()
-            allocation_dates = {}
-
-            for t in period_transactions:
-                budget = t.get('budget') or ''
-                budget = budget.strip() if budget else ''
-                if not budget:
+            for budget in all_budgets:
+                allocation = repository.get_budget_allocation_for_month(
+                    db_conn, budget['id'], target_month
+                )
+                if not allocation:
                     continue
 
-                budgets_in_period.add(budget)
+                spent = repository.get_total_spent_for_budget_in_month(
+                    db_conn, budget['id'], target_month
+                )
+                allocated = budget['monthly_amount']
+                remaining = allocated - spent
 
-                # Track allocation dates in period
-                origin_id = t.get('origin_id')
-                is_allocation = origin_id in budget_ids and budget == origin_id
-                if is_allocation:
-                    if budget not in allocation_dates:
-                        allocation_dates[budget] = []
-                    date_str = t['date_payed'].strftime('%b %d') if isinstance(t['date_payed'], date) else str(t['date_payed'])
-                    allocation_dates[budget].append(date_str)
+                budget_data.append({
+                    'name': budget['name'],
+                    'allocated': allocated,
+                    'spent': spent,
+                    'remaining': remaining,
+                    'status': allocation['status'],
+                })
 
-            # Second pass: calculate spending for active budgets (ONLY in period)
-            budget_data = {}
+            message_text = format_budget_envelopes(budget_data, target_month)
 
-            for t in period_transactions:  # Only transactions in the period!
-                budget = t.get('budget') or ''
-                budget = budget.strip() if budget else ''
-                if not budget or budget not in budgets_in_period:
-                    continue
-
-                if budget not in budget_data:
-                    # Get allocation from budget definition
-                    budget_def = budget_definitions.get(budget, {})
-                    allocated = budget_def.get('monthly_amount', 0.0)
-
-                    budget_data[budget] = {
-                        'allocated': allocated,
-                        'spent': 0.0,
-                        'dates': allocation_dates.get(budget, [])
-                    }
-
-                # Sum spending (non-allocation transactions) in this period
-                origin_id = t.get('origin_id')
-                is_allocation = origin_id in budget_ids and budget == origin_id
-
-                if not is_allocation:
-                    amount = abs(t['amount'])
-                    budget_data[budget]['spent'] += amount
-
-            message_text = format_budget_envelopes(budget_data, period_str)
-
-        # Create navigation buttons
-        buttons = format_summary_navigation_buttons(start_month, show_planning)
+        buttons = format_summary_navigation_buttons(target_month, show_planning)
 
         if from_callback:
             await update.callback_query.edit_message_text(
@@ -547,7 +488,6 @@ async def summary_navigation_callback(
     query = update.callback_query
     await query.answer()  # Acknowledge button click
 
-    # Extract month and view type from callback_data: "summary:2024-11:budget" or "summary:2024-11:plan"
     callback_data = query.data
     parts = callback_data.split(':')
 
@@ -558,21 +498,16 @@ async def summary_navigation_callback(
         )
         return
 
-    month_str = parts[1]  # "2024-11"
-    view_type = parts[2] if len(parts) > 2 else "budget"  # Default to budget view
+    month_str = parts[1]
+    view_type = parts[2] if len(parts) > 2 else "budget"
 
     try:
         year, month = map(int, month_str.split('-'))
-        start_month = date(year, month, 1)
-
-        # Calculate 3-month range starting from that month
-        end_month = start_month + relativedelta(months=2)
-
-        # Determine which view to show
+        target_month = date(year, month, 1)
         show_planning = (view_type == "plan")
 
         await handle_summary_request(
-            update, context, start_month, end_month,
+            update, context, target_month,
             show_planning=show_planning,
             from_callback=True
         )

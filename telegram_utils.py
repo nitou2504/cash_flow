@@ -11,9 +11,24 @@ def escape_markdown(text: str) -> str:
     """
     if not text:
         return text
-    # Escape special characters
     text = str(text)
     text = text.replace('_', r'\_')
+    text = text.replace('*', r'\*')
+    text = text.replace('`', r'\`')
+    text = text.replace('[', r'\[')
+    return text
+
+
+def display_name(text: str) -> str:
+    """Convert raw identifiers to display-friendly names for Telegram.
+
+    Replaces underscores with spaces, applies title case, and escapes
+    any remaining Markdown special characters.
+    """
+    if not text:
+        return text
+    text = str(text).replace('_', ' ').strip().title()
+    # Escape remaining Markdown chars (*, `, [) — underscores are already gone
     text = text.replace('*', r'\*')
     text = text.replace('`', r'\`')
     text = text.replace('[', r'\[')
@@ -44,7 +59,7 @@ def format_transaction_preview(
             message += f"🏷️ *Category:* {escape_markdown(transaction_json['category'])}\n"
 
         if transaction_json.get('budget'):
-            message += f"📊 *Budget:* {escape_markdown(transaction_json['budget'])}\n"
+            message += f"📊 *Budget:* {display_name(transaction_json['budget'])}\n"
 
         if transaction_json.get('is_pending'):
             message += f"\n⚠️ *Status:* Pending (won't affect balance until cleared)\n"
@@ -96,91 +111,104 @@ def format_success_message(description: str, balance: float = None) -> str:
 
 
 def format_budget_envelopes(
-    budget_data: Dict[str, Dict],
-    period_str: str
+    budget_data: List[Dict[str, Any]],
+    target_month: date
 ) -> str:
     """
-    Format budget envelope view showing allocated, spent, and remaining.
+    Format budget envelope view for a single month.
 
     Args:
-        budget_data: Dict mapping budget name to {allocated, spent, dates}
-        period_str: Period description like "Jan - Mar 2026"
+        budget_data: List of dicts with name, allocated, spent, remaining, status
+        target_month: First day of the month being displayed
 
     Returns:
         Formatted markdown string for Telegram
     """
-    message = f"📊 *Budgets: {period_str}*\n\n"
+    month_str = target_month.strftime('%B %Y')
+    message = f"📊 *Budgets: {month_str}*\n\n"
 
     if not budget_data:
-        message += "_No budget transactions in this period_\n"
+        message += "_No budget allocations this month_\n"
         return message
 
-    # Sort budgets by name for consistent display
-    for budget_name in sorted(budget_data.keys()):
-        data = budget_data[budget_name]
-        allocated = data['allocated']
-        spent = data['spent']
-        remaining = allocated - spent
-        dates = data.get('dates', [])
+    for b in sorted(budget_data, key=lambda x: x['name']):
+        allocated = b['allocated']
+        spent = b['spent']
+        remaining = b['remaining']
 
-        # Format dates
-        date_str = ", ".join(dates) if dates else "No allocations"
+        # Status emoji
+        if remaining <= 0:
+            emoji = "🔴"
+        elif allocated > 0 and spent / allocated > 0.8:
+            emoji = "🟡"
+        else:
+            emoji = "🟢"
 
-        # Show budget with dates
-        message += f"*{budget_name}* ({date_str})\n"
-        message += f"  Allocated: ${allocated:,.2f} | Spent: ${spent:,.2f} | Left: ${remaining:,.2f}\n\n"
+        name = display_name(b['name'])
+        status_tag = " _(forecast)_" if b['status'] == 'forecast' else ""
+
+        message += f"{emoji} *{name}*{status_tag}\n"
+        if remaining < 0:
+            message += f"   ${spent:,.2f} of ${allocated:,.2f} | ${abs(remaining):,.2f} over\n\n"
+        else:
+            message += f"   ${spent:,.2f} of ${allocated:,.2f} | ${remaining:,.2f} left\n\n"
 
     return message
 
 
+def _format_transaction_line(t: Dict[str, Any]) -> str:
+    """Format a single transaction as a compact line."""
+    dp = t['date_payed']
+    date_str = dp.strftime('%b %d') if isinstance(dp, date) else str(dp)
+    desc = escape_markdown(t.get('description', 'Unknown'))
+    if len(desc) > 25:
+        desc = desc[:22] + "..."
+    amount = t['amount']
+    amount_str = f"-${abs(amount):,.2f}" if amount < 0 else f"+${abs(amount):,.2f}"
+    return f"{date_str} | {desc} | {amount_str}\n"
+
+
 def format_planning_pending(
-    transactions: List[Dict[str, Any]],
-    period_str: str
+    pending: List[Dict[str, Any]],
+    planning: List[Dict[str, Any]],
+    month_str: str
 ) -> str:
     """
     Format planning and pending transactions view.
 
     Args:
-        transactions: List of planning/pending transactions
-        period_str: Period description like "Nov 2024 - Jan 2025"
+        pending: All pending transactions (any date)
+        planning: Planning transactions for the target month
+        month_str: Month description like "March 2026"
 
     Returns:
         Formatted markdown string for Telegram
     """
-    message = f"🔮 *Planning & Pending: {escape_markdown(period_str)}*\n\n"
+    message = ""
 
-    # Separate by status
-    pending = [t for t in transactions if t.get('status') == 'pending']
-    planning = [t for t in transactions if t.get('status') == 'planning']
-
-    if not pending and not planning:
-        message += "_No planning or pending transactions_\n"
-        return message
-
-    # Show pending first
+    # Pending: all dates, full detail
+    message += f"⏳ *Pending* ({len(pending)})\n"
     if pending:
-        message += f"⏳ *Pending* ({len(pending)})\n"
         for t in sorted(pending, key=lambda x: x['date_payed']):
-            date_str = t['date_payed'].strftime('%b %d') if isinstance(t['date_payed'], date) else str(t['date_payed'])
+            dp = t['date_payed']
+            date_str = dp.strftime('%b %d, %Y') if isinstance(dp, date) else str(dp)
             desc = escape_markdown(t.get('description', 'Unknown'))
-            if len(desc) > 25:
-                desc = desc[:22] + "..."
             amount = t['amount']
             amount_str = f"-${abs(amount):,.2f}" if amount < 0 else f"+${abs(amount):,.2f}"
-            message += f"{date_str} | {desc} | {amount_str}\n"
-        message += "\n"
+            acct = escape_markdown(t.get('account', ''))
+            message += f"• {desc} — `{amount_str}`\n   {date_str} | {acct}\n\n"
+    else:
+        message += "_None_\n"
 
-    # Show planning
+    message += "\n"
+
+    # Planning: month-specific
+    message += f"📋 *Planning: {month_str}* ({len(planning)})\n"
     if planning:
-        message += f"📋 *Planning* ({len(planning)})\n"
         for t in sorted(planning, key=lambda x: x['date_payed']):
-            date_str = t['date_payed'].strftime('%b %d') if isinstance(t['date_payed'], date) else str(t['date_payed'])
-            desc = escape_markdown(t.get('description', 'Unknown'))
-            if len(desc) > 25:
-                desc = desc[:22] + "..."
-            amount = t['amount']
-            amount_str = f"-${abs(amount):,.2f}" if amount < 0 else f"+${abs(amount):,.2f}"
-            message += f"{date_str} | {desc} | {amount_str}\n"
+            message += _format_transaction_line(t)
+    else:
+        message += "_None_\n"
 
     return message
 
