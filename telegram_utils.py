@@ -1,5 +1,7 @@
-from typing import Dict, Any
-from datetime import date
+from typing import Dict, Any, List, Optional
+from datetime import date, timedelta
+from dateutil.relativedelta import relativedelta
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 def escape_markdown(text: str) -> str:
     """
@@ -91,3 +93,198 @@ def format_success_message(description: str, balance: float = None) -> str:
         message += f"\n\n💰 Current balance: ${balance:,.2f}"
 
     return message
+
+
+def format_budget_envelopes(
+    budget_data: Dict[str, Dict],
+    period_str: str
+) -> str:
+    """
+    Format budget envelope view showing allocated, spent, and remaining.
+
+    Args:
+        budget_data: Dict mapping budget name to {allocated, spent, dates}
+        period_str: Period description like "Jan - Mar 2026"
+
+    Returns:
+        Formatted markdown string for Telegram
+    """
+    message = f"📊 *Budgets: {period_str}*\n\n"
+
+    if not budget_data:
+        message += "_No budget transactions in this period_\n"
+        return message
+
+    # Sort budgets by name for consistent display
+    for budget_name in sorted(budget_data.keys()):
+        data = budget_data[budget_name]
+        allocated = data['allocated']
+        spent = data['spent']
+        remaining = allocated - spent
+        dates = data.get('dates', [])
+
+        # Format dates
+        date_str = ", ".join(dates) if dates else "No allocations"
+
+        # Show budget with dates
+        message += f"*{budget_name}* ({date_str})\n"
+        message += f"  Allocated: ${allocated:,.2f} | Spent: ${spent:,.2f} | Left: ${remaining:,.2f}\n\n"
+
+    return message
+
+
+def format_planning_pending(
+    transactions: List[Dict[str, Any]],
+    period_str: str
+) -> str:
+    """
+    Format planning and pending transactions view.
+
+    Args:
+        transactions: List of planning/pending transactions
+        period_str: Period description like "Nov 2024 - Jan 2025"
+
+    Returns:
+        Formatted markdown string for Telegram
+    """
+    message = f"🔮 *Planning & Pending: {escape_markdown(period_str)}*\n\n"
+
+    # Separate by status
+    pending = [t for t in transactions if t.get('status') == 'pending']
+    planning = [t for t in transactions if t.get('status') == 'planning']
+
+    if not pending and not planning:
+        message += "_No planning or pending transactions_\n"
+        return message
+
+    # Show pending first
+    if pending:
+        message += f"⏳ *Pending* ({len(pending)})\n"
+        for t in sorted(pending, key=lambda x: x['date_payed']):
+            date_str = t['date_payed'].strftime('%b %d') if isinstance(t['date_payed'], date) else str(t['date_payed'])
+            desc = escape_markdown(t.get('description', 'Unknown'))
+            if len(desc) > 25:
+                desc = desc[:22] + "..."
+            amount = t['amount']
+            amount_str = f"-${abs(amount):,.2f}" if amount < 0 else f"+${abs(amount):,.2f}"
+            message += f"{date_str} | {desc} | {amount_str}\n"
+        message += "\n"
+
+    # Show planning
+    if planning:
+        message += f"📋 *Planning* ({len(planning)})\n"
+        for t in sorted(planning, key=lambda x: x['date_payed']):
+            date_str = t['date_payed'].strftime('%b %d') if isinstance(t['date_payed'], date) else str(t['date_payed'])
+            desc = escape_markdown(t.get('description', 'Unknown'))
+            if len(desc) > 25:
+                desc = desc[:22] + "..."
+            amount = t['amount']
+            amount_str = f"-${abs(amount):,.2f}" if amount < 0 else f"+${abs(amount):,.2f}"
+            message += f"{date_str} | {desc} | {amount_str}\n"
+
+    return message
+
+
+def format_summary_navigation_buttons(
+    current_month_date: date,
+    show_planning: bool = False
+) -> InlineKeyboardMarkup:
+    """
+    Create navigation buttons for summary view.
+
+    Args:
+        current_month_date: Date object representing current displayed month (first day)
+        show_planning: Whether currently showing planning/pending view
+
+    Returns:
+        InlineKeyboardMarkup with navigation and toggle buttons
+    """
+    # Calculate previous and next months
+    prev_month = current_month_date - relativedelta(months=1)
+    next_month = current_month_date + relativedelta(months=1)
+
+    # Format callback data as YYYY-MM with view type
+    month_str = current_month_date.strftime('%Y-%m')
+    prev_callback = f"summary:{prev_month.strftime('%Y-%m')}:{'plan' if show_planning else 'budget'}"
+    next_callback = f"summary:{next_month.strftime('%Y-%m')}:{'plan' if show_planning else 'budget'}"
+
+    # Toggle button
+    if show_planning:
+        toggle_label = "📊 Budget View"
+        toggle_callback = f"summary:{month_str}:budget"
+    else:
+        toggle_label = "🔮 Planning"
+        toggle_callback = f"summary:{month_str}:plan"
+
+    keyboard = [
+        [
+            InlineKeyboardButton(f"⬅️ Prev", callback_data=prev_callback),
+            InlineKeyboardButton(toggle_label, callback_data=toggle_callback),
+            InlineKeyboardButton(f"Next ➡️", callback_data=next_callback),
+        ]
+    ]
+
+    return InlineKeyboardMarkup(keyboard)
+
+
+def parse_month_from_args(args: str) -> Optional[date]:
+    """
+    Parse month from command arguments.
+
+    Supports formats:
+    - Month names: "October", "oct", "november"
+    - Explicit: "2024-10", "Oct 2024"
+
+    Args:
+        args: Command arguments string
+
+    Returns:
+        Date object set to first day of month, or None if unparseable
+    """
+    import re
+    from datetime import datetime
+
+    if not args:
+        return None
+
+    args = args.strip().lower()
+
+    # Month name mapping
+    month_names = {
+        'jan': 1, 'january': 1,
+        'feb': 2, 'february': 2,
+        'mar': 3, 'march': 3,
+        'apr': 4, 'april': 4,
+        'may': 5,
+        'jun': 6, 'june': 6,
+        'jul': 7, 'july': 7,
+        'aug': 8, 'august': 8,
+        'sep': 9, 'september': 9,
+        'oct': 10, 'october': 10,
+        'nov': 11, 'november': 11,
+        'dec': 12, 'december': 12
+    }
+
+    # Try format: YYYY-MM
+    match = re.match(r'^(\d{4})-(\d{1,2})$', args)
+    if match:
+        year = int(match.group(1))
+        month = int(match.group(2))
+        if 1 <= month <= 12:
+            return date(year, month, 1)
+
+    # Try format: "Month YYYY" or "Month"
+    current_year = date.today().year
+
+    # Match month name with optional year
+    match = re.match(r'^([a-z]+)\s*(\d{4})?$', args)
+    if match:
+        month_str = match.group(1)
+        year_str = match.group(2)
+
+        if month_str in month_names:
+            month = month_names[month_str]
+            year = int(year_str) if year_str else current_year
+            return date(year, month, 1)
+
+    return None
