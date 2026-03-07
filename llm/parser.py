@@ -248,6 +248,7 @@ You are an expert financial assistant. Your task is to parse a user's natural la
 8.  If a establishment or vendor name is mentioned, include it in the `description` field. Capitalize appropriately. E.g. "Amazon - School Supplies".
 9.  **Pending Logic:** If the user mentions 'pending', 'unconfirmed', 'not yet paid', 'waiting for', or similar terms, you MUST set `"is_pending": true`.
 10. **Planning Logic:** If the user mentions 'plan for', 'planning', 'what if', 'tentative', or similar forward-looking, non-committed terms, you MUST set `"is_planning": true`.
+11. **Grace Period Logic:** If the user mentions a "grace period", "deferred payment", "months grace", "buy now pay later", or similar terms indicating delayed first payment, extract the number of months and set `grace_period_months`. If no grace period is mentioned, omit the field.
 
 **Schema:**
 - `type`: (string) "simple", "installment", or "split".
@@ -264,6 +265,7 @@ You are an expert financial assistant. Your task is to parse a user's natural la
 - `is_income`: (boolean, optional) Set to true for income.
 - `is_pending`: (boolean, optional) Set to true for pending transactions.
 - `is_planning`: (boolean, optional) Set to true for planning/what-if scenarios.
+- `grace_period_months`: (int, optional) Number of months to defer the first payment. Only include if a grace period is mentioned.
 - `splits`: (array of objects, for "split" type only)
     - `amount`: (float) Amount for this part of the split.
     - `category`: (string, REQUIRED) Category for this part. Must be one of {category_names}.
@@ -339,6 +341,16 @@ User: "what if I buy a new TV for 800 next month on my Visa Produbanco"
   "category": "Personal",
   "is_planning": true,
   "date_created": "2025-11-23"
+}}
+
+User: "Bought a TV for 500 on Visa Pichincha with 3 months grace period"
+{{
+  "type": "simple",
+  "description": "TV",
+  "amount": 500,
+  "account": "Visa Pichincha",
+  "category": "Personal",
+  "grace_period_months": 3
 }}
 """
 
