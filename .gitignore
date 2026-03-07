@@ -6,3 +6,4 @@ __pycache__/
 *.bk*
 llm_config.yaml
 extra/
+backups/
