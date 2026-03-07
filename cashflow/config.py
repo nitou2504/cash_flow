@@ -15,3 +15,7 @@ BACKUP_MAX_DAYS = int(os.getenv("BACKUP_MAX_DAYS", "30"))
 
 # Telegram
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+_allowed_raw = os.getenv("TELEGRAM_ALLOWED_USERS", "")
+TELEGRAM_ALLOWED_USERS: set[int] = {
+    int(uid.strip()) for uid in _allowed_raw.split(",") if uid.strip()
+}

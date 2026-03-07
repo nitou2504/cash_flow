@@ -27,7 +27,7 @@ from ui.telegram_format import (
     parse_month_from_args,
 )
 from cashflow.config import (
-    TELEGRAM_BOT_TOKEN, DB_PATH,
+    TELEGRAM_BOT_TOKEN, DB_PATH, TELEGRAM_ALLOWED_USERS,
     BACKUP_ENABLED, BACKUP_DIR, BACKUP_KEEP_TODAY, BACKUP_RECENT_DAYS, BACKUP_MAX_DAYS,
 )
 from cashflow import backup as db_backup
@@ -43,10 +43,31 @@ logger = logging.getLogger(__name__)
 db_conn = None
 
 
+# ==================== AUTH ====================
+
+def is_authorized(update: Update) -> bool:
+    """Check if the user is in the allowlist. Empty allowlist = open access."""
+    if not TELEGRAM_ALLOWED_USERS:
+        return True
+    user_id = update.effective_user.id if update.effective_user else None
+    return user_id in TELEGRAM_ALLOWED_USERS
+
+
+async def reject_unauthorized(update: Update):
+    """Send rejection message and log the attempt."""
+    user = update.effective_user
+    logger.warning(f"Unauthorized access attempt from user {user.id} (@{user.username})")
+    if update.effective_message:
+        await update.effective_message.reply_text("You are not authorized to use this bot.")
+
+
 # ==================== COMMAND HANDLERS ====================
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command."""
+    if not is_authorized(update):
+        return await reject_unauthorized(update)
+
     welcome_text = (
         "👋 *Welcome to Cash Flow Bot!*\n\n"
         "I help you track expenses easily. Just send me a message like:\n\n"
@@ -68,6 +89,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /help command."""
+    if not is_authorized(update):
+        return await reject_unauthorized(update)
+
     help_text = (
         "📖 *How to Use Cash Flow Bot*\n\n"
         "*Adding Expenses:*\n"
@@ -96,6 +120,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /cancel command."""
+    if not is_authorized(update):
+        return await reject_unauthorized(update)
+
     context.user_data.clear()
     await update.message.reply_text(
         "🛑 Current transaction cancelled.",
@@ -107,6 +134,9 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def process_new_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Process text messages (expense descriptions or corrections)."""
+    if not is_authorized(update):
+        return await reject_unauthorized(update)
+
     user_message = update.message.text
     chat_id = update.effective_chat.id
 
@@ -273,6 +303,9 @@ async def handle_correction(update: Update, context: ContextTypes.DEFAULT_TYPE, 
 
 async def button_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle inline button clicks."""
+    if not is_authorized(update):
+        return await reject_unauthorized(update)
+
     query = update.callback_query
     await query.answer()  # Acknowledge button click
 
@@ -376,6 +409,9 @@ def get_balance_at_date(
 
 async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /summary [month] command."""
+    if not is_authorized(update):
+        return await reject_unauthorized(update)
+
     target_month = None
     if context.args:
         args_str = ' '.join(context.args)
@@ -493,6 +529,9 @@ async def summary_navigation_callback(
     context: ContextTypes.DEFAULT_TYPE
 ):
     """Handle month navigation and view toggle button clicks."""
+    if not is_authorized(update):
+        return await reject_unauthorized(update)
+
     query = update.callback_query
     await query.answer()  # Acknowledge button click
 
