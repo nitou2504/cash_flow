@@ -187,9 +187,7 @@ def pre_parse_date_and_account(user_input: str, accounts: List[Dict[str, Any]]) 
 
 
 def parse_transaction_string(conn: Connection, user_input: str, accounts: List[Dict[str, Any]], budgets: List[Dict[str, Any]], payment_month: date = None) -> Dict[str, Any]:
-    """
-    Uses the Gemini API to parse a natural language string into a structured
-    JSON object for a transaction.
+    """Parse a natural language string into a structured JSON object for a transaction.
 
     Args:
         payment_month: The month when this transaction will be paid (for budget selection context)
@@ -370,10 +368,7 @@ User: "what if I buy a new TV for 800 next month on my Visa Produbanco"
 
 
 def parse_subscription_string(conn: Connection, user_input: str, accounts: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    Uses the Gemini API to parse a natural language string into a structured
-    JSON object for a subscription or budget.
-    """
+    """Parse a natural language string into a structured JSON object for a subscription or budget."""
     # Prepare the list of valid account names
     account_names = [acc['account_id'] for acc in accounts]
 
@@ -481,10 +476,7 @@ User: "Create a Christmas shopping budget of 500 for December only on my Visa Pr
 
 
 def parse_account_string(user_input: str) -> Dict[str, Any]:
-    """
-    Uses the Gemini API to parse a natural language string into a structured
-    JSON object for creating a new account.
-    """
+    """Parse a natural language string into a structured JSON object for creating a new account."""
     system_prompt = f"""
 You are an expert financial assistant. Your task is to parse a user's natural language input into a single, structured JSON object to create a new financial account.
 
