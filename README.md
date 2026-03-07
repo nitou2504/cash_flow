@@ -33,9 +33,9 @@ A powerful, terminal-based cash flow management system designed for clarity, tra
 
 ### Prerequisites
 
-- Python 3.7+
+- Python 3.10+
 - pip (Python package manager)
-- SQLite (usually included with Python)
+- A Gemini API key (free tier available) — see [LLM Configuration](#llm-configuration)
 
 ### Installation
 
@@ -80,34 +80,45 @@ You should see a table showing your transactions with running balance. You're re
 
 ## Telegram Bot
 
-Track expenses on-the-go using the Telegram chatbot! Add transactions via natural language messages with an intuitive confirmation and correction workflow.
+Track expenses on-the-go using the Telegram chatbot. Add transactions via natural language messages with an intuitive confirmation and correction workflow, and check budget status with the `/summary` command.
 
 ### Quick Setup
 
-1. **Install Telegram bot dependencies**
-   ```bash
-   pip install python-telegram-bot==21.0
-   ```
-
-2. **Get your bot token from [@BotFather](https://t.me/BotFather)**
+1. **Get your bot token from [@BotFather](https://t.me/BotFather)**
    - Send `/newbot` to BotFather on Telegram
    - Follow prompts to create your bot
    - Copy the token provided
 
-3. **Add token to `.env` file**
+2. **Add token to `.env` file**
    ```bash
    TELEGRAM_BOT_TOKEN=your_token_here
+   GEMINI_API_KEY=your_gemini_key_here
    ```
 
-4. **Start the bot**
+3. **Start the bot**
    ```bash
-   python3 telegram_bot.py
+   python3 bot.py
    ```
 
-5. **Chat with your bot**
-   - Find your bot on Telegram
-   - Send `/start` to begin
-   - Start tracking expenses naturally!
+### Docker Deployment
+
+Run the bot as a persistent background service:
+
+```bash
+docker compose -f docker-compose.bot.yml up -d --build
+```
+
+The Docker setup mounts the project directory into the container, so the bot shares the same `cash_flow.db` as the CLI. If you use Ollama locally, the container routes to the host via `LLM_OLLAMA_BASE_URL=http://host.docker.internal:11434`.
+
+### Bot Commands
+
+| Command | Description |
+|---------|-------------|
+| `/start` | Welcome message and reset state |
+| `/help` | Usage instructions |
+| `/summary` | Budget envelope view for the current month |
+| `/summary October` | Budget view for a specific month |
+| `/cancel` | Cancel current transaction |
 
 ### Usage
 
@@ -117,26 +128,22 @@ Just send messages like:
 - `"Split: 30 on groceries, 15 on snacks"`
 
 The bot will:
-1. Parse your message using the same LLM as the CLI
+1. Parse your message using the same LLM backend as the CLI
 2. Show a formatted preview with inline buttons
-3. Let you ✅ Confirm or ✍️ Revise before saving
+3. Let you **Confirm** or **Revise** before saving
 4. Allow corrections in natural language if needed
 
-For detailed setup instructions and troubleshooting, see [TELEGRAM_BOT_SETUP.md](TELEGRAM_BOT_SETUP.md).
+The `/summary` view shows per-month budget envelopes with spent/remaining amounts and navigation buttons to browse months or toggle to a planning/pending view.
 
 ---
 
 ## LLM Configuration
 
-The cash flow application uses Large Language Models (LLMs) for natural language parsing when you use the `add` command or Telegram bot. By default, it uses Google Gemini, but you can configure it to use local models (via Ollama) for cost savings and faster responses.
+The application uses LLMs for natural language parsing via [LiteLLM](https://github.com/BerriAI/litellm), a unified interface that supports any provider (Gemini, Ollama, OpenAI, Anthropic, etc.). By default it uses Google Gemini, but you can route different tasks to different models — including free local models via Ollama.
 
 ### Quick Start (Default - Gemini Only)
 
-No configuration needed! Just set your API key:
-
-1. **Get a Google AI API key**
-   - Visit [https://aistudio.google.com/apikey](https://aistudio.google.com/apikey)
-   - Create a new API key
+1. **Get a Google AI API key** at [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
 
 2. **Add to `.env` file**
    ```bash
@@ -148,220 +155,137 @@ No configuration needed! Just set your API key:
    python3 cli.py add "Spent 50 on groceries today"
    ```
 
-That's it! The system will use Gemini's cloud API for all parsing.
+That's it. The system uses Gemini for all parsing by default. No `llm_config.yaml` needed.
+
+**Multiple API keys**: To handle Gemini's free-tier rate limits, you can add numbered keys (`GEMINI_API_KEY_1`, `GEMINI_API_KEY_2`, etc.) in `.env`. The system picks a random key per request and rotates on rate limit errors.
 
 ---
 
-### Advanced: Multi-Model Setup (Cost Optimization)
+### Hybrid Setup: Local + Cloud (Cost Optimization)
 
-You can configure the system to route different parsing tasks to different models—using free local models for simple tasks and Gemini for complex ones.
+Route simple tasks to a free local model and complex tasks to Gemini. Based on benchmarking with 25 real test cases:
 
-**Benefits:**
-- **75% cost reduction** vs all-Gemini setup
-- **4x faster** pre-parsing (200ms vs 800ms)
-- **No accuracy loss** (Gemini still handles complex parsing)
-
-#### Prerequisites
-
-- OpenWebUI with Ollama running locally (default: `http://localhost:3001`)
-- Models downloaded: `phi4`, `gemma:2b`, etc.
+| Function | Recommended Model | Accuracy | Avg Speed | Why |
+|----------|-------------------|----------|-----------|-----|
+| Pre-parse (date/account) | Ollama `llama3.2:3b` | 96% | 0.8s | Simple extraction, free |
+| Transaction parsing | Gemini `2.5-flash` | — | ~1.2s | Complex JSON, needs accuracy |
+| Subscription parsing | Gemini `2.5-flash` | — | ~1.2s | Budget creation needs accuracy |
+| Account parsing | Gemini `2.5-flash` | — | ~1.2s | Local models generate code instead of JSON |
 
 #### Setup
 
-1. **Copy the configuration template**
+1. **Install and start Ollama**
+   ```bash
+   ollama pull llama3.2:3b
+   ollama serve  # Runs on port 11434
+   ```
+
+2. **Copy the configuration template**
    ```bash
    cp llm_config.yaml.example llm_config.yaml
    ```
 
-2. **Edit `llm_config.yaml`**
+   The example file is pre-configured with the recommended hybrid routing above.
 
-   The default configuration uses a hybrid approach:
-   ```yaml
-   # Quick extractions → Local models (free, fast)
-   pre_parse_date_and_account:
-     provider: "ollama"
-     model: "gemma:2b"
-
-   # Complex parsing → Gemini (accurate)
-   parse_transaction_string:
-     provider: "gemini"
-     model: "gemini-2.5-flash"
-   ```
-
-3. **Ensure Ollama is running**
-   ```bash
-   # If using Docker
-   docker ps | grep ollama
-
-   # Or check OpenWebUI
-   curl http://localhost:3001/v1/models
-   ```
-
-4. **Test the configuration**
+3. **Test**
    ```bash
    python3 cli.py add "test transaction 10 cash"
    ```
 
-   The system will use `gemma:2b` for quick date/account extraction, then `gemini-2.5-flash` for full transaction parsing.
+   Pre-parse runs on `llama3.2:3b` locally, then full parsing goes to Gemini.
 
 ---
 
-### Configuration Options
+### Configuration Reference
 
-The `llm_config.yaml` file supports:
+All configuration lives in `llm_config.yaml` (optional — defaults to all-Gemini without it).
 
 #### Per-Function Model Routing
-
-Route specific parsing functions to specific models:
 
 ```yaml
 function_models:
   pre_parse_date_and_account:
     provider: "ollama"
-    model: "gemma:2b"
-    reason: "Simple extraction - fast local model"
+    model: "llama3.2:3b"
 
   parse_transaction_string:
     provider: "gemini"
     model: "gemini-2.5-flash"
-    reason: "Complex parsing needs accuracy"
 
   parse_subscription_string:
     provider: "gemini"
     model: "gemini-2.5-flash"
 
   parse_account_string:
-    provider: "ollama"
-    model: "phi4"
-    reason: "Simple parsing - local sufficient"
-```
-
-#### Fallback Chains
-
-If the primary model fails, automatically try alternatives:
-
-```yaml
-fallback_chain:
-  - provider: "ollama"
-    model: "phi4"
-  - provider: "gemini"
+    provider: "gemini"
     model: "gemini-2.5-flash"
 ```
 
-#### Provider Settings
-
-Configure multiple providers:
+#### Providers
 
 ```yaml
 providers:
   gemini:
     type: "litellm"
     api_key_env: "GEMINI_API_KEY"
-    models:
-      - "gemini-2.5-flash"
-      - "gemini-1.5-flash"
 
   ollama:
     type: "litellm"
-    base_url: "http://localhost:3001/v1"
-    models:
-      - "phi4"
-      - "gemma:2b"
+    base_url: "http://localhost:11434"
 ```
 
----
+#### Fallback Chains
 
-### Recommended Configuration
+If the primary model fails, try alternatives in order:
 
-For best cost/performance balance:
+```yaml
+fallback_chain:
+  - provider: "gemini"
+    model: "gemini-2.5-flash"
+```
 
-| Function | Model | Reasoning |
-|----------|-------|-----------|
-| Pre-parse (date/account) | Ollama `gemma:2b` | Simple extraction, speed critical |
-| Transaction parsing | Gemini `2.5-flash` | Complex JSON, accuracy critical |
-| Subscription parsing | Gemini `2.5-flash` | Medium complexity |
-| Account parsing | Ollama `phi4` | Simple, rarely called |
+#### Global Settings
 
-**Result:**
-- **Cost:** ~$0.00015 per transaction (vs $0.0006 all-Gemini)
-- **Speed:** Pre-parse 4x faster
-- **Accuracy:** No degradation (Gemini handles complex tasks)
+```yaml
+timeout_seconds: 30
+max_retries: 2
+temperature: 0.0
+```
 
 ---
 
 ### Environment Variable Overrides
 
-You can also configure via `.env` (lower priority than `llm_config.yaml`):
+Lower priority than `llm_config.yaml`, useful for Docker deployments:
 
 ```bash
-# Default provider/model
 LLM_DEFAULT_PROVIDER=gemini
 LLM_DEFAULT_MODEL=gemini-2.5-flash
+LLM_OLLAMA_BASE_URL=http://localhost:11434
 
-# Ollama base URL
-LLM_OLLAMA_BASE_URL=http://localhost:3001/v1
-
-# Per-function overrides (optional)
-LLM_PRE_PARSE_MODEL=ollama/gemma:2b
+# Per-function overrides (format: provider/model)
+LLM_PRE_PARSE_MODEL=ollama/llama3.2:3b
 LLM_TRANSACTION_PARSE_MODEL=gemini/gemini-2.5-flash
 ```
 
 ---
 
-### Troubleshooting
+### Adding More Providers
 
-**Error: "Connection refused to localhost:3001"**
-- Start OpenWebUI: `docker start open-webui`
-- Or check if Ollama is running on a different port
-
-**Error: "GEMINI_API_KEY not set"**
-- Add to `.env` file: `echo "GEMINI_API_KEY=your_key" >> .env`
-
-**Models not working as expected:**
-- Check `llm_config.yaml` syntax (valid YAML)
-- Verify model names match exactly (case-sensitive)
-- Test with simple inputs first
-
-**Want to disable local models:**
-- Delete `llm_config.yaml` to use Gemini for everything
-- Or comment out the `function_models` section
-
----
-
-### Performance Comparison
-
-**All-Gemini Setup:**
-- Cost: ~$0.0006 per transaction
-- Speed: ~800ms pre-parse, ~1200ms total
-
-**Hybrid Setup (Recommended):**
-- Cost: ~$0.00015 per transaction (75% reduction)
-- Speed: ~200ms pre-parse, ~800ms total (40% faster)
-- Accuracy: Identical (Gemini still handles complex parsing)
-
----
-
-### Advanced: Adding More Providers
-
-The system supports any LiteLLM-compatible provider:
+Any LiteLLM-compatible provider works:
 
 ```yaml
 providers:
   openai:
     type: "litellm"
     api_key_env: "OPENAI_API_KEY"
-    models:
-      - "gpt-4o-mini"
-      - "gpt-3.5-turbo"
 
   anthropic:
     type: "litellm"
     api_key_env: "ANTHROPIC_API_KEY"
-    models:
-      - "claude-3-haiku-20240307"
 ```
 
-See `llm_config.yaml.example` for full documentation.
+See `llm_config.yaml.example` for full documentation with benchmark results and troubleshooting tips.
 
 ---
 
@@ -1578,10 +1502,10 @@ Include:
 
 **Q: Do I need an API key for the LLM?**
 
-Yes. Set up a `.env` file with your Google AI API key:
+Yes. Set up a `.env` file with your Gemini API key:
 
 ```
-GOOGLE_API_KEY=your_api_key_here
+GEMINI_API_KEY=your_api_key_here
 ```
 
 ---
@@ -1639,33 +1563,42 @@ You can't delete a budget/subscription with committed transactions. Delete forec
 
 ### Technology Stack
 
-- **Language**: Python 3.7+
+- **Language**: Python 3.10+
 - **Database**: SQLite
 - **Testing**: Python `unittest` framework
-- **CLI**: `argparse`
-- **Display**: `rich` library (tables, colors)
-- **LLM**: Google Generative AI API
+- **CLI**: `argparse` + `rich` (tables, colors)
+- **Telegram Bot**: `python-telegram-bot` 21.0
+- **LLM**: [LiteLLM](https://github.com/BerriAI/litellm) — unified interface for Gemini, Ollama, OpenAI, Anthropic, etc.
+- **Deployment**: Docker (optional, for the Telegram bot)
 
 ---
 
 ### Project Structure
 
+The codebase is organized into three packages matching the layered architecture:
+
 ```
 cash_flow/
-├── cli.py                    # Main CLI interface and command handlers
-├── main.py                   # Controller: orchestrates business logic
-├── transactions.py           # Core transaction creation logic
-├── repository.py             # Data persistence layer (database operations)
-├── database.py               # Schema creation and initialization
-├── interface.py              # Display logic (view, export)
-├── llm_parser.py             # Natural language parsing
-├── requirements.txt          # Python dependencies
-├── cash_flow.db              # SQLite database (created on first run)
-├── tests/                    # Unit tests
-│   ├── test_transactions.py
-│   ├── test_budgets.py
-│   └── ...
-└── specs/                    # Feature specifications
+├── cli.py                      # CLI entry point
+├── bot.py                      # Telegram bot entry point
+├── cashflow/                   # Core business logic
+│   ├── controller.py           #   Orchestrator (transaction processing, rollover)
+│   ├── transactions.py         #   Transaction factory functions
+│   ├── repository.py           #   Data access layer (all SQL queries)
+│   ├── database.py             #   Schema definition and initialization
+│   └── config.py               #   Environment variable loading
+├── llm/                        # LLM integration
+│   ├── backend.py              #   Provider abstraction (LiteLLM, key rotation, fallbacks)
+│   └── parser.py               #   NL→JSON parsing prompts and response handling
+├── ui/                         # Presentation layer
+│   ├── cli_display.py          #   Rich terminal tables and CSV export
+│   └── telegram_format.py      #   Telegram Markdown formatting and navigation
+├── tests/                      # Unit tests (80 tests, in-memory SQLite)
+├── specs/                      # Feature specifications
+├── llm_config.yaml.example     # LLM routing configuration template
+├── Dockerfile.bot              # Docker image for the Telegram bot
+├── docker-compose.bot.yml      # Docker Compose for bot deployment
+└── requirements.txt
 ```
 
 ---
@@ -1769,22 +1702,19 @@ The project uses **Test-Driven Development (TDD)**:
 
 **Running tests**:
 ```bash
-python3 -m tests.test_transactions
-python3 -m tests.test_budgets
+python3 -m unittest discover -s tests      # Run all tests
+python3 -m unittest tests.test_budgets     # Run a specific test module
 ```
 
 Tests use in-memory databases (`:memory:`) for speed and isolation.
 
 ---
 
-### Future Vision: Enhanced LLM Integration
+### Future Vision
 
-The backend is designed to be driven by structured JSON objects. The ultimate goal is deeper LLM integration for:
-
-- Smarter natural language parsing
-- Automatic categorization
 - Anomaly detection ("This grocery purchase is 3x your usual—is this correct?")
 - Financial advice ("You're on track to overspend on entertainment by $50 this month")
+- Receipt/statement OCR via multimodal models
 
 ---
 
