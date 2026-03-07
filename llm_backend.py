@@ -8,6 +8,7 @@ import logging
 import time
 from typing import Optional, Dict, Any, Tuple
 
+import random
 import litellm
 
 # Configure logging
@@ -31,6 +32,9 @@ class LLMBackend:
         """Initialize backend with configuration."""
         self.config = self._load_config()
         self._configure_litellm()
+        self._api_keys = {}  # provider -> list of keys
+        self._key_index = {}  # provider -> current index
+        self._load_api_keys()
 
     @classmethod
     def get_instance(cls) -> 'LLMBackend':
@@ -131,6 +135,56 @@ class LLMBackend:
                 except ValueError:
                     logger.warning(f"Invalid format for {env_var}: {value}. Expected 'provider/model'")
 
+    def _load_api_keys(self):
+        """
+        Load multiple API keys per provider for rotation.
+        Looks for PROVIDER_API_KEY_1, PROVIDER_API_KEY_2, etc.
+        Falls back to single PROVIDER_API_KEY if no numbered keys found.
+        """
+        for provider, pconfig in self.config.get("providers", {}).items():
+            base_env = pconfig.get("api_key_env")
+            if not base_env:
+                continue
+
+            keys = []
+            # Try numbered keys: GEMINI_API_KEY_1, GEMINI_API_KEY_2, ...
+            for i in range(1, 20):
+                key = os.getenv(f"{base_env}_{i}")
+                if key:
+                    keys.append(key)
+
+            # Fall back to single key
+            if not keys:
+                key = os.getenv(base_env)
+                if key:
+                    keys.append(key)
+
+            if keys:
+                self._api_keys[provider] = keys
+                self._key_index[provider] = 0
+                logger.info(f"Loaded {len(keys)} API key(s) for {provider}")
+
+    def _get_api_key(self, provider: str) -> str:
+        """Get a random API key for a provider."""
+        keys = self._api_keys.get(provider, [])
+        if not keys:
+            return None
+        idx = random.randrange(len(keys))
+        self._key_index[provider] = idx
+        return keys[idx]
+
+    def _rotate_api_key(self, provider: str) -> bool:
+        """Rotate to a different random API key. Returns True if a new key is available."""
+        keys = self._api_keys.get(provider, [])
+        if len(keys) <= 1:
+            return False
+        old_idx = self._key_index.get(provider, 0)
+        remaining = [i for i in range(len(keys)) if i != old_idx]
+        new_idx = random.choice(remaining)
+        self._key_index[provider] = new_idx
+        logger.warning(f"Rotated {provider} API key: #{old_idx + 1} -> #{new_idx + 1}")
+        return True
+
     def _configure_litellm(self):
         """Configure LiteLLM global settings."""
         litellm.set_verbose = False  # Reduce noise in logs
@@ -175,20 +229,30 @@ class LLMBackend:
         # Build LiteLLM model string and kwargs
         model_str, kwargs = self._build_model_call_params(provider, model, provider_config)
 
-        # Call with fallback
-        try:
-            return self._call_with_retry(
-                model_str,
-                messages,
-                temperature or self.config.get("temperature", 0.0),
-                kwargs
-            )
-        except Exception as e:
-            # Try fallback chain if configured
-            if "fallback_chain" in self.config:
-                logger.warning(f"Primary model {provider}/{model} failed: {e}")
-                return self._try_fallback_chain(messages, temperature, str(e))
-            raise
+        # Call with key rotation on rate limit
+        temp = temperature or self.config.get("temperature", 0.0)
+        tried_keys = 1
+        total_keys = len(self._api_keys.get(provider, []))
+
+        while True:
+            try:
+                return self._call_with_retry(model_str, messages, temp, kwargs)
+            except litellm.RateLimitError as e:
+                if tried_keys < total_keys and self._rotate_api_key(provider):
+                    tried_keys += 1
+                    model_str, kwargs = self._build_model_call_params(provider, model, provider_config)
+                    logger.warning(f"Rate limited, trying key #{self._key_index[provider] + 1}")
+                    continue
+                # All keys exhausted, try fallback chain
+                if "fallback_chain" in self.config:
+                    logger.warning(f"All keys for {provider}/{model} exhausted: {e}")
+                    return self._try_fallback_chain(messages, temperature, str(e))
+                raise
+            except Exception as e:
+                if "fallback_chain" in self.config:
+                    logger.warning(f"Primary model {provider}/{model} failed: {e}")
+                    return self._try_fallback_chain(messages, temperature, str(e))
+                raise
 
     def _get_model_for_function(self, function_name: Optional[str]) -> Tuple[str, str]:
         """
@@ -237,7 +301,7 @@ class LLMBackend:
         """
         if provider == "gemini":
             model_str = f"gemini/{model}"
-            api_key = os.getenv(provider_config.get("api_key_env", "GEMINI_API_KEY"))
+            api_key = self._get_api_key(provider)
             if not api_key:
                 raise ValueError(f"GEMINI_API_KEY environment variable not set")
             kwargs = {"api_key": api_key}
@@ -249,7 +313,7 @@ class LLMBackend:
 
         elif provider == "openai":
             model_str = f"openai/{model}"
-            api_key = os.getenv(provider_config.get("api_key_env", "OPENAI_API_KEY"))
+            api_key = self._get_api_key(provider)
             if not api_key:
                 raise ValueError(f"OPENAI_API_KEY environment variable not set")
             kwargs = {"api_key": api_key}
@@ -258,11 +322,9 @@ class LLMBackend:
             # Generic provider - use model string as-is
             model_str = model
             kwargs = {}
-            # Check for api_key_env in config
-            if "api_key_env" in provider_config:
-                api_key = os.getenv(provider_config["api_key_env"])
-                if api_key:
-                    kwargs["api_key"] = api_key
+            api_key = self._get_api_key(provider)
+            if api_key:
+                kwargs["api_key"] = api_key
 
         return model_str, kwargs
 
