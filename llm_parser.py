@@ -2,7 +2,8 @@
 import os
 import json
 import logging
-from datetime import date
+import re
+from datetime import date, timedelta
 from dateutil.relativedelta import relativedelta
 from typing import List, Dict, Any, Optional
 from sqlite3 import Connection
@@ -48,11 +49,32 @@ def _call_llm(
             user_input=user_input,
             function_name=function_name
         )
-        return response_text
+        return _clean_llm_response(response_text)
 
     except Exception as e:
         logger.error(f"LLM call failed for {function_name}: {e}")
         return None
+
+
+def _clean_llm_response(text: str) -> Optional[str]:
+    """Strip local model artifacts: <think> tags, markdown fencing."""
+    if not text:
+        return text
+    # Strip <think>...</think> blocks (smollm3, qwen3)
+    if "<think>" in text:
+        text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+    # Strip markdown code fences (gemma3)
+    if "```" in text:
+        text = re.sub(r'```(?:json)?\s*', '', text).strip()
+    return text
+
+
+def _last_weekday(today: date, weekday: int) -> date:
+    """Find the most recent past occurrence of a weekday (0=Mon, 6=Sun)."""
+    d = today
+    while d.weekday() != weekday:
+        d -= timedelta(days=1)
+    return d
 
 
 def pre_parse_date_and_account(user_input: str, accounts: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -62,27 +84,53 @@ def pre_parse_date_and_account(user_input: str, accounts: List[Dict[str, Any]]) 
     """
     account_names = [acc['account_id'] for acc in accounts]
     today = date.today()
+    yesterday = today - timedelta(days=1)
 
-    system_prompt = f"""
-You are a quick parser. Extract ONLY the date and account from the user's input.
+    # Pre-compute relative dates so the model doesn't have to do date math
+    last_monday = _last_weekday(today, 0)
+    last_tuesday = _last_weekday(today, 1)
+    last_wednesday = _last_weekday(today, 2)
+    last_thursday = _last_weekday(today, 3)
+    last_friday = _last_weekday(today, 4)
+    last_sunday = _last_weekday(today, 6)
 
-**Today's Date: {today.isoformat()}**
+    system_prompt = f"""You are a quick parser. Extract ONLY the date and account from the user's input.
 
-**Rules:**
-1. `account` MUST be one of: {account_names}
-2. `date` should be in "YYYY-MM-DD" format. If no date mentioned, use today's date.
-3. Parse relative dates: "yesterday" = {(today - relativedelta(days=1)).isoformat()}, "last friday", etc.
+**Today: {today.strftime('%A, %B %d, %Y')} ({today.isoformat()})**
+**Current year: {today.year}**
+**Current month: {today.strftime('%B')} ({today.month})**
 
-**Output ONLY this JSON (no markdown):**
-{{"date": "YYYY-MM-DD", "account": "account_name"}}
+**Pre-computed relative dates:**
+- Yesterday: {yesterday.isoformat()}
+- Last Monday: {last_monday.isoformat()}
+- Last Tuesday: {last_tuesday.isoformat()}
+- Last Wednesday: {last_wednesday.isoformat()}
+- Last Thursday: {last_thursday.isoformat()}
+- Last Friday: {last_friday.isoformat()}
+- Last Sunday: {last_sunday.isoformat()}
 
-**Examples:**
-User: "yesterday pichincha 50 groceries"
-{{"date": "{(today - relativedelta(days=1)).isoformat()}", "account": "Visa Pichincha"}}
+**Date rules:**
+1. If no date is mentioned, use today: {today.isoformat()}
+2. For relative dates ("yesterday", "last friday"), use the pre-computed dates above.
+3. For "on the Nth" with no month, assume the current month ({today.strftime('%B %Y')}).
+4. **Year inference:** When a month is mentioned without a year:
+   - If the month is the current month or a future month within 2 months ahead, use {today.year}.
+   - If the month is a past month (before {today.strftime('%B')}), use the most recent occurrence.
+   - Rule of thumb: always pick the nearest past or present date. Transactions are usually recent.
+   - Examples from today ({today.isoformat()}):
+     - "feb 23" → {today.year}-02-23 (recent past this year)
+     - "jan 15" → {today.year}-01-15 (recent past this year)
+     - "dec 25" → {today.year - 1}-12-25 (last December, not next)
+     - "march 1" → {today.year}-03-01 (current month)
+     - "april 10" → {today.year}-04-10 (near future, same year)
 
-User: "cash 20 lunch"
-{{"date": "{today.isoformat()}", "account": "Cash"}}
-"""
+**Account rules:**
+1. `account` MUST be EXACTLY one of: {account_names}
+2. Match partial names: "pichincha" = "Visa Pichincha", "produbanco" = "Visa Produbanco", "diners" = "Diners", "cash" = "Cash"
+3. Never invent account names. Pick the closest match from the list.
+
+**Output ONLY this JSON (no markdown, no explanation):**
+{{"date": "YYYY-MM-DD", "account": "account_name"}}"""
 
     # Call LLM via unified backend
     response_text = _call_llm(

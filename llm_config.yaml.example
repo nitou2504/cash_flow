@@ -24,14 +24,14 @@ providers:
       - "gemini-1.5-flash"  # Alternative: Slightly older model
       - "gemini-1.5-pro"    # High accuracy, slower, more expensive
 
-  # Ollama (Local LLMs via OpenWebUI)
+  # Ollama (Local LLMs) - For simple/fast tasks
   ollama:
     type: "litellm"
-    base_url: "http://localhost:3001/v1"  # OpenWebUI API endpoint
+    base_url: "http://localhost:11434"  # Ollama API endpoint
     models:
-      - "phi4"       # Recommended for simple parsing (fast, accurate)
-      - "gemma:2b"   # Good for quick extractions
-      - "gemma:1b"   # Fastest, less accurate
+      - "llama3.2:3b"        # Recommended: best accuracy/speed for extraction (96% benchmark)
+      - "alibayram/smollm3"  # Good fallback (88% benchmark)
+      - "gemma3:4b"          # Alternative (92% benchmark, needs response cleaning)
 
 # ============================================================================
 # PER-FUNCTION MODEL ROUTING (Optional - Cost Optimization)
@@ -40,33 +40,31 @@ providers:
 # Comment out any function to use default_provider/default_model
 
 function_models:
-  # Pre-parse: Quick date/account extraction
-  # Recommendation: Use local model for speed and cost savings
+  # Pre-parse: Quick date/account extraction → LOCAL (free, fast)
+  # Benchmarked at 96% accuracy, 0.8s avg on GTX 1050 Ti
   pre_parse_date_and_account:
     provider: "ollama"
-    model: "gemma:2b"
-    reason: "Simple extraction - fast local model sufficient"
+    model: "llama3.2:3b"
+    reason: "Simple extraction - local model scored 96% on 25-case benchmark"
 
-  # Transaction parsing: Complex JSON with budget matching
-  # Recommendation: Use Gemini for accuracy on complex task
+  # Transaction parsing: Complex JSON with budget/category matching → GEMINI
   parse_transaction_string:
     provider: "gemini"
     model: "gemini-2.5-flash"
     reason: "Complex parsing requires high accuracy"
 
-  # Subscription/Budget parsing: Medium complexity
-  # Recommendation: Use Gemini for consistency
+  # Subscription/Budget parsing: Medium complexity → GEMINI
   parse_subscription_string:
     provider: "gemini"
     model: "gemini-2.5-flash"
     reason: "Budget creation needs accuracy"
 
-  # Account parsing: Simple extraction
-  # Recommendation: Use local model (rarely called anyway)
+  # Account parsing: Simple extraction, rarely called → GEMINI
+  # llama3.2:3b generates code instead of JSON with the verbose prompt
   parse_account_string:
-    provider: "ollama"
-    model: "phi4"
-    reason: "Simple parsing - local model works well"
+    provider: "gemini"
+    model: "gemini-2.5-flash"
+    reason: "Rarely called - not worth prompt optimization for local model"
 
 # ============================================================================
 # FALLBACK CHAIN (Optional)
@@ -75,8 +73,6 @@ function_models:
 # Useful for high availability scenarios
 
 fallback_chain:
-  - provider: "ollama"
-    model: "phi4"
   - provider: "gemini"
     model: "gemini-2.5-flash"
 
@@ -101,47 +97,36 @@ temperature: 0.0          # Deterministic output (0.0 = consistent, 1.0 = creati
 
 # COST OPTIMIZATION (Hybrid Setup):
 # ----------------------------------
-# 1. Ensure OpenWebUI/Ollama is running on port 3001
+# 1. Install Ollama and pull llama3.2:3b: ollama pull llama3.2:3b
 # 2. Keep the function_models section as shown above
-# 3. Result: ~75% cost reduction vs all-Gemini setup
-#    - Pre-parse: Free (local)
-#    - Transaction: Gemini ($0.00015)
-#    - Subscription: Gemini ($0.00015)
-#    - Account: Free (local)
+# 3. Result: ~50% cost reduction vs all-Gemini setup
+#    - Pre-parse: Free (local, ~0.8s)
+#    - Transaction: Gemini
+#    - Subscription: Gemini
+#    - Account: Gemini (rarely called)
 
-# PERFORMANCE COMPARISON:
-# -----------------------
-# Pre-parse with Gemini:  ~800ms average
-# Pre-parse with Ollama:  ~200ms average (4x faster!)
-# Transaction parsing:    Similar speed (complexity matters more)
-
-# ACCURACY CONSIDERATIONS:
-# ------------------------
-# Local models (phi4, gemma) work well for:
-#   - Simple extractions (dates, account names)
-#   - Structured outputs with clear examples
-#   - Tasks with limited context requirements
-#
-# Use Gemini for:
-#   - Complex budget/category matching
-#   - Ambiguous inputs requiring reasoning
-#   - Multi-step parsing (installments, splits)
+# BENCHMARK RESULTS (25 test cases, GTX 1050 Ti):
+# ------------------------------------------------
+# llama3.2:3b:       96% accuracy, 0.8s avg — RECOMMENDED for pre_parse
+# gemma3:4b:         92% accuracy, needs markdown fence cleaning
+# alibayram/smollm3: 88% accuracy, adds <think> tags
+# qwen3:4b:          unusable (thinking model burns all tokens)
 
 # ENVIRONMENT VARIABLE OVERRIDES:
 # -------------------------------
 # You can also configure via .env (lower priority than this file):
 #   LLM_DEFAULT_PROVIDER=gemini
 #   LLM_DEFAULT_MODEL=gemini-2.5-flash
-#   LLM_OLLAMA_BASE_URL=http://localhost:3001/v1
+#   LLM_OLLAMA_BASE_URL=http://localhost:11434
 #
 # Per-function overrides (optional):
-#   LLM_PRE_PARSE_MODEL=ollama/gemma:2b
+#   LLM_PRE_PARSE_MODEL=ollama/llama3.2:3b
 #   LLM_TRANSACTION_PARSE_MODEL=gemini/gemini-2.5-flash
 
 # TROUBLESHOOTING:
 # ----------------
-# Error: "Connection refused to localhost:3001"
-#   -> Start OpenWebUI: docker start open-webui
+# Error: "Connection refused to localhost:11434"
+#   -> Start Ollama: ollama serve (or docker start ollama)
 #
 # Error: "GEMINI_API_KEY not set"
 #   -> Add to .env file: echo "GEMINI_API_KEY=your_key" >> .env
