@@ -3,5 +3,6 @@ __pycache__/
 *.db
 *.sqlite3
 *.csv*
-*.bk
+*.bk*
 llm_config.yaml
+extra/
