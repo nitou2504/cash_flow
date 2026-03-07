@@ -1,4 +1,5 @@
 google-generativeai
+litellm
 rich
 python-dateutil
 python-dotenv
