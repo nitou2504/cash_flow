@@ -41,6 +41,12 @@ python3 cli.py add "Phone plan 600 starting the 5th of 12 installments on Visa P
 
 Creates 8 remaining installments (12 − 5 + 1), labeled "Phone plan (5/12)" through "Phone plan (12/12)", each at $50.00.
 
+```bash
+python3 cli.py add "Bought a TV for 500 on Visa Pichincha with 3 months grace period"
+```
+
+Defers the first payment by 3 months — useful for "buy now, pay later" promotions.
+
 ### Pending & expected income
 
 ```bash
