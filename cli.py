@@ -342,7 +342,7 @@ def handle_subscriptions_delete(conn: sqlite3.Connection, args: argparse.Namespa
 
 def handle_add(conn: sqlite3.Connection, args: argparse.Namespace):
     """Parses a natural language string to add a transaction using LLM."""
-    import transactions as tx_module
+    from cashflow import transactions as tx_module
 
     accounts = repository.get_all_accounts(conn)
     if not accounts:
