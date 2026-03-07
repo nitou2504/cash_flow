@@ -173,7 +173,7 @@ Use navigation buttons to browse months or toggle between budget and planning vi
    python3 cli.py accounts add-manual Cash cash
    ```
 
-   The database ships with 11 default categories (Housing, Home Groceries, Personal Groceries, Dining-Snacks, Transportation, Health, Personal, Income, Savings, Loans, Others). You can add custom ones with `python3 cli.py categories add <name> "<description>"` — the description is a short explanation of what the category covers (e.g., "Eating out, takeout, coffee"), used for human reference when browsing categories.
+   The database ships with 11 default categories (Housing, Home Groceries, Personal Groceries, Dining-Snacks, Transportation, Health, Personal, Income, Savings, Loans, Others). You can add custom ones with `python3 cli.py categories add <name> "<description>"` — the description is a short explanation of what the category covers (e.g., "Eating out, takeout, coffee"), which the LLM uses to pick the right category automatically.
 
 4. **Record your first income**
 
