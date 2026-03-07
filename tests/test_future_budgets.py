@@ -3,12 +3,12 @@ from datetime import date
 from unittest.mock import patch
 from dateutil.relativedelta import relativedelta
 
-from database import create_connection, create_tables, insert_mock_data
-from repository import (
+from cashflow.database import create_connection, create_tables, insert_mock_data
+from cashflow.repository import (
     add_subscription, get_budget_allocation_for_month, get_all_transactions,
     get_setting, add_transactions
 )
-from main import process_transaction_request, generate_forecasts, run_monthly_rollover
+from cashflow.controller import process_transaction_request, generate_forecasts, run_monthly_rollover
 
 class TestFutureBudgetImpact(unittest.TestCase):
     def setUp(self):
@@ -36,7 +36,7 @@ class TestFutureBudgetImpact(unittest.TestCase):
 
         # --- Initial State ---
         # Run a rollover to commit current month and generate forecasts
-        with patch('main.date') as mock_date:
+        with patch('cashflow.controller.date') as mock_date:
             mock_date.today.return_value = self.today
             run_monthly_rollover(self.conn, self.today)
 
@@ -63,7 +63,7 @@ class TestFutureBudgetImpact(unittest.TestCase):
             "type": "installment", "description": "New Phone", "total_amount": 300.00,
             "installments": 3, "account": "Visa Produbanco", "budget": "budget_shopping"
         }
-        with patch('main.date') as mock_date:
+        with patch('cashflow.controller.date') as mock_date:
             mock_date.today.return_value = self.today
             process_transaction_request(self.conn, installment_request)
         
@@ -97,7 +97,7 @@ class TestFutureBudgetImpact(unittest.TestCase):
             "type": "installment", "description": "New Laptop", "total_amount": 1200.00,
             "installments": 12, "account": "Visa Produbanco", "budget": "budget_shopping"
         }
-        with patch('main.date') as mock_date:
+        with patch('cashflow.controller.date') as mock_date:
             mock_date.today.return_value = self.today
             process_transaction_request(self.conn, installment_request)
 
@@ -134,7 +134,7 @@ class TestFutureBudgetImpact(unittest.TestCase):
         print("\nSTEP 2: Action")
         print("  - Moving time forward one month and running forecast generation.")
         new_today = self.today + relativedelta(months=1)
-        with patch('main.date') as mock_date:
+        with patch('cashflow.controller.date') as mock_date:
             mock_date.today.return_value = new_today
             horizon = int(get_setting(self.conn, "forecast_horizon_months"))
             generate_forecasts(self.conn, horizon, from_date=new_today)

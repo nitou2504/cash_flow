@@ -4,12 +4,12 @@ from datetime import date
 from unittest.mock import patch
 from dateutil.relativedelta import relativedelta
 
-from database import create_connection, create_tables, insert_mock_data
-from repository import (
+from cashflow.database import create_connection, create_tables, insert_mock_data
+from cashflow.repository import (
     add_subscription, get_all_transactions, get_subscription_by_id,
     get_budget_allocation_for_month, commit_past_and_current_forecasts
 )
-from main import generate_forecasts, process_transaction_request, process_budget_update
+from cashflow.controller import generate_forecasts, process_transaction_request, process_budget_update
 
 class TestBudgetUpdate(unittest.TestCase):
     def setUp(self):
@@ -31,7 +31,7 @@ class TestBudgetUpdate(unittest.TestCase):
         add_subscription(self.conn, shopping_budget)
 
         # 2. Generate forecasts for the next 6 months
-        with patch('main.date') as mock_date:
+        with patch('cashflow.controller.date') as mock_date:
             mock_date.today.return_value = self.today
             generate_forecasts(self.conn, 6)
 
@@ -43,7 +43,7 @@ class TestBudgetUpdate(unittest.TestCase):
             "type": "simple", "description": "New Shoes", "amount": 50.00,
             "account": "Visa Produbanco", "budget": self.budget_id
         }
-        with patch('main.date') as mock_date:
+        with patch('cashflow.controller.date') as mock_date:
             mock_date.today.return_value = self.today
             process_transaction_request(self.conn, expense_request)
 
@@ -123,7 +123,7 @@ class TestBudgetUpdate(unittest.TestCase):
             "type": "simple", "description": "Luxury Item", "amount": 200.00,
             "account": "Visa Produbanco", "budget": self.budget_id
         }
-        with patch('main.date') as mock_date:
+        with patch('cashflow.controller.date') as mock_date:
             mock_date.today.return_value = self.today
             process_transaction_request(self.conn, over_expense)
         
@@ -169,7 +169,7 @@ class TestFutureDatedBudgetUpdate(unittest.TestCase):
             "start_date": self.current_month, "is_budget": True
         })
 
-        with patch('main.date') as mock_date:
+        with patch('cashflow.controller.date') as mock_date:
             mock_date.today.return_value = self.today
             generate_forecasts(self.conn, 6)
         
@@ -183,7 +183,7 @@ class TestFutureDatedBudgetUpdate(unittest.TestCase):
             "type": "simple", "description": "Late Month Purchase", "amount": 50.00,
             "account": "Visa Produbanco", "budget": self.budget_id
         }
-        with patch('main.date') as mock_date:
+        with patch('cashflow.controller.date') as mock_date:
             mock_date.today.return_value = self.today
             process_transaction_request(self.conn, expense_request)
         

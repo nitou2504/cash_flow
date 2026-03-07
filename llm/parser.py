@@ -7,7 +7,7 @@ from datetime import date, timedelta
 from dateutil.relativedelta import relativedelta
 from typing import List, Dict, Any, Optional
 from sqlite3 import Connection
-import repository
+from cashflow import repository
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ def _call_llm(
             function_name="parse_transaction_string"
         )
     """
-    from llm_backend import LLMBackend
+    from llm.backend import LLMBackend
 
     try:
         backend = LLMBackend.get_instance()

@@ -2,10 +2,10 @@ import unittest
 import sqlite3
 from datetime import date, timedelta
 
-from database import create_connection, create_tables
-import repository
-import main as controller
-from transactions import create_single_transaction
+from cashflow.database import create_connection, create_tables
+from cashflow import repository
+from cashflow import controller
+from cashflow.transactions import create_single_transaction
 
 class TestPendingTransactions(unittest.TestCase):
 

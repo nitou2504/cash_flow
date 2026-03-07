@@ -2,9 +2,9 @@ import unittest
 from datetime import date
 from unittest.mock import patch
 
-from database import create_connection, create_tables, insert_mock_data
-from repository import add_subscription, get_transactions_with_running_balance
-from main import process_transaction_request, run_monthly_rollover
+from cashflow.database import create_connection, create_tables, insert_mock_data
+from cashflow.repository import add_subscription, get_transactions_with_running_balance
+from cashflow.controller import process_transaction_request, run_monthly_rollover
 
 class TestRunningBalance(unittest.TestCase):
     def setUp(self):
@@ -30,7 +30,7 @@ class TestRunningBalance(unittest.TestCase):
             "monthly_amount": 400, "payment_account_id": "Cash",
             "start_date": self.today.replace(day=1), "is_budget": True
         })
-        with patch('main.date') as mock_date:
+        with patch('cashflow.controller.date') as mock_date:
             mock_date.today.return_value = self.today
             run_monthly_rollover(self.conn, self.today)
 

@@ -5,9 +5,9 @@ import sqlite3
 from datetime import date
 from dateutil.relativedelta import relativedelta
 
-from main import generate_forecasts
-from database import create_tables, insert_mock_data, create_connection
-from repository import add_subscription, get_all_transactions, add_transactions
+from cashflow.controller import generate_forecasts
+from cashflow.database import create_tables, insert_mock_data, create_connection
+from cashflow.repository import add_subscription, get_all_transactions, add_transactions
 
 class TestScheduler(unittest.TestCase):
     def setUp(self):
@@ -34,7 +34,7 @@ class TestScheduler(unittest.TestCase):
         """Close the database connection after each test."""
         self.conn.close()
 
-    @patch('main.date')
+    @patch('cashflow.controller.date')
     def test_generate_forecasts_initial_creation(self, mock_date):
         """
         Tests that forecasts are created correctly for a new subscription.
@@ -51,7 +51,7 @@ class TestScheduler(unittest.TestCase):
         self.assertEqual(transactions[0]['origin_id'], 'sub_spotify')
         self.assertEqual(transactions[2]['date_created'], date(2025, 3, 15))
 
-    @patch('main.date')
+    @patch('cashflow.controller.date')
     def test_generate_forecasts_extends_existing(self, mock_date):
         """
         Tests that generate_forecasts only adds missing future forecasts.
@@ -77,7 +77,7 @@ class TestScheduler(unittest.TestCase):
         # Check that the last one is for April
         self.assertEqual(transactions[2]['date_created'], date(2025, 4, 15))
 
-    @patch('main.date')
+    @patch('cashflow.controller.date')
     def test_generate_forecasts_respects_end_date(self, mock_date):
         """
         Tests that forecasts are not created after a subscription's end_date.
@@ -93,7 +93,7 @@ class TestScheduler(unittest.TestCase):
         self.assertEqual(len(transactions), 3)
         self.assertEqual(transactions[2]['date_created'], date(2025, 3, 1))
 
-    @patch('main.date')
+    @patch('cashflow.controller.date')
     def test_generate_forecasts_no_duplicates(self, mock_date):
         """
         Tests that running the function multiple times doesn't create duplicates.

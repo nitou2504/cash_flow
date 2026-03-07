@@ -17,11 +17,11 @@ from dateutil.relativedelta import relativedelta
 
 from dotenv import load_dotenv
 
-from database import create_connection, initialize_database
-import repository
-import interface
-import llm_parser
-import main as controller
+from cashflow.database import create_connection, initialize_database
+from cashflow import repository
+from ui import cli_display as interface
+from llm import parser as llm_parser
+from cashflow import controller
 
 def handle_accounts_list(conn: sqlite3.Connection):
     """Displays a list of all accounts."""

@@ -3,11 +3,11 @@ from datetime import date
 from unittest.mock import patch
 from dateutil.relativedelta import relativedelta
 
-from database import create_connection, create_tables, insert_mock_data
-from repository import (
+from cashflow.database import create_connection, create_tables, insert_mock_data
+from cashflow.repository import (
     add_subscription, get_budget_allocation_for_month, get_all_transactions
 )
-from main import (
+from cashflow.controller import (
     process_transaction_request, process_transaction_deletion, run_monthly_rollover
 )
 
@@ -33,7 +33,7 @@ class TestTransactionCorrection(unittest.TestCase):
         })
 
         # 2. Generate forecasts and commit September and October
-        with patch('main.date') as mock_date:
+        with patch('cashflow.controller.date') as mock_date:
             mock_date.today.return_value = self.today
             run_monthly_rollover(self.conn, self.september)
             run_monthly_rollover(self.conn, self.october)
@@ -57,7 +57,7 @@ class TestTransactionCorrection(unittest.TestCase):
             "account": "Cash", "budget": self.budget_id
         }
         # We patch 'today' to be in September for the creation of this transaction
-        with patch('main.date') as mock_date:
+        with patch('cashflow.controller.date') as mock_date:
             mock_date.today.return_value = self.september
             process_transaction_request(self.conn, incorrect_expense_req)
 
@@ -85,7 +85,7 @@ class TestTransactionCorrection(unittest.TestCase):
             "installments": 3, "account": "Cash", "budget": self.budget_id
         }
         # The purchase date is still in September
-        with patch('main.date') as mock_date:
+        with patch('cashflow.controller.date') as mock_date:
             mock_date.today.return_value = self.september
             process_transaction_request(self.conn, correct_installment_req)
 

@@ -3,10 +3,10 @@ import unittest
 import sqlite3
 from unittest.mock import patch, MagicMock
 
-from main import process_transaction_request
+from cashflow.controller import process_transaction_request
 
 # Placeholder for database setup logic
-from database import create_tables, insert_mock_data, create_connection
+from cashflow.database import create_tables, insert_mock_data, create_connection
 
 
 class TestMainController(unittest.TestCase):
@@ -20,8 +20,8 @@ class TestMainController(unittest.TestCase):
         """Close the database connection after each test."""
         self.conn.close()
 
-    @patch("main.repository")
-    @patch("main.transactions")
+    @patch("cashflow.controller.repository")
+    @patch("cashflow.controller.transactions")
     def test_process_transaction_request_simple(
         self, mock_transactions, mock_repository
     ):
@@ -54,8 +54,8 @@ class TestMainController(unittest.TestCase):
         mock_transactions.create_single_transaction.assert_called_once()
         mock_repository.add_transactions.assert_called_once()
 
-    @patch("main.repository")
-    @patch("main.transactions")
+    @patch("cashflow.controller.repository")
+    @patch("cashflow.controller.transactions")
     def test_process_transaction_request_installment(
         self, mock_transactions, mock_repository
     ):
@@ -90,8 +90,8 @@ class TestMainController(unittest.TestCase):
         mock_transactions.create_installment_transactions.assert_called_once()
         mock_repository.add_transactions.assert_called_once()
 
-    @patch("main.repository")
-    @patch("main.transactions")
+    @patch("cashflow.controller.repository")
+    @patch("cashflow.controller.transactions")
     def test_process_transaction_request_split(
         self, mock_transactions, mock_repository
     ):
@@ -149,8 +149,8 @@ class TestMonthlyRollover(unittest.TestCase):
         An integration test for the entire monthly rollover process that
         simulates moving into a new month.
         """
-        from main import generate_forecasts, run_monthly_rollover
-        from repository import get_all_transactions, add_subscription
+        from cashflow.controller import generate_forecasts, run_monthly_rollover
+        from cashflow.repository import get_all_transactions, add_subscription
         from datetime import date
         from dateutil.relativedelta import relativedelta
 

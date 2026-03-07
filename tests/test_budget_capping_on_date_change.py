@@ -3,12 +3,12 @@ from datetime import date
 from unittest.mock import patch
 from dateutil.relativedelta import relativedelta
 
-from database import create_connection, create_tables, insert_mock_data
-from repository import (
+from cashflow.database import create_connection, create_tables, insert_mock_data
+from cashflow.repository import (
     add_subscription, get_budget_allocation_for_month, get_all_transactions,
     get_account_by_name
 )
-from main import (
+from cashflow.controller import (
     process_transaction_request, process_transaction_date_update, run_monthly_rollover
 )
 
@@ -32,7 +32,7 @@ class TestBudgetCappingOnDateChange(unittest.TestCase):
         })
 
         # Generate forecasts and commit months
-        with patch('main.date') as mock_date:
+        with patch('cashflow.controller.date') as mock_date:
             mock_date.today.return_value = self.today
             run_monthly_rollover(self.conn, self.october)
             run_monthly_rollover(self.conn, self.november)

@@ -4,9 +4,9 @@ import sqlite3
 from datetime import date
 from unittest.mock import patch
 
-from main import process_transaction_request, run_monthly_budget_reconciliation
-from database import create_connection, create_tables, insert_mock_data
-from repository import add_subscription, get_all_transactions, add_transactions, get_budget_allocation_for_month
+from cashflow.controller import process_transaction_request, run_monthly_budget_reconciliation
+from cashflow.database import create_connection, create_tables, insert_mock_data
+from cashflow.repository import add_subscription, get_all_transactions, add_transactions, get_budget_allocation_for_month
 
 class TestBudgetLogic(unittest.TestCase):
     def setUp(self):

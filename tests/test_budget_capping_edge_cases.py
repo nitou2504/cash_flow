@@ -2,12 +2,12 @@ import unittest
 from datetime import date
 from dateutil.relativedelta import relativedelta
 
-from database import create_connection, create_tables, insert_mock_data
-from repository import (
+from cashflow.database import create_connection, create_tables, insert_mock_data
+from cashflow.repository import (
     add_subscription, add_transactions, get_budget_allocation_for_month,
     get_all_transactions
 )
-from main import (
+from cashflow.controller import (
     process_transaction_request, process_transaction_conversion,
     process_transaction_deletion
 )

@@ -2,7 +2,7 @@ import unittest
 import sqlite3
 from datetime import date
 
-from repository import (
+from cashflow.repository import (
     get_account_by_name,
     add_transactions,
     get_all_transactions,
@@ -14,7 +14,7 @@ from repository import (
     get_setting,
     commit_past_and_current_forecasts,
 )
-from database import create_tables, insert_mock_data, create_connection
+from cashflow.database import create_tables, insert_mock_data, create_connection
 
 
 class TestRepository(unittest.TestCase):

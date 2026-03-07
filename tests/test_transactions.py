@@ -1,7 +1,7 @@
 import unittest
 from datetime import date, timedelta
 
-from transactions import (
+from cashflow.transactions import (
     create_single_transaction,
     create_installment_transactions,
     create_split_transactions,

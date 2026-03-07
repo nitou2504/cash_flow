@@ -2,10 +2,10 @@ import unittest
 import sqlite3
 from unittest.mock import patch, MagicMock
 
-from database import create_connection, create_tables, insert_mock_data
-from interface import view_transactions
-from main import process_transaction_request, run_monthly_rollover
-from repository import add_subscription
+from cashflow.database import create_connection, create_tables, insert_mock_data
+from ui.cli_display import view_transactions
+from cashflow.controller import process_transaction_request, run_monthly_rollover
+from cashflow.repository import add_subscription
 from datetime import date
 
 class TestInterface(unittest.TestCase):
@@ -18,8 +18,8 @@ class TestInterface(unittest.TestCase):
     def tearDown(self):
         self.conn.close()
 
-    @patch('interface.Table')
-    @patch('interface.Console')
+    @patch('ui.cli_display.Table')
+    @patch('ui.cli_display.Console')
     def test_view_transactions_displays_correctly(self, mock_console, mock_table):
         """
         Tests that the view_transactions function calls the rich library
@@ -34,7 +34,7 @@ class TestInterface(unittest.TestCase):
             "start_date": self.today.replace(day=1), "is_budget": True
         })
         
-        with patch('main.date') as mock_date:
+        with patch('cashflow.controller.date') as mock_date:
             mock_date.today.return_value = self.today
             run_monthly_rollover(self.conn, self.today)
 
@@ -49,7 +49,7 @@ class TestInterface(unittest.TestCase):
         }, transaction_date=date(2025, 10, 12))
 
         # --- Debug: Print the raw data ---
-        import repository
+        from cashflow import repository
         transactions_for_view = repository.get_transactions_with_running_balance(self.conn)
         print("\n--- Raw Transaction Data for View ---")
         for t in transactions_for_view:

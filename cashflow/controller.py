@@ -3,8 +3,8 @@ from datetime import date
 from typing import Dict, Any
 from dateutil.relativedelta import relativedelta
 
-import repository
-import transactions
+from cashflow import repository
+from cashflow import transactions
 
 def _recalculate_and_update_budget(conn: sqlite3.Connection, budget_id: str, month_date: date):
     """

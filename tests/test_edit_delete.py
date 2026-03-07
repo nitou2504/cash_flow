@@ -3,12 +3,12 @@ import sqlite3
 from datetime import date
 from unittest.mock import patch
 
-from database import create_connection, create_tables, insert_mock_data
-from repository import (
+from cashflow.database import create_connection, create_tables, insert_mock_data
+from cashflow.repository import (
     add_transactions, get_all_transactions, get_transaction_by_id,
     add_subscription, get_budget_allocation_for_month
 )
-from main import process_transaction_update, process_transaction_deletion, process_transaction_request
+from cashflow.controller import process_transaction_update, process_transaction_deletion, process_transaction_request
 
 class TestTransactionEditingAndDeletion(unittest.TestCase):
     def setUp(self):
@@ -41,7 +41,7 @@ class TestTransactionEditingAndDeletion(unittest.TestCase):
             "type": "simple", "description": "Weekly Groceries", "amount": 50.00,
             "account": "Cash", "budget": "budget_food"
         }
-        with patch('main.date') as mock_date:
+        with patch('cashflow.controller.date') as mock_date:
             mock_date.today.return_value = self.today
             process_transaction_request(self.conn, self.initial_expense)
 
@@ -93,7 +93,7 @@ class TestTransactionEditingAndDeletion(unittest.TestCase):
             "type": "simple", "description": "Snacks", "amount": 20.00,
             "account": "Cash", "budget": None
         }
-        with patch('main.date') as mock_date:
+        with patch('cashflow.controller.date') as mock_date:
             mock_date.today.return_value = self.today
             process_transaction_request(self.conn, no_budget_expense)
 
@@ -148,7 +148,7 @@ class TestOverspendingScenarios(unittest.TestCase):
         }])
 
         # Log expenses to be overspent (-120 total)
-        with patch('main.date') as mock_date:
+        with patch('cashflow.controller.date') as mock_date:
             mock_date.today.return_value = self.today
             process_transaction_request(self.conn, {"type": "simple", "description": "Gas", "amount": 90, "account": "Cash", "budget": "budget_transport"})
             process_transaction_request(self.conn, {"type": "simple", "description": "Tires", "amount": 30, "account": "Cash", "budget": "budget_transport"})

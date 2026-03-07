@@ -2,9 +2,9 @@ import unittest
 from datetime import date
 from dateutil.relativedelta import relativedelta
 
-from database import create_connection, create_tables, insert_mock_data
-from main import process_transaction_request
-from repository import get_all_transactions
+from cashflow.database import create_connection, create_tables, insert_mock_data
+from cashflow.controller import process_transaction_request
+from cashflow.repository import get_all_transactions
 
 class TestGracePeriod(unittest.TestCase):
     def setUp(self):

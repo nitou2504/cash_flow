@@ -1,9 +1,9 @@
 import unittest
 from datetime import date
 
-from database import create_connection, create_tables, insert_mock_data
-from repository import get_all_transactions, get_account_by_name
-from main import process_transaction_request
+from cashflow.database import create_connection, create_tables, insert_mock_data
+from cashflow.repository import get_all_transactions, get_account_by_name
+from cashflow.controller import process_transaction_request
 
 class TestPartialInstallments(unittest.TestCase):
     def setUp(self):

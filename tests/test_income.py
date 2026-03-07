@@ -2,9 +2,9 @@ import unittest
 from datetime import date
 from unittest.mock import patch
 
-from database import create_connection, create_tables, insert_mock_data
-from repository import add_subscription, get_transactions_by_origin_id
-from main import generate_forecasts
+from cashflow.database import create_connection, create_tables, insert_mock_data
+from cashflow.repository import add_subscription, get_transactions_by_origin_id
+from cashflow.controller import generate_forecasts
 
 class TestIncomeTransactions(unittest.TestCase):
     def setUp(self):
@@ -35,7 +35,7 @@ class TestIncomeTransactions(unittest.TestCase):
         })
 
         # 2. Generate forecasts
-        with patch('main.date') as mock_date:
+        with patch('cashflow.controller.date') as mock_date:
             mock_date.today.return_value = self.today
             generate_forecasts(self.conn, horizon_months=2)
 

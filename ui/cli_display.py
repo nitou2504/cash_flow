@@ -5,7 +5,7 @@ from dateutil.relativedelta import relativedelta
 from rich.console import Console
 from rich.table import Table
 
-import repository
+from cashflow import repository
 
 def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = False, include_planning: bool = False, start_from: str = None, sort_by: str = "date_payed"):
     """

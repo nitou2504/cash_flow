@@ -5,10 +5,10 @@ import csv
 from datetime import date
 from unittest.mock import patch
 
-from database import create_connection, create_tables, insert_mock_data
-from interface import export_transactions_to_csv
-from main import process_transaction_request, run_monthly_rollover
-from repository import add_subscription
+from cashflow.database import create_connection, create_tables, insert_mock_data
+from ui.cli_display import export_transactions_to_csv
+from cashflow.controller import process_transaction_request, run_monthly_rollover
+from cashflow.repository import add_subscription
 
 class TestExport(unittest.TestCase):
     def setUp(self):
@@ -37,7 +37,7 @@ class TestExport(unittest.TestCase):
             "start_date": self.today.replace(day=1), "is_budget": True
         })
         
-        with patch('main.date') as mock_date:
+        with patch('cashflow.controller.date') as mock_date:
             mock_date.today.return_value = self.today
             run_monthly_rollover(self.conn, self.today)
 

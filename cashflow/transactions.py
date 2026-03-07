@@ -51,7 +51,7 @@ def calculate_payment_month(user_message: str, accounts: List[Dict[str, Any]]) -
         date(2026, 2, 1)
     """
     # Import here to avoid circular dependency
-    import llm_parser
+    from llm import parser as llm_parser
 
     pre_parsed = llm_parser.pre_parse_date_and_account(user_message, accounts)
 

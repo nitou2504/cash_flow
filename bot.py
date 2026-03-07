@@ -12,12 +12,12 @@ from telegram.ext import (
     filters,
 )
 
-from database import create_connection, initialize_database
-import repository
-import llm_parser
-import main as controller
-import transactions as tx_module
-from telegram_utils import (
+from cashflow.database import create_connection, initialize_database
+from cashflow import repository
+from llm import parser as llm_parser
+from cashflow import controller
+from cashflow import transactions as tx_module
+from ui.telegram_format import (
     format_transaction_preview,
     format_error_message,
     format_success_message,
@@ -26,7 +26,7 @@ from telegram_utils import (
     format_summary_navigation_buttons,
     parse_month_from_args,
 )
-from bot_config import TELEGRAM_BOT_TOKEN, DB_PATH
+from cashflow.config import TELEGRAM_BOT_TOKEN, DB_PATH
 
 # Configure logging
 logging.basicConfig(
