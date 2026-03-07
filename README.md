@@ -742,7 +742,7 @@ python3 cli.py subscriptions add-manual "Vacation Fund" 200 Cash savings \
 - `category`: Category name
 - `--start, -s`: Start date (default: today)
 - `--end, -e`: End date (omit for ongoing)
-- `--underspend, -u`: "keep" (rollover) or "return" unused funds
+- `--underspend, -u`: "keep" (leave allocated for untracked purchases) or "return" (release back to free balance)
 
 ---
 
@@ -778,7 +778,7 @@ python3 cli.py subscriptions edit budget_vacation --end none  # Make ongoing
 - `--amount, -a`: New monthly amount
 - `--account, -c`: New account
 - `--end, -e`: End date (YYYY-MM-DD) or "none"
-- `--underspend, -u`: "keep" or "rollover"
+- `--underspend, -u`: "keep" or "return"
 - `--retroactive, -r`: Apply changes to past months (corrections only)
 
 **Important**: Amount changes are not retroactive by default—they only affect future months. Use `--retroactive` to correct past allocation errors.
@@ -1096,7 +1096,7 @@ The budget allocation transaction will show the remaining balance (e.g., -350 if
 
 **Budget behaviors**:
 
-- **"keep" (default)**: Unused money stays allocated (rolled over)
+- **"keep" (default)**: Unused money stays allocated (covers untracked purchases)
 - **"return"**: Unused money returns to cash flow at month end
 
 To change behavior:

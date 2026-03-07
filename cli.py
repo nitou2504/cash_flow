@@ -1037,7 +1037,7 @@ def main():
 
     # --- Argument Parsing ---
     parser = argparse.ArgumentParser(
-        prog="cash_flow",
+        prog="cli.py",
         description="""
 Personal Cash Flow Management System
 =====================================
@@ -1047,36 +1047,43 @@ Supports multiple accounts (cash and credit cards), installment tracking, and na
         epilog="""
 COMMON WORKFLOWS:
   First-time setup:
-    1. cash_flow accounts add "Cash account"
-    2. cash_flow accounts add "Credit card with cut-off on 25th and payment on 5th"
-    3. cash_flow categories add groceries "Food and household items"
+    1. cli.py accounts add "Cash account"
+    2. cli.py accounts add "Credit card with cut-off on 25th and payment on 5th"
+    3. cli.py categories add groceries "Food and household items"
 
   Daily usage:
-    cash_flow add "Spent 45.50 on groceries at Supermarket today"
-    cash_flow view                    # See upcoming transactions
-    cash_flow view -s                 # Summary view (aggregated credit card payments)
+    cli.py add "Spent 45.50 on groceries at Supermarket today"
+    cli.py view                    # See upcoming transactions
+    cli.py view -s                 # Summary view (aggregated credit card payments)
 
   Managing budgets:
-    cash_flow subscriptions add "Monthly groceries budget of 300 on Cash"
-    cash_flow subscriptions list
+    cli.py subscriptions add "Monthly groceries budget of 300 on Cash"
+    cli.py subscriptions list
 
   Reconciliation:
-    cash_flow fix --payment MyCard -i              # Interactive statement reconciliation
-    cash_flow fix --balance 1500.00 --account Cash # Fix total balance
+    cli.py fix --payment MyCard -i              # Interactive statement reconciliation
+    cli.py fix --balance 1500.00 --account Cash # Fix total balance
 
   Transaction management:
-    cash_flow edit 123 --status pending            # Change one transaction
-    cash_flow edit 123 --status pending --all      # Change all installments
-    cash_flow delete 456 --all                     # Delete entire installment group
+    cli.py edit 123 --status pending            # Change one transaction
+    cli.py edit 123 --status pending --all      # Change all installments
+    cli.py delete 456 --all                     # Delete entire installment group
+    cli.py clear 789                            # Commit a pending transaction
+    cli.py clear 789 --all                      # Commit all in group
+
+  Pending & planning:
+    cli.py add "Friend owes me 50, pending"
+    cli.py add "What if I buy a TV for 800"        # Planning transaction
+    cli.py clear 789                               # Commit when confirmed
 
 ALIASES:
   Most commands have short aliases (shown in brackets below):
   - accounts [acc, a]    - subscriptions [sub, s]    - view [v]
   - categories [cat, c]  - export [exp, x]           - edit [e]
   - delete [del, d]      - clear [cl]                - fix [f]
-  - backup [bk]
+  - add-batch [ab]       - add-installments [ai]     - backup [bk]
 
-For detailed help on any command: cash_flow COMMAND -h
+For detailed help on any command: cli.py COMMAND -h
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -1096,9 +1103,13 @@ For detailed help on any command: cash_flow COMMAND -h
         description="""
 Add a transaction using natural language description.
 Examples:
-  cash_flow add "Spent 45.50 on groceries at Walmart today"
-  cash_flow add "Bought TV for 600 in 12 installments on Visa card"
-  cash_flow add "Split purchase: 30 on groceries, 15 on snacks"
+  cli.py add "Spent 45.50 on groceries at Supermaxi today"
+  cli.py add "Bought TV for 600 in 12 installments on Visa card"
+  cli.py add "Phone plan 600 starting the 5th of 12 on Visa Pichincha"
+  cli.py add "Bought laptop with 3 months grace period on Visa"
+  cli.py add "Friend owes me 100, pending"
+  cli.py add "What if I buy headphones for 80"
+  cli.py add "Split: 30 groceries, 15 snacks at Supermaxi"
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -1110,7 +1121,13 @@ Examples:
         "add-batch",
         aliases=["ab"],
         help="Import multiple transactions from CSV",
-        description="Import transactions from a CSV file (format: date,description,account,amount)"
+        description="""
+Import transactions from a CSV file.
+Format: date,description,account,amount
+Example:
+  cli.py add-batch transactions.csv
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
     add_batch_parser.add_argument("file_path", help="Path to the CSV file")
 
@@ -1119,7 +1136,13 @@ Examples:
         "add-installments",
         aliases=["ai"],
         help="Import installment transactions from CSV",
-        description="Import pre-existing installments from CSV (format: date,description,account,amount,current_installment,total_installments)"
+        description="""
+Import pre-existing installment plans from CSV.
+Format: date,description,account,amount,current_installment,total_installments
+Example:
+  cli.py add-installments installments.csv
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
     add_installments_parser.add_argument("file_path", help="Path to the CSV file")
 
@@ -1162,8 +1185,8 @@ Examples:
         description="""
 Add a new account using natural language.
 Examples:
-  cash_flow accounts add "Cash account"
-  cash_flow accounts add "Visa card with cut-off on 25 and payment on 5"
+  cli.py accounts add "Cash account"
+  cli.py accounts add "Visa card with cut-off on 25 and payment on 5"
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -1205,7 +1228,12 @@ Examples:
         "add",
         aliases=["a"],
         help="Create a new category",
-        description="Add a new expense category (e.g., 'groceries', 'utilities', 'entertainment')"
+        description="""
+Create a new category. The description helps the LLM auto-categorize transactions.
+Example:
+  cli.py categories add dining "Eating out, takeout, coffee"
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
     cat_add_parser.add_argument("name", help="Category name (lowercase, no spaces)")
     cat_add_parser.add_argument("description", help="What this category covers")
@@ -1213,7 +1241,13 @@ Examples:
     cat_edit_parser = cat_subparsers.add_parser(
         "edit",
         aliases=["e"],
-        help="Update category description"
+        help="Update category description",
+        description="""
+Update the description for an existing category.
+Example:
+  cli.py categories edit dining "Restaurants, fast food, coffee shops"
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
     cat_edit_parser.add_argument("name", help="Category name to edit")
     cat_edit_parser.add_argument("description", help="New description")
@@ -1222,7 +1256,12 @@ Examples:
         "delete",
         aliases=["del", "d"],
         help="Remove a category",
-        description="Delete a category (will fail if transactions are using it)"
+        description="""
+Delete a category (will fail if transactions are using it).
+Example:
+  cli.py categories delete dining
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
     cat_delete_parser.add_argument("name", help="Category name to delete")
 
@@ -1266,7 +1305,7 @@ Budgets automatically allocate funds each month and track spending against limit
     subscriptions_add_parser.add_argument("category", help="Category name")
     subscriptions_add_parser.add_argument("--start", "-s", type=str, help="Start date YYYY-MM-DD (default: today)")
     subscriptions_add_parser.add_argument("--end", "-e", type=str, help="End date YYYY-MM-DD (omit for ongoing)")
-    subscriptions_add_parser.add_argument("--underspend", "-u", choices=["keep", "return"], help="Unused budget behavior: 'keep' (rollover) or 'return' (default: keep)")
+    subscriptions_add_parser.add_argument("--underspend", "-u", choices=["keep", "return"], help="Unused budget behavior: 'keep' leaves leftover in place for untracked purchases, 'return' releases it back to free balance (default: keep)")
 
     subscriptions_add_llm_parser = subscriptions_subparsers.add_parser(
         "add",
@@ -1275,9 +1314,9 @@ Budgets automatically allocate funds each month and track spending against limit
         description="""
 Add a budget or subscription using natural language.
 Examples:
-  cash_flow subscriptions add "Monthly groceries budget of 300 on Cash"
-  cash_flow subscriptions add "Netflix subscription 15.99 on Visa"
-  cash_flow subscriptions add "Vacation fund 200/month until December"
+  cli.py subscriptions add "Monthly groceries budget of 300 on Cash"
+  cli.py subscriptions add "Netflix subscription 15.99 on Visa"
+  cli.py subscriptions add "Vacation fund 200/month until December"
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -1294,7 +1333,7 @@ Examples:
     subscriptions_edit_parser.add_argument("--amount", "-a", type=float, help="New monthly amount")
     subscriptions_edit_parser.add_argument("--account", "-c", help="New account ID")
     subscriptions_edit_parser.add_argument("--end", "-e", help='End date (YYYY-MM-DD) or "none" to make ongoing')
-    subscriptions_edit_parser.add_argument("--underspend", "-u", choices=["keep", "rollover"], help="Unused budget handling")
+    subscriptions_edit_parser.add_argument("--underspend", "-u", choices=["keep", "return"], help="Unused budget behavior: 'keep' leaves leftover in place for untracked purchases, 'return' releases it back to free balance")
     subscriptions_edit_parser.add_argument("--retroactive", "-r", action="store_true", help="Apply changes to past months (corrections only, not price changes)")
 
     subscriptions_delete_parser = subscriptions_subparsers.add_parser(
@@ -1344,12 +1383,12 @@ SORTING:
                        Good for: tracking when expenses actually happened
 
 Examples:
-  cash_flow view                         # Default: 3 months from today
-  cash_flow view -m 6                    # Show 6 months
-  cash_flow view --from 2025-10          # Start from October 2025
-  cash_flow view -s                      # Summary mode (cleaner view)
-  cash_flow view -s -p                   # Summary with planning included
-  cash_flow view --sort date_created     # Sort by purchase date
+  cli.py view                         # Default: 3 months from today
+  cli.py view -m 6                    # Show 6 months
+  cli.py view --from 2025-10          # Start from October 2025
+  cli.py view -s                      # Summary mode (cleaner view)
+  cli.py view -s -p                   # Summary with planning included
+  cli.py view --sort date_created     # Sort by purchase date
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -1364,7 +1403,13 @@ Examples:
         "export",
         aliases=["exp", "x"],
         help="Export transactions to CSV file",
-        description="Export all transactions to CSV format for external analysis"
+        description="""
+Export all transactions to CSV for external analysis.
+Examples:
+  cli.py export output.csv
+  cli.py export output.csv -b    # Include running balance column
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
     export_parser.add_argument("file_path", help="Output CSV file path")
     export_parser.add_argument("--with-balance", "-b", action="store_true", help="Include running balance column")
@@ -1379,6 +1424,10 @@ Examples:
         description="""
 Delete a single transaction or an entire transaction group (installments).
 Use --all to delete all related transactions (e.g., all installments in a payment plan).
+
+Examples:
+  cli.py delete 123              # Delete single transaction
+  cli.py delete 123 --all        # Delete entire installment group
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -1401,9 +1450,9 @@ Transaction statuses:
   - forecast: Auto-generated future transaction
 
 Examples:
-  cash_flow edit 123 --status pending
-  cash_flow edit 456 --status planning --all    # Change all installments
-  cash_flow edit 789 --category groceries --budget budget_food
+  cli.py edit 123 --status pending
+  cli.py edit 456 --status planning --all    # Change all installments
+  cli.py edit 789 --category groceries --budget budget_food
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -1424,6 +1473,10 @@ Examples:
         description="""
 Change transaction status from 'pending' or 'planning' to 'committed'.
 Use --all to clear all transactions in a group (e.g., all installments).
+
+Examples:
+  cli.py clear 123               # Commit a single pending transaction
+  cli.py clear 123 --all         # Commit all transactions in the group
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -1442,7 +1495,7 @@ Reconcile account balances or credit card statements.
 
 Balance Fix:
   Adjust total cash balance to match actual amount (adds correction transaction).
-  Example: cash_flow fix --balance 1500.00
+  Example: cli.py fix --balance 1500.00
 
 Statement Fix:
   Reconcile credit card statement against tracked transactions.
@@ -1456,9 +1509,9 @@ Statement Fix:
     - Cash accounts: always use current month
 
   Examples:
-    cash_flow fix --payment VisaCard -i              # Interactive (auto-detects month)
-    cash_flow fix --payment VisaCard 450.50         # Amount only (auto-detects month)
-    cash_flow fix --payment VisaCard 2026-01 450.50 # Explicit month and amount
+    cli.py fix --payment VisaCard -i              # Interactive (auto-detects month)
+    cli.py fix --payment VisaCard 450.50         # Amount only (auto-detects month)
+    cli.py fix --payment VisaCard 2026-01 450.50 # Explicit month and amount
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
