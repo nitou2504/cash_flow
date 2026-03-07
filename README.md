@@ -1,6 +1,73 @@
 # Personal Cash Flow Tool
 
-A powerful, terminal-based cash flow management system designed for clarity, traceability, and accurate forecasting. Track expenses, manage budgets, handle credit card payments, and see your financial future—all from the command line.
+A CLI and Telegram bot for managing personal finances with natural language input. Type what you spent in plain English and the app parses dates, accounts, categories, and amounts automatically. Built around budget envelopes, credit card billing-cycle awareness, and a single timeline that forecasts your real cash position into the future.
+
+## See It In Action
+
+### Adding a transaction
+
+```bash
+python3 cli.py add "Spent 45.50 on groceries at Supermaxi today on Visa Pichincha"
+```
+
+```
+Transaction Preview
+┌────────────┬──────────────────────────┐
+│ Field      │ Value                    │
+├────────────┼──────────────────────────┤
+│ Date       │ 2026-03-07               │
+│ Date Payed │ 2026-04-05               │
+│ Desc       │ Supermaxi - groceries    │
+│ Account    │ Visa Pichincha           │
+│ Amount     │ -45.50                   │
+│ Category   │ Home Groceries           │
+│ Budget     │ budget_groceries_feb_mar │
+└────────────┴──────────────────────────┘
+
+Proceed with this request? [Y/n]
+```
+
+### Installments
+
+```bash
+python3 cli.py add "Bought laptop for 1200 in 12 installments on Visa Pichincha"
+```
+
+Creates 12 monthly transactions of -100.00 each, with payment dates aligned to the card's billing cycle.
+
+### Budget envelopes
+
+```bash
+python3 cli.py subscriptions add "Monthly groceries budget of 400 on Cash"
+```
+
+Creates a recurring envelope that reserves $400 each month. Spending against the budget reduces the envelope—not your running balance—so you always see how much is truly committed vs. free.
+
+### Viewing cash flow
+
+```bash
+python3 cli.py view
+```
+
+```
+Cash Flow View (Mar 2026 – Apr 2026)
+┌──────────┬──────────┬────────────────────────┬──────────┬────────┬────────────┐
+│ Date     │ Paid     │ Description            │ Account  │ Amount │ Balance    │
+├──────────┼──────────┼────────────────────────┼──────────┼────────┼────────────┤
+│ 03/01    │ 03/01    │ Salary                 │ Cash     │ +3000  │ 3000.00    │
+│ 03/01    │ 03/01    │ budget_groceries ✉     │ Cash     │ -400   │ 2600.00    │
+│ 03/07    │ 04/05    │ Supermaxi - groceries  │ VisaP    │ -45.50 │ 2554.50    │
+│ 04/05    │ 04/05    │ CC Payment: VisaP      │ Cash     │ -45.50 │ 2554.50    │
+└──────────┴──────────┴────────────────────────┴──────────┴────────┴────────────┘
+```
+
+Budget envelopes appear as line items but don't reduce the running balance—they only reserve funds.
+
+### Telegram bot
+
+Send a message like _"Lunch 12.50 on Cash"_ to your bot; it replies with a preview and inline buttons to confirm, edit, or cancel.
+
+---
 
 ## What Makes This Different?
 
@@ -15,17 +82,18 @@ A powerful, terminal-based cash flow management system designed for clarity, tra
 
 ## Table of Contents
 
-1. [Quick Start](#quick-start)
-2. [Telegram Bot](#telegram-bot)
-3. [Core Concepts](#core-concepts)
-4. [CLI Command Reference](#cli-command-reference)
-5. [Common Workflows](#common-workflows)
-6. [Advanced Features](#advanced-features)
-7. [Understanding Transaction Statuses](#understanding-transaction-statuses)
-8. [Understanding Credit Card Cycles](#understanding-credit-card-cycles)
-9. [Troubleshooting & FAQ](#troubleshooting--faq)
-10. [Technical Details](#technical-details)
-11. [Command Quick Reference](#command-quick-reference)
+1. [See It In Action](#see-it-in-action)
+2. [Quick Start](#quick-start)
+3. [Telegram Bot](#telegram-bot)
+4. [Core Concepts](#core-concepts)
+5. [CLI Command Reference](#cli-command-reference)
+6. [Common Workflows](#common-workflows)
+7. [Advanced Features](#advanced-features)
+8. [Understanding Transaction Statuses](#understanding-transaction-statuses)
+9. [Understanding Credit Card Cycles](#understanding-credit-card-cycles)
+10. [Troubleshooting & FAQ](#troubleshooting--faq)
+11. [Technical Details](#technical-details)
+12. [Command Quick Reference](#command-quick-reference)
 
 ---
 
@@ -35,41 +103,44 @@ A powerful, terminal-based cash flow management system designed for clarity, tra
 
 - Python 3.10+
 - pip (Python package manager)
-- A Gemini API key (free tier available) — see [LLM Configuration](#llm-configuration)
+- A Gemini API key (free tier perfectly usable) — see [LLM Configuration](#llm-configuration)
 
 ### Installation
 
 1. **Clone or download this repository**
+
    ```bash
    cd cash_flow
    ```
 
 2. **Install dependencies**
+
    ```bash
    pip install -r requirements.txt
    ```
 
 3. **Set up your first account**
+
    ```bash
    python3 cli.py accounts add-manual Cash cash
    ```
 
-4. **Add a category**
-   ```bash
-   python3 cli.py categories add groceries "Food and household items"
-   ```
+   The database ships with 11 default categories (Housing, Home Groceries, Personal Groceries, Dining-Snacks, Transportation, Health, Personal, Income, Savings, Loans, Others). You can add custom ones with `python3 cli.py categories add <name> "<description>"`.
 
-5. **Record your first income**
+4. **Record your first income**
+
    ```bash
    python3 cli.py add "Income 3000 on Cash"
    ```
 
-6. **Add your first expense**
+5. **Add your first expense**
+
    ```bash
    python3 cli.py add "Spent 45.50 on groceries today"
    ```
 
-7. **View your cash flow**
+6. **View your cash flow**
+
    ```bash
    python3 cli.py view
    ```
@@ -90,12 +161,14 @@ Track expenses on-the-go using the Telegram chatbot. Add transactions via natura
    - Copy the token provided
 
 2. **Add token to `.env` file**
+
    ```bash
    TELEGRAM_BOT_TOKEN=your_token_here
    GEMINI_API_KEY=your_gemini_key_here
    ```
 
 3. **Start the bot**
+
    ```bash
    python3 bot.py
    ```
@@ -123,11 +196,13 @@ The Docker setup mounts the project directory into the container, so the bot sha
 ### Usage
 
 Just send messages like:
+
 - `"Spent 50 on groceries today"`
 - `"Bought laptop for 1200 in 12 installments on Visa"`
 - `"Split: 30 on groceries, 15 on snacks"`
 
 The bot will:
+
 1. Parse your message using the same LLM backend as the CLI
 2. Show a formatted preview with inline buttons
 3. Let you **Confirm** or **Revise** before saving
@@ -146,11 +221,13 @@ The application uses LLMs for natural language parsing via [LiteLLM](https://git
 1. **Get a Google AI API key** at [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
 
 2. **Add to `.env` file**
+
    ```bash
    echo "GEMINI_API_KEY=your_api_key_here" >> .env
    ```
 
 3. **Test it**
+
    ```bash
    python3 cli.py add "Spent 50 on groceries today"
    ```
@@ -175,12 +252,14 @@ Route simple tasks to a free local model and complex tasks to Gemini. Based on b
 #### Setup
 
 1. **Install and start Ollama**
+
    ```bash
    ollama pull llama3.2:3b
    ollama serve  # Runs on port 11434
    ```
 
 2. **Copy the configuration template**
+
    ```bash
    cp llm_config.yaml.example llm_config.yaml
    ```
@@ -188,6 +267,7 @@ Route simple tasks to a free local model and complex tasks to Gemini. Based on b
    The example file is pre-configured with the recommended hybrid routing above.
 
 3. **Test**
+
    ```bash
    python3 cli.py add "test transaction 10 cash"
    ```
@@ -375,12 +455,14 @@ python3 cli.py add "Split purchase: 30 on groceries, 15 on snacks"
 **What it does**: Parses your natural language description using an LLM, shows you a preview table, and asks for confirmation before creating the transaction.
 
 **Key features**:
+
 - Auto-detects transaction type (simple, installment, split)
 - Calculates payment dates for credit cards automatically
 - Shows preview before committing
 - Supports pending and planning statuses
 
 **Example output**:
+
 ```
 Transaction Preview
 ┌────────────┬─────────────────┐
@@ -408,6 +490,7 @@ python3 cli.py add-batch transactions.csv
 ```
 
 **CSV format**: `date,description,account,amount`
+
 ```csv
 01/15/26,Groceries at Walmart,Cash,-45.50
 01/16/26,Gas station,Cash,-35.00
@@ -426,6 +509,7 @@ python3 cli.py add-installments installments.csv
 ```
 
 **CSV format**: `date,description,account,amount,current_installment,total_installments`
+
 ```csv
 01/15/26,New Laptop,VisaCard,83.33,3,12
 ```
@@ -447,6 +531,7 @@ python3 cli.py edit 200 --status planning --all  # Edit all installments
 ```
 
 **Available options**:
+
 - `--description, -d`: Change description
 - `--amount, -a`: Change amount
 - `--date, -D`: Change creation date (YYYY-MM-DD)
@@ -492,6 +577,7 @@ python3 cli.py accounts list
 ```
 
 **Example output**:
+
 ```
 All Accounts
 ┌────────────┬─────────────┬─────────────┬──────────────┐
@@ -517,6 +603,7 @@ python3 cli.py accounts add-manual VisaCard credit_card --cut-off-day 25 --payme
 ```
 
 **Parameters**:
+
 - `id`: Account name (e.g., "Cash", "VisaCard")
 - `type`: "cash" or "credit_card"
 - `--cut-off-day, -c`: Statement closing day (1-31, credit cards only)
@@ -547,6 +634,7 @@ python3 cli.py accounts adjust-billing VisaCard 2026-02 27 --payment-day 7
 ```
 
 **Parameters**:
+
 - `account_id`: Credit card account
 - `month`: Affected month (YYYY-MM)
 - `cut_off_day`: Actual cut-off day for this month
@@ -567,6 +655,7 @@ python3 cli.py subscriptions list --budgets-only  # Budgets only
 ```
 
 **Example output**:
+
 ```
 Subscriptions
 ┌──────────────────┬────────────┬────────────┬─────────┬─────────┬────────────┬────────────┬────────┐
@@ -592,6 +681,7 @@ python3 cli.py subscriptions add-manual "Vacation Fund" 200 Cash savings \
 ```
 
 **Parameters**:
+
 - `name`: Budget/subscription name
 - `amount`: Monthly amount
 - `account`: Account to charge
@@ -629,6 +719,7 @@ python3 cli.py subscriptions edit budget_vacation --end none  # Make ongoing
 ```
 
 **Parameters**:
+
 - `--name, -n`: New name
 - `--amount, -a`: New monthly amount
 - `--account, -c`: New account
@@ -708,6 +799,7 @@ python3 cli.py view --sort date_created  # Sort by purchase date
 ```
 
 **Display features**:
+
 - Running Balance: Cumulative balance after each transaction
 - MoM Change: Month-over-month comparison (last transaction of month, color-coded)
 - Starting Balance: Balance before displayed period
@@ -715,6 +807,7 @@ python3 cli.py view --sort date_created  # Sort by purchase date
 - Month Sections: Visual separators between months
 
 **Color coding**:
+
 - Blue: Budget allocations
 - Grey: Pending transactions
 - Italic: Forecast transactions
@@ -722,16 +815,19 @@ python3 cli.py view --sort date_created  # Sort by purchase date
 - Default: Committed transactions
 
 **Summary mode (`-s`)**:
+
 - Aggregates credit card transactions into monthly payment entries
 - Shows "VisaCard Payment" instead of individual purchases
 - Cash transactions shown normally
 - Planning transactions shown individually (unless `-p` used)
 
 **Sorting**:
+
 - `--sort date_payed` (default): When money leaves your account
 - `--sort date_created`: When purchases actually happened
 
 **Example output**:
+
 ```
 Cash Flow - February 2026 to April 2026
 Starting Balance: $4,584.01
@@ -789,11 +885,13 @@ python3 cli.py fix --payment VisaCard 2026-01 450.50
 ```
 
 **Smart month detection** (when month omitted):
+
 - Before cut-off day: Reconciles current month
 - After cut-off day: Reconciles next month
 - Cash accounts: Always current month
 
 **Interactive mode example** (`-i`):
+
 ```
 Statement Adjustment for VisaCard - January 2026
 Payment date: 2026-02-05
@@ -852,6 +950,7 @@ python3 cli.py backup restore <file>     # Restore from a backup
 | `BACKUP_MAX_DAYS` | `30` | Delete backups older than this many days |
 
 **Restore example**:
+
 ```bash
 python3 cli.py backup list                              # Find the backup you want
 python3 cli.py backup restore cash_flow_20260307_150623_093810.db  # Restore it
@@ -868,25 +967,26 @@ Restore always creates a pre-restore safety backup first, so you can undo a rest
 **Goal**: Get the system configured with accounts, categories, and initial balance.
 
 1. **Create your accounts**
+
    ```bash
    python3 cli.py accounts add "Cash account"
    python3 cli.py accounts add "Visa card with cut-off on 25 and payment on 5"
    ```
 
-2. **Add common categories**
+2. **Categories are pre-loaded** — 11 defaults are created automatically (Housing, Home Groceries, Dining-Snacks, Transportation, etc.). Add custom ones if needed:
+
    ```bash
-   python3 cli.py categories add groceries "Food and household items"
    python3 cli.py categories add utilities "Electricity, water, gas"
-   python3 cli.py categories add entertainment "Movies, dining out, hobbies"
-   python3 cli.py categories add transport "Gas, public transit, car expenses"
    ```
 
 3. **Record your current balance**
+
    ```bash
    python3 cli.py fix --balance 2500.00 --account Cash
    ```
 
 4. **Set up monthly budgets**
+
    ```bash
    python3 cli.py subscriptions add "Groceries budget 400 on Cash"
    python3 cli.py subscriptions add "Entertainment budget 150 on Cash"
@@ -894,12 +994,14 @@ Restore always creates a pre-restore safety backup first, so you can undo a rest
    ```
 
 5. **Add recurring subscriptions**
+
    ```bash
    python3 cli.py subscriptions add "Netflix 15.99 on Visa"
    python3 cli.py subscriptions add "Gym membership 50 on Visa"
    ```
 
 6. **View your forecast**
+
    ```bash
    python3 cli.py view -m 3
    ```
@@ -913,21 +1015,25 @@ You should now see your budgets allocated for the next few months and your subsc
 **Goal**: Set up a new budget that allocates money each month and tracks spending.
 
 1. **Create the budget**
+
    ```bash
    python3 cli.py subscriptions add "Monthly groceries budget of 400 on Cash"
    ```
 
 2. **Verify it was created**
+
    ```bash
    python3 cli.py subscriptions list
    ```
 
 3. **Record expenses against it**
+
    ```bash
    python3 cli.py add "Spent 50 on groceries from groceries budget"
    ```
 
 4. **Check remaining budget**
+
    ```bash
    python3 cli.py view | grep "Groceries Budget"
    ```
@@ -935,10 +1041,12 @@ You should now see your budgets allocated for the next few months and your subsc
 The budget allocation transaction will show the remaining balance (e.g., -350 if you spent $50 from a $400 budget).
 
 **Budget behaviors**:
+
 - **"keep" (default)**: Unused money stays allocated (rolled over)
 - **"return"**: Unused money returns to cash flow at month end
 
 To change behavior:
+
 ```bash
 python3 cli.py subscriptions edit budget_groceries --underspend return
 ```
@@ -950,11 +1058,13 @@ python3 cli.py subscriptions edit budget_groceries --underspend return
 **Goal**: Record a purchase being paid over multiple months.
 
 1. **Add the installment purchase**
+
    ```bash
    python3 cli.py add "Bought new laptop for 1200 in 12 installments on Visa"
    ```
 
 2. **View the installment plan**
+
    ```bash
    python3 cli.py view -m 12
    ```
@@ -962,11 +1072,13 @@ python3 cli.py subscriptions edit budget_groceries --underspend return
    You'll see 12 transactions (e.g., "New Laptop (1/12)", "New Laptop (2/12)", etc.) spread across future months, each on your credit card's payment date.
 
 3. **Edit all installments at once** (e.g., mark as pending)
+
    ```bash
    python3 cli.py edit <transaction_id> --status pending --all
    ```
 
 4. **Delete the entire installment plan**
+
    ```bash
    python3 cli.py delete <transaction_id> --all
    ```
@@ -982,6 +1094,7 @@ python3 cli.py subscriptions edit budget_groceries --underspend return
 **Scenario**: You receive your Visa bill for January, due February 5th, showing $485.50.
 
 1. **Run interactive reconciliation**
+
    ```bash
    python3 cli.py fix --payment VisaCard -i
    ```
@@ -991,11 +1104,13 @@ python3 cli.py subscriptions edit budget_groceries --underspend return
    The tool shows all transactions on the payment date and the current total.
 
 3. **Enter your statement amount**
+
    ```
    Enter actual statement amount: 485.50
    ```
 
 4. **Review the adjustment**
+
    ```
    Adjustment: $475.00 → $485.50 (difference: +$10.50)
    Proceed? [Y/n]:
@@ -1006,6 +1121,7 @@ python3 cli.py subscriptions edit budget_groceries --underspend return
    Press Y. The tool creates a "Payment Adjustment - VisaCard (+10.50)" transaction to reconcile the difference.
 
 **Common causes of differences**:
+
 - Forgotten transaction
 - Wrong amount entered
 - Credit card fee or interest
@@ -1022,6 +1138,7 @@ python3 cli.py subscriptions edit budget_groceries --underspend return
 **Use case**: You're considering a vacation in June but haven't decided yet.
 
 1. **Add as a planning transaction**
+
    ```bash
    python3 cli.py add "Planning vacation package for 2000 on Visa in June"
    ```
@@ -1029,6 +1146,7 @@ python3 cli.py subscriptions edit budget_groceries --underspend return
    (When the LLM asks, set status to "planning")
 
 2. **View the impact on your forecast**
+
    ```bash
    python3 cli.py view -m 6
    ```
@@ -1036,6 +1154,7 @@ python3 cli.py subscriptions edit budget_groceries --underspend return
    Planning transactions show in magenta italic and affect your projected balance.
 
 3. **When you decide to commit**
+
    ```bash
    python3 cli.py clear <transaction_id>
    ```
@@ -1043,11 +1162,13 @@ python3 cli.py subscriptions edit budget_groceries --underspend return
    This changes status from "planning" to "committed".
 
 4. **Or delete if you cancel the plan**
+
    ```bash
    python3 cli.py delete <transaction_id>
    ```
 
 **Planning vs Pending**:
+
 - **Planning**: Future potential expense, affects forecast
 - **Pending**: Expense already happened, awaiting confirmation (doesn't affect running balance until cleared)
 
@@ -1058,6 +1179,7 @@ python3 cli.py subscriptions edit budget_groceries --underspend return
 **Goal**: Review spending, adjust budgets, and clean up pending transactions.
 
 1. **Check budget allocations**
+
    ```bash
    python3 cli.py subscriptions list --budgets-only
    python3 cli.py view -m 1 | grep "Budget"
@@ -1066,27 +1188,32 @@ python3 cli.py subscriptions edit budget_groceries --underspend return
    Look for budgets showing $0 (depleted) or large remaining balances.
 
 2. **Review pending transactions**
+
    ```bash
    python3 cli.py view | grep "pending"
    ```
 
 3. **Commit confirmed transactions**
+
    ```bash
    python3 cli.py clear <transaction_id>
    ```
 
 4. **Delete cancelled transactions**
+
    ```bash
    python3 cli.py delete <transaction_id>
    ```
 
 5. **Adjust next month's budgets if needed**
+
    ```bash
    # Increase groceries budget
    python3 cli.py subscriptions edit budget_groceries --amount 450
    ```
 
 6. **Check month-over-month change**
+
    ```bash
    python3 cli.py view -m 2
    ```
@@ -1094,6 +1221,7 @@ python3 cli.py subscriptions edit budget_groceries --underspend return
    Look at the "MoM Change" column on the last transaction of each month—green means improvement, red means decline.
 
 7. **Export for analysis** (optional)
+
    ```bash
    python3 cli.py export monthly_report.csv --with-balance
    ```
@@ -1133,6 +1261,7 @@ python3 cli.py subscriptions edit budget_groceries --amount 450 --retroactive
 ```
 
 **What it does**:
+
 - Updates all past committed months to $450
 - Recalculates budget balances
 - Future forecasts use $450
@@ -1146,11 +1275,13 @@ python3 cli.py subscriptions edit budget_groceries --amount 450 --retroactive
 Installments and split transactions are automatically linked via `origin_id`.
 
 **Benefits**:
+
 - Edit all installments with `--all` flag
 - Delete entire group with `--all` flag
 - Track related transactions
 
 **How to check group membership**:
+
 ```bash
 python3 cli.py view | grep "<description>"
 ```
@@ -1176,10 +1307,12 @@ python3 cli.py accounts adjust-billing VisaCard 2026-02 27 --payment-day 7
 ### Summary Mode vs Detailed View
 
 **Detailed view** (default):
+
 - Shows every transaction individually
 - Best for: tracking specific expenses, finding transactions
 
 **Summary mode** (`-s`):
+
 - Aggregates credit card transactions into monthly "Payment" entries
 - Cash transactions shown normally
 - Best for: clean forecast view, seeing overall cash flow
@@ -1201,6 +1334,7 @@ Every transaction has a `status` field that determines how it affects your cash 
 **What it is**: Confirmed, finalized transaction.
 
 **When to use**:
+
 - Default status for most transactions
 - Purchases that have already happened
 - Income received
@@ -1216,6 +1350,7 @@ Every transaction has a `status` field that determines how it affects your cash 
 **What it is**: Auto-generated future transaction from a subscription or budget.
 
 **When to use**:
+
 - Automatically created by the system
 - Represents predictable future expenses
 
@@ -1232,6 +1367,7 @@ Every transaction has a `status` field that determines how it affects your cash 
 **What it is**: Transaction happened but not yet confirmed.
 
 **When to use**:
+
 - Expense made but not yet reflected in bank account
 - Waiting for transaction to clear
 - Uncertain if charge will go through
@@ -1249,6 +1385,7 @@ Every transaction has a `status` field that determines how it affects your cash 
 **What it is**: Potential future expense, not yet committed.
 
 **When to use**:
+
 - Considering a purchase
 - Modeling "what if" scenarios
 - Future expense you might make
@@ -1301,6 +1438,7 @@ Credit cards have two critical dates that determine when a purchase impacts your
 Purchase date is AFTER cut-off → Payment next month
 
 **Example**: Cut-off: 25th, Payment: 5th
+
 - Purchase: Jan 28 → Payment: Feb 5 (same month interval)
 
 #### Next-Month Cycle
@@ -1308,6 +1446,7 @@ Purchase date is AFTER cut-off → Payment next month
 Purchase date is ON or BEFORE cut-off → Payment in following month
 
 **Example**: Cut-off: 25th, Payment: 5th
+
 - Purchase: Jan 15 → Payment: Feb 5 (next month)
 - Purchase: Jan 25 → Payment: Feb 5 (next month)
 
@@ -1411,11 +1550,13 @@ Set environment variables in `.env`. See [Backup](#backup) for the full configur
 **Q: How do I start fresh?**
 
 1. Delete the database:
+
    ```bash
    rm cash_flow.db
    ```
 
 2. Run any command to recreate it:
+
    ```bash
    python3 cli.py accounts list
    ```
@@ -1427,11 +1568,13 @@ Set environment variables in `.env`. See [Backup](#backup) for the full configur
 **Q: My balance doesn't match my bank account. What do I do?**
 
 **Solution 1**: Use balance fix
+
 ```bash
 python3 cli.py fix --balance <actual_amount> --account Cash
 ```
 
 **Solution 2**: Find missing transactions
+
 ```bash
 python3 cli.py view --sort date_created
 python3 cli.py export transactions.csv
@@ -1444,6 +1587,7 @@ Compare exported CSV with bank statement to identify missing entries.
 **Q: My credit card statement doesn't match tracked total. How do I reconcile?**
 
 Use interactive statement fix:
+
 ```bash
 python3 cli.py fix --payment VisaCard -i
 ```
@@ -1535,6 +1679,7 @@ Be more explicit:
 **Try**: "Spent 50.00 on groceries on Cash today"
 
 Include:
+
 - Amount with decimal
 - Category
 - Account name
@@ -1552,34 +1697,18 @@ GEMINI_API_KEY=your_api_key_here
 
 ---
 
-### Performance
-
-**Q: The CLI is slow. How can I speed it up?**
-
-- Reduce forecast horizon:
-  ```bash
-  python3 cli.py view -m 3  # Instead of -m 12
-  ```
-
-- Use summary mode:
-  ```bash
-  python3 cli.py view -s
-  ```
-
-- Archive old transactions (manual process: export, delete old data, keep database small)
-
----
-
 ### Common Errors
 
 **Error: "Account not found"**
 
 Check available accounts:
+
 ```bash
 python3 cli.py accounts list
 ```
 
 Add the missing account:
+
 ```bash
 python3 cli.py accounts add "Cash account"
 ```
@@ -1589,6 +1718,7 @@ python3 cli.py accounts add "Cash account"
 **Error: "Category does not exist"**
 
 Add the category:
+
 ```bash
 python3 cli.py categories add groceries "Food and household"
 ```
@@ -1648,6 +1778,7 @@ cash_flow/
 ### Database Schema
 
 **`accounts`** - Payment accounts
+
 ```sql
 CREATE TABLE accounts (
     account_id TEXT PRIMARY KEY,
@@ -1658,6 +1789,7 @@ CREATE TABLE accounts (
 ```
 
 **`categories`** - Expense categories
+
 ```sql
 CREATE TABLE categories (
     name TEXT PRIMARY KEY,
@@ -1666,6 +1798,7 @@ CREATE TABLE categories (
 ```
 
 **`subscriptions`** - Recurring budgets and subscriptions
+
 ```sql
 CREATE TABLE subscriptions (
     id TEXT PRIMARY KEY,
@@ -1681,6 +1814,7 @@ CREATE TABLE subscriptions (
 ```
 
 **`transactions`** - All financial events
+
 ```sql
 CREATE TABLE transactions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1698,6 +1832,7 @@ CREATE TABLE transactions (
 ```
 
 **`settings`** - User settings
+
 ```sql
 CREATE TABLE settings (
     key TEXT PRIMARY KEY,
@@ -1714,6 +1849,7 @@ CREATE TABLE settings (
 The system uses an "orchestrator pattern" where `run_monthly_rollover(conn, date.today())` is called at the start of every session to ensure valid state.
 
 This function is **idempotent**—running it multiple times has no effect beyond the first run:
+
 - `commit_past_and_current_forecasts()`: Only affects `'forecast'` status transactions
 - `generate_forecasts()`: Checks if forecasts already exist before creating new ones
 
@@ -1743,6 +1879,7 @@ The project uses **Test-Driven Development (TDD)**:
 4. Refactor if needed
 
 **Running tests**:
+
 ```bash
 python3 -m unittest discover -s tests      # Run all tests
 python3 -m unittest tests.test_budgets     # Run a specific test module
@@ -1754,7 +1891,7 @@ Tests use in-memory databases (`:memory:`) for speed and isolation.
 
 ### Future Vision
 
-- Anomaly detection ("This grocery purchase is 3x your usual—is this correct?")
+- Email/SMS integration - Recording transactions automatically from purchase notifications.
 - Financial advice ("You're on track to overspend on entertainment by $50 this month")
 - Receipt/statement OCR via multimodal models
 
@@ -1782,6 +1919,7 @@ Most commands have short aliases for faster typing:
 | add-installments| ai           |
 
 **Example**:
+
 ```bash
 python3 cli.py a list      # Same as: accounts list
 python3 cli.py s list      # Same as: subscriptions list
@@ -1793,9 +1931,9 @@ python3 cli.py v -m 6      # Same as: view --months 6
 ### Quick Command Cheat Sheet
 
 ```bash
-# === SETUP ===
+# === SETUP (categories are pre-loaded; add custom ones if needed) ===
 python3 cli.py accounts add "Cash account"
-python3 cli.py categories add groceries "Food and household"
+python3 cli.py categories add utilities "Electricity, water, gas"  # optional
 python3 cli.py subscriptions add "Groceries budget 400 on Cash"
 
 # === DAILY USE ===
