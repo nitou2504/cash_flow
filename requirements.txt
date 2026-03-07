@@ -1,6 +1,7 @@
 google-generativeai
-litellm
 rich
 python-dateutil
 python-dotenv
 python-telegram-bot==21.0
+litellm>=1.0.0
+pyyaml>=6.0
