@@ -411,7 +411,10 @@ def handle_add(conn: sqlite3.Connection, args: argparse.Namespace):
 
         console.print(table)
 
-        confirm = input("\nProceed with this request? [Y/n] ")
+        if getattr(args, 'yes', False):
+            confirm = 'y'
+        else:
+            confirm = input("\nProceed with this request? [Y/n] ")
         if confirm.lower() == 'y' or confirm == '':
             # LLM now returns budget IDs directly, no conversion needed
             transaction_date = None
@@ -1044,6 +1047,7 @@ Examples:
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     add_parser.add_argument("description", help="Natural language transaction description")
+    add_parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt (auto-accept)")
 
     # Add batch command
     add_batch_parser = subparsers.add_parser(
