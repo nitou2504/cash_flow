@@ -819,6 +819,48 @@ Proceed? [Y/n]:
 
 ---
 
+### Backup
+
+#### `backup` - Create a manual backup
+
+```bash
+python3 cli.py backup                    # Create a backup now
+python3 cli.py backup list               # List all backups
+python3 cli.py backup restore <file>     # Restore from a backup
+```
+
+**What it does**: Creates timestamped database snapshots using SQLite's backup API, which is safe even while the database is in use.
+
+**Auto-backup**: Runs automatically before every mutating CLI command (add, edit, delete, clear, fix, etc.) and before Telegram bot transactions. Read-only commands (view, export) do not trigger a backup.
+
+**Retention policy**: Backups are automatically pruned to save disk space:
+
+| Age | Kept |
+|-----|------|
+| Today | First backup of the day + last N (default 5) |
+| 1 day to `BACKUP_MAX_DAYS` (default 30) | Last backup per day |
+| Older than `BACKUP_MAX_DAYS` | Deleted |
+
+**Configuration** via environment variables (or `.env`):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BACKUP_ENABLED` | `true` | Enable/disable auto-backup |
+| `BACKUP_DIR` | `backups` | Directory to store backups |
+| `BACKUP_KEEP_TODAY` | `5` | Number of recent backups to keep for today (plus the first) |
+| `BACKUP_RECENT_DAYS` | `7` | Days threshold for "keep last per day" policy |
+| `BACKUP_MAX_DAYS` | `30` | Delete backups older than this many days |
+
+**Restore example**:
+```bash
+python3 cli.py backup list                              # Find the backup you want
+python3 cli.py backup restore cash_flow_20260307_150623_093810.db  # Restore it
+```
+
+Restore always creates a pre-restore safety backup first, so you can undo a restore if needed.
+
+---
+
 ## Common Workflows
 
 ### Setting Up Your First Month
@@ -1341,26 +1383,26 @@ This creates a one-time override for February only.
 
 **Q: Where is my database stored?**
 
-A: `cash_flow.db` in the same directory as `cli.py`.
+A: `cash_flow.db` in the same directory as `cli.py`. Backups are stored in `backups/`.
 
 **Q: How do I back up my data?**
 
-```bash
-cp cash_flow.db cash_flow.db.backup
-```
-
-Or use git:
+Backups happen automatically before every mutating command. You can also create one manually:
 
 ```bash
-git add cash_flow.db
-git commit -m "Backup database"
+python3 cli.py backup
 ```
 
 **Q: How do I restore from backup?**
 
 ```bash
-cp cash_flow.db.backup cash_flow.db
+python3 cli.py backup list                    # Find the backup
+python3 cli.py backup restore <filename>      # Restore it (creates safety backup first)
 ```
+
+**Q: How do I configure backup retention?**
+
+Set environment variables in `.env`. See [Backup](#backup) for the full configuration table.
 
 ---
 
@@ -1735,6 +1777,7 @@ Most commands have short aliases for faster typing:
 | delete          | del, d       |
 | clear           | cl           |
 | fix             | f            |
+| backup          | bk           |
 | add-batch       | ab           |
 | add-installments| ai           |
 
@@ -1779,6 +1822,11 @@ python3 cli.py view -m 6                  # 6 months
 python3 cli.py view --from 2026-01        # Start from January
 python3 cli.py view --sort date_created   # Sort by purchase date
 python3 cli.py export report.csv --with-balance
+
+# === BACKUP ===
+python3 cli.py backup                     # Manual backup
+python3 cli.py backup list                # List backups
+python3 cli.py backup restore <file>      # Restore from backup
 ```
 
 ---

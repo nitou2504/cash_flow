@@ -8,6 +8,7 @@ import argparse
 import sqlite3
 import json
 import csv
+from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 from rich.syntax import Syntax
@@ -19,6 +20,10 @@ from dotenv import load_dotenv
 
 from cashflow.database import create_connection, initialize_database
 from cashflow import repository
+from cashflow import backup as db_backup
+from cashflow.config import (
+    BACKUP_ENABLED, BACKUP_DIR, BACKUP_KEEP_TODAY, BACKUP_RECENT_DAYS, BACKUP_MAX_DAYS,
+)
 from ui import cli_display as interface
 from llm import parser as llm_parser
 from cashflow import controller
@@ -970,6 +975,56 @@ def handle_add_installments(conn: sqlite3.Connection, args: argparse.Namespace):
     if processed_count > 0:
         controller.run_monthly_rollover(conn, date.today())
 
+def handle_backup(db_path: str, args: argparse.Namespace):
+    """Handle backup subcommands: create, list, restore."""
+    console = Console()
+    action = getattr(args, "backup_action", None)
+
+    if action in ["list", "ls", "l"]:
+        backups = db_backup.list_backups(BACKUP_DIR)
+        if not backups:
+            print("No backups found.")
+            return
+        table = Table(title=f"Backups in {BACKUP_DIR}/")
+        table.add_column("Filename")
+        table.add_column("Date")
+        table.add_column("Time")
+        table.add_column("Size")
+        for b in backups:
+            size_kb = b["size"] / 1024
+            table.add_row(
+                b["path"].name,
+                b["date"].isoformat(),
+                b["datetime"].strftime("%H:%M:%S"),
+                f"{size_kb:.0f} KB",
+            )
+        console.print(table)
+
+    elif action in ["restore", "r"]:
+        backup_file = args.file
+        # Allow just filename (resolve to backup dir)
+        backup_path = Path(backup_file)
+        if not backup_path.exists():
+            backup_path = Path(BACKUP_DIR) / backup_file
+        if not backup_path.exists():
+            console.print(f"[red]Backup not found: {backup_file}[/red]")
+            return
+
+        confirm = input(f"Restore from {backup_path.name}? This will overwrite the current database. [y/N] ")
+        if confirm.lower() != "y":
+            print("Restore cancelled.")
+            return
+
+        pre_restore = db_backup.restore_backup(str(backup_path), db_path, BACKUP_DIR)
+        console.print(f"[green]Database restored from {backup_path.name}[/green]")
+        console.print(f"[dim]Pre-restore backup saved: {pre_restore.name}[/dim]")
+
+    else:
+        # No subcommand = manual backup
+        path = db_backup.create_backup(db_path, BACKUP_DIR)
+        console.print(f"[green]Backup created: {path.name}[/green]")
+
+
 def main():
     load_dotenv()
     # --- Database Setup ---
@@ -1019,6 +1074,7 @@ ALIASES:
   - accounts [acc, a]    - subscriptions [sub, s]    - view [v]
   - categories [cat, c]  - export [exp, x]           - edit [e]
   - delete [del, d]      - clear [cl]                - fix [f]
+  - backup [bk]
 
 For detailed help on any command: cash_flow COMMAND -h
         """,
@@ -1426,10 +1482,55 @@ Statement Fix:
     fix_parser.add_argument("--interactive", "-i", action="store_true",
                            help="Interactive mode: show transactions and prompt for statement amount")
 
+    # ==================== BACKUP ====================
+
+    backup_parser = subparsers.add_parser(
+        "backup",
+        aliases=["bk"],
+        help="Manage database backups",
+        description="""
+Manage database backups. Creates timestamped copies using SQLite's backup API.
+
+Auto-backup runs before every mutating operation (add, edit, delete, etc.)
+with a retention policy that keeps the first + last N backups per day,
+then one per day for older backups, and deletes very old ones.
+
+Configuration via environment variables (or .env):
+  BACKUP_ENABLED     Enable auto-backup (default: true)
+  BACKUP_DIR         Backup directory (default: backups)
+  BACKUP_KEEP_TODAY  Keep last N backups for today (default: 5)
+  BACKUP_RECENT_DAYS Days to keep one-per-day (default: 7)
+  BACKUP_MAX_DAYS    Delete backups older than this (default: 30)
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    backup_subparsers = backup_parser.add_subparsers(dest="backup_action")
+
+    # backup (no subcommand) = create manual backup
+    # backup list
+    backup_subparsers.add_parser("list", aliases=["ls", "l"], help="List existing backups")
+
+    # backup restore <file>
+    backup_restore_parser = backup_subparsers.add_parser("restore", aliases=["r"], help="Restore from a backup file")
+    backup_restore_parser.add_argument("file", help="Backup filename or full path to restore from")
+
     args = parser.parse_args()
 
+    # --- Auto-backup before mutating commands ---
+    read_only_commands = {"view", "v", "export", "exp", "x", "backup", "bk"}
+    read_only_subcommands = {"list", "ls", "l"}
+    is_read_only = args.command in read_only_commands
+    if args.command in ["accounts", "acc", "a", "categories", "cat", "c", "subscriptions", "sub", "s"]:
+        if hasattr(args, "subcommand") and args.subcommand in read_only_subcommands:
+            is_read_only = True
+
+    if BACKUP_ENABLED and not is_read_only:
+        db_backup.auto_backup(db_path, BACKUP_DIR, BACKUP_KEEP_TODAY, BACKUP_RECENT_DAYS, BACKUP_MAX_DAYS)
+
     # --- Command Handling ---
-    if args.command == "add":
+    if args.command in ["backup", "bk"]:
+        handle_backup(db_path, args)
+    elif args.command == "add":
         handle_add(conn, args)
     elif args.command in ["add-batch", "ab"]:
         handle_add_batch(conn, args)
