@@ -219,6 +219,11 @@ def parse_transaction_string(conn: Connection, user_input: str, accounts: List[D
 
     categories = repository.get_all_categories(conn)
     category_names = [cat['name'] for cat in categories]
+    category_descriptions = {cat['name']: cat.get('description', '') for cat in categories}
+    category_info = ", ".join(
+        f"{name} ({desc})" if desc else name
+        for name, desc in category_descriptions.items()
+    )
 
     today = date.today()
     payment_context = ""
@@ -233,7 +238,7 @@ You are an expert financial assistant. Your task is to parse a user's natural la
 **Rules:**
 1.  The `type` field must be one of: "simple", "installment", or "split".
 2.  The `account` field MUST be one of the following valid account names: {account_names}, ensure no typos or variations.
-3.  The `category` field is MANDATORY and MUST EXACTLY MATCH one of the following valid categories: {category_names}. Do not invent new categories. Always select the most appropriate category from this list.
+3.  The `category` field is MANDATORY and MUST EXACTLY MATCH one of the following valid categories (descriptions in parentheses to help you choose): {category_info}. Do not invent new categories. Always select the most appropriate category from this list based on the description.
 4.  **Budget Selection:** The `budget` field must be the budget **ID** (not the name). Available budgets: {json.dumps(budget_info, indent=2)}
     - Match the user's words to the budget **name** field, then return that budget's **id**.
     - Be precise: "Mercado" budget is different from "Home Groceries" budget. Only select "Mercado" if user explicitly says "mercado".
