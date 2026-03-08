@@ -340,8 +340,23 @@ def handle_subscriptions_delete(conn: sqlite3.Connection, args: argparse.Namespa
         print(f"Error: {e}")
 
 
+def handle_add_interactive(conn: sqlite3.Connection):
+    """Interactive guided transaction entry (no LLM needed)."""
+    from ui.interactive import interactive_add_transaction
+    request = interactive_add_transaction(conn)
+    if request:
+        transaction_date = request.pop("_transaction_date", None)
+        controller.process_transaction_request(conn, request, transaction_date=transaction_date)
+
+
 def handle_add(conn: sqlite3.Connection, args: argparse.Namespace):
     """Parses a natural language string to add a transaction using LLM."""
+    if args.interactive:
+        return handle_add_interactive(conn)
+    if not args.description:
+        print("Error: provide a description or use -i for interactive mode.")
+        return
+
     from cashflow import transactions as tx_module
 
     accounts = repository.get_all_accounts(conn)
@@ -360,65 +375,13 @@ def handle_add(conn: sqlite3.Connection, args: argparse.Namespace):
     request_json = llm_parser.parse_transaction_string(conn, args.description, accounts, budgets, payment_month)
 
     if request_json:
-        console = Console()
+        from ui.interactive import display_transaction_preview
 
-        # Display as a transaction preview table instead of JSON
         transaction_date = date.fromisoformat(request_json.get("date_created", date.today().isoformat()))
         account_name = request_json.get('account', 'Unknown')
         account = next((a for a in accounts if a['account_id'] == account_name), None)
 
-        # Calculate actual payment date for display
-        if account:
-            payment_date = tx_module.simulate_payment_date(account, transaction_date)
-        else:
-            payment_date = transaction_date
-
-        # Create preview table
-        table = Table(title="Transaction Preview", show_header=True, header_style="bold cyan")
-        table.add_column("Field", style="dim")
-        table.add_column("Value")
-
-        # Display based on transaction type
-        tx_type = request_json.get('type', 'simple')
-
-        if tx_type == 'simple':
-            amount = request_json.get('amount', 0)
-            table.add_row("Date Created", str(transaction_date))
-            table.add_row("Date Payed", str(payment_date))
-            table.add_row("Description", request_json.get('description', ''))
-            table.add_row("Account", account_name)
-            table.add_row("Amount", f"-{abs(amount):.2f}" if not request_json.get('is_income') else f"+{abs(amount):.2f}")
-            table.add_row("Category", request_json.get('category', '') or '')
-            table.add_row("Budget", request_json.get('budget', '') or '')
-            if request_json.get('is_pending'):
-                table.add_row("Status", "pending")
-            elif request_json.get('is_planning'):
-                table.add_row("Status", "planning")
-
-        elif tx_type == 'installment':
-            total = request_json.get('total_amount', 0)
-            installments = request_json.get('installments', 1)
-            per_installment = total / installments if installments else total
-            table.add_row("Type", "Installment")
-            table.add_row("Date Created", str(transaction_date))
-            table.add_row("First Payment", str(payment_date))
-            table.add_row("Description", request_json.get('description', ''))
-            table.add_row("Account", account_name)
-            table.add_row("Total Amount", f"-{abs(total):.2f}")
-            table.add_row("Installments", f"{installments}x of {per_installment:.2f}")
-            table.add_row("Category", request_json.get('category', '') or '')
-            table.add_row("Budget", request_json.get('budget', '') or '')
-
-        elif tx_type == 'split':
-            table.add_row("Type", "Split Transaction")
-            table.add_row("Date Created", str(transaction_date))
-            table.add_row("Date Payed", str(payment_date))
-            table.add_row("Description", request_json.get('description', ''))
-            table.add_row("Account", account_name)
-            for i, split in enumerate(request_json.get('splits', []), 1):
-                table.add_row(f"Split {i}", f"-{abs(split.get('amount', 0)):.2f} | {split.get('category', '')} | {split.get('budget', '') or ''}")
-
-        console.print(table)
+        display_transaction_preview(request_json, account, transaction_date)
 
         if getattr(args, 'yes', False):
             confirm = 'y'
@@ -1057,6 +1020,7 @@ COMMON WORKFLOWS:
 
   Daily usage:
     cli.py add "Spent 45.50 on groceries at Supermarket today"
+    cli.py add -i                  # Interactive guided entry (no LLM needed)
     cli.py view                    # See upcoming transactions
     cli.py view -s                 # Summary view (aggregated credit card payments)
 
@@ -1103,10 +1067,11 @@ For detailed help on any command: cli.py COMMAND -h
     # Add command
     add_parser = subparsers.add_parser(
         "add",
-        help="Add a transaction using natural language",
+        help="Add a transaction (natural language or interactive)",
         description="""
-Add a transaction using natural language description.
-Examples:
+Add a transaction using natural language or interactive guided entry.
+
+Natural language (requires LLM):
   cli.py add "Spent 45.50 on groceries at Supermaxi today"
   cli.py add "Bought TV for 600 in 12 installments on Visa card"
   cli.py add "Phone plan 600 starting the 5th of 12 on Visa Pichincha"
@@ -1114,10 +1079,15 @@ Examples:
   cli.py add "Friend owes me 100, pending"
   cli.py add "What if I buy headphones for 80"
   cli.py add "Split: 30 groceries, 15 snacks at Supermaxi"
+
+Interactive (no LLM needed):
+  cli.py add -i
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    add_parser.add_argument("description", help="Natural language transaction description")
+    add_parser.add_argument("description", nargs="?", help="Natural language description (or use -i)")
+    add_parser.add_argument("--interactive", "-i", action="store_true",
+                            help="Interactive guided entry (no LLM needed)")
     add_parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt (auto-accept)")
 
     # Add batch command
