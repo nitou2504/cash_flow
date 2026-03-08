@@ -990,14 +990,27 @@ class TestBotExtraUserInjection(unittest.TestCase):
 
     def test_inject_extra_user_defaults_into_request(self):
         """Simulate the injection logic directly (without async bot framework)."""
+        from cashflow.transactions import simulate_payment_date
+
         accounts = repository.get_all_accounts(self.conn)
-        budgets = repository.get_all_budgets(self.conn)
+
+        # Create a budget subscription active during the payment month
+        repository.add_subscription(self.conn, {
+            "id": "budget_home_groceries_mar_apr",
+            "name": "Home Groceries",
+            "category": "Home Groceries",
+            "monthly_amount": 300,
+            "payment_account_id": "Visa Produbanco",
+            "start_date": date(2026, 3, 1),
+            "is_budget": True,
+        })
 
         # Simulate a parsed request from LLM
         request_json = {
             "type": "simple",
             "description": "Supermaxi groceries",
             "amount": 25.50,
+            "date_created": "2026-03-08",
             "account": accounts[0]["account_id"],  # default fallback
             "category": "Home Groceries",
         }
@@ -1009,17 +1022,24 @@ class TestBotExtraUserInjection(unittest.TestCase):
         request_json["needs_review"] = True
         if not request_json.get("account") or request_json["account"] == accounts[0]["account_id"]:
             request_json["account"] = extra_user["account"]
-        budget_name = extra_user["budget"]
-        matched_budget = next(
-            (b["id"] for b in budgets if b["name"].lower() == budget_name.lower()),
-            None,
-        )
-        if matched_budget and not request_json.get("budget"):
-            request_json["budget"] = matched_budget
+
+        if not request_json.get("budget"):
+            budget_name = extra_user["budget"]
+            eu_account = next((a for a in accounts if a['account_id'] == extra_user["account"]), None)
+            eu_date = date.fromisoformat(request_json.get('date_created', date.today().isoformat()))
+            eu_payment_date = simulate_payment_date(eu_account, eu_date) if eu_account else eu_date
+            active_budgets = repository.get_all_active_subscriptions(self.conn, eu_payment_date, eu_payment_date)
+            matched_budget = next(
+                (b["id"] for b in active_budgets if b.get("is_budget") and b["name"].lower() == budget_name.lower()),
+                None,
+            )
+            if matched_budget:
+                request_json["budget"] = matched_budget
 
         self.assertEqual(request_json["source"], "mom")
         self.assertTrue(request_json["needs_review"])
         self.assertEqual(request_json["account"], "Visa Produbanco")
+        self.assertEqual(request_json["budget"], "budget_home_groceries_mar_apr")
 
     def test_extra_user_does_not_override_explicit_account(self):
         """If LLM picked a specific non-default account, extra user should not override it."""
@@ -1040,12 +1060,54 @@ class TestBotExtraUserInjection(unittest.TestCase):
 
         request_json["source"] = extra_user["name"]
         request_json["needs_review"] = True
-        # Only override if account is the default (first in list)
         if not request_json.get("account") or request_json["account"] == accounts[0]["account_id"]:
             request_json["account"] = extra_user["account"]
 
-        # Visa Produbanco should be preserved since it's not the default
         self.assertEqual(request_json["account"], non_default)
+
+    def test_budget_resolved_by_payment_date(self):
+        """Budget should resolve to the period active at payment date, not just any match."""
+        from cashflow.transactions import simulate_payment_date
+
+        accounts = repository.get_all_accounts(self.conn)
+
+        # Create two budget periods with the same name — one expired, one active
+        repository.add_subscription(self.conn, {
+            "id": "budget_groceries_jan_feb",
+            "name": "Home Groceries",
+            "category": "Home Groceries",
+            "monthly_amount": 300,
+            "payment_account_id": "Visa Produbanco",
+            "start_date": date(2026, 1, 1),
+            "end_date": date(2026, 2, 28),
+            "is_budget": True,
+        })
+        repository.add_subscription(self.conn, {
+            "id": "budget_groceries_mar_apr",
+            "name": "Home Groceries",
+            "category": "Home Groceries",
+            "monthly_amount": 300,
+            "payment_account_id": "Visa Produbanco",
+            "start_date": date(2026, 3, 1),
+            "is_budget": True,
+        })
+
+        extra_user = {"name": "mom", "account": "Visa Produbanco", "budget": "Home Groceries"}
+        eu_account = next(a for a in accounts if a['account_id'] == extra_user["account"])
+
+        # Purchase on March 8 → payment date via CC billing
+        eu_date = date(2026, 3, 8)
+        eu_payment_date = simulate_payment_date(eu_account, eu_date)
+
+        active_budgets = repository.get_all_active_subscriptions(
+            self.conn, eu_payment_date, eu_payment_date
+        )
+        matched = next(
+            (b["id"] for b in active_budgets if b.get("is_budget") and b["name"].lower() == "home groceries"),
+            None,
+        )
+        # Should match the mar_apr period, NOT the expired jan_feb one
+        self.assertEqual(matched, "budget_groceries_mar_apr")
 
     def test_end_to_end_extra_user_transaction_stored(self):
         """Full flow: inject defaults → process_transaction_request → verify in DB."""

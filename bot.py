@@ -196,14 +196,26 @@ async def handle_new_expense(update: Update, context: ContextTypes.DEFAULT_TYPE,
             # Set account if LLM didn't pick one or picked the default
             if not request_json.get("account") or request_json["account"] == accounts[0]["account_id"]:
                 request_json["account"] = extra_user["account"]
-            # Resolve budget name to active budget period
-            budget_name = extra_user["budget"]
-            matched_budget = next(
-                (b["id"] for b in budgets if b["name"].lower() == budget_name.lower()),
-                None,
-            )
-            if matched_budget and not request_json.get("budget"):
-                request_json["budget"] = matched_budget
+            # Resolve budget name to active budget period using payment date
+            if not request_json.get("budget"):
+                budget_name = extra_user["budget"]
+                # Calculate payment date from the extra user's account
+                eu_account = next((a for a in accounts if a['account_id'] == extra_user["account"]), None)
+                eu_date = date.fromisoformat(request_json.get('date_created', date.today().isoformat()))
+                if eu_account:
+                    eu_payment_date = tx_module.simulate_payment_date(eu_account, eu_date)
+                else:
+                    eu_payment_date = eu_date
+                # Find budget active during the payment month
+                active_budgets = repository.get_all_active_subscriptions(
+                    db_conn, eu_payment_date, eu_payment_date
+                )
+                matched_budget = next(
+                    (b["id"] for b in active_budgets if b.get("is_budget") and b["name"].lower() == budget_name.lower()),
+                    None,
+                )
+                if matched_budget:
+                    request_json["budget"] = matched_budget
 
         # Calculate payment date for preview
         trans_date = date.fromisoformat(request_json.get('date_created', date.today().isoformat()))
