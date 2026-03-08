@@ -1,5 +1,6 @@
 """Interactive prompt helpers and transaction entry flow (no LLM needed)."""
 
+import re
 import sqlite3
 from datetime import date, timedelta
 from dateutil.relativedelta import relativedelta
@@ -85,7 +86,13 @@ def prompt_amount(label="Amount", default=None):
         if not raw and default is not None:
             return default
         try:
-            val = float(raw)
+            cleaned = raw.replace("$", "")
+            # "9,99" → locale decimal; "1,234" / "1,234.50" → thousands separator
+            if re.fullmatch(r'\d+,\d{2}', cleaned):
+                cleaned = cleaned.replace(",", ".")
+            else:
+                cleaned = cleaned.replace(",", "")
+            val = float(cleaned)
             if val <= 0:
                 console.print("[red]Must be positive.[/red]")
                 continue
@@ -167,9 +174,10 @@ def prompt_yes_no(label, default=True):
 
 
 def prompt_choice(label, choices, default=None):
-    """Inline choice from a short list."""
-    display = "/".join(
-        c.upper() if c == default else c for c in choices
+    """Inline choice from a short list. Accepts number, prefix, or full name."""
+    display = " / ".join(
+        f"{i}.{c.upper()}" if c == default else f"{i}.{c}"
+        for i, c in enumerate(choices, 1)
     )
     while True:
         try:
@@ -178,9 +186,25 @@ def prompt_choice(label, choices, default=None):
             return None
         if not raw and default:
             return default
+        # Exact match
         if raw in choices:
             return raw
-        console.print(f"[red]Choose one of: {', '.join(choices)}[/red]")
+        # Numeric selection
+        try:
+            idx = int(raw)
+            if 1 <= idx <= len(choices):
+                return choices[idx - 1]
+        except ValueError:
+            pass
+        # Unique prefix match
+        matches = [c for c in choices if c.startswith(raw)]
+        if len(matches) == 1:
+            return matches[0]
+        # Error feedback
+        if len(matches) > 1:
+            console.print(f"[yellow]Ambiguous: {', '.join(matches)}[/yellow]")
+        else:
+            console.print(f"[red]Choose one of: {', '.join(choices)} (or 1-{len(choices)})[/red]")
 
 
 def _format_account(acc):

@@ -18,6 +18,7 @@ from cashflow.database import create_test_db
 from cashflow import repository, controller
 from ui.interactive import (
     prompt_amount,
+    prompt_choice,
     interactive_add_account,
     interactive_add_category,
     interactive_add_subscription,
@@ -1120,6 +1121,236 @@ class TestInteractiveAddSubscriptionNoAccounts(unittest.TestCase):
     def test_no_accounts_shows_error(self):
         result = interactive_add_subscription(self.conn)
         self.assertIsNone(result)
+
+
+# ==================== PROMPT_CHOICE SHORTCUTS ====================
+
+class TestPromptChoiceShortcuts(unittest.TestCase):
+    """Tests for prompt_choice number and prefix support."""
+
+    # --- Number selection ---
+
+    @patch('builtins.input', return_value='2')
+    def test_by_number(self, _):
+        result = prompt_choice("Type", ["cash", "credit_card"], default="cash")
+        self.assertEqual(result, "credit_card")
+
+    @patch('builtins.input', return_value='1')
+    def test_first_by_number(self, _):
+        result = prompt_choice("Kind", ["subscription", "budget", "income"], default="subscription")
+        self.assertEqual(result, "subscription")
+
+    @patch('builtins.input', return_value='3')
+    def test_last_by_number(self, _):
+        result = prompt_choice("Kind", ["subscription", "budget", "income"], default="subscription")
+        self.assertEqual(result, "income")
+
+    @patch('builtins.input', side_effect=['0', '1'])
+    def test_zero_out_of_range_retries(self, _):
+        result = prompt_choice("Type", ["cash", "credit_card"], default="cash")
+        self.assertEqual(result, "cash")
+
+    @patch('builtins.input', side_effect=['5', '2'])
+    def test_too_high_number_retries(self, _):
+        result = prompt_choice("Kind", ["subscription", "budget", "income"], default="subscription")
+        self.assertEqual(result, "budget")
+
+    # --- Prefix matching ---
+
+    @patch('builtins.input', return_value='cr')
+    def test_prefix_unique(self, _):
+        result = prompt_choice("Type", ["cash", "credit_card"], default="cash")
+        self.assertEqual(result, "credit_card")
+
+    @patch('builtins.input', return_value='b')
+    def test_single_char_unique(self, _):
+        result = prompt_choice("Kind", ["subscription", "budget", "income"], default="subscription")
+        self.assertEqual(result, "budget")
+
+    @patch('builtins.input', return_value='i')
+    def test_single_char_i_for_income(self, _):
+        """'i' matches 'income' uniquely (not 'installment' in this list)."""
+        result = prompt_choice("Kind", ["subscription", "budget", "income"], default="subscription")
+        self.assertEqual(result, "income")
+
+    @patch('builtins.input', side_effect=['c', 'ca'])
+    def test_ambiguous_prefix_retries(self, _):
+        result = prompt_choice("Type", ["cash", "credit_card"], default="cash")
+        self.assertEqual(result, "cash")
+
+    @patch('builtins.input', side_effect=['s', 'sp'])
+    def test_ambiguous_s_for_simple_split_then_sp(self, _):
+        """'s' is ambiguous (simple/split), 'sp' resolves to split."""
+        result = prompt_choice("Type", ["simple", "installment", "split"], default="simple")
+        self.assertEqual(result, "split")
+
+    @patch('builtins.input', return_value='i')
+    def test_prefix_i_for_installment(self, _):
+        result = prompt_choice("Type", ["simple", "installment", "split"], default="simple")
+        self.assertEqual(result, "installment")
+
+    # --- Status choices (real app sets) ---
+
+    @patch('builtins.input', return_value='n')
+    def test_status_n_for_normal(self, _):
+        result = prompt_choice("Status", ["normal", "pending", "planning"], default="normal")
+        self.assertEqual(result, "normal")
+
+    @patch('builtins.input', return_value='pe')
+    def test_status_pe_for_pending(self, _):
+        result = prompt_choice("Status", ["normal", "pending", "planning"], default="normal")
+        self.assertEqual(result, "pending")
+
+    @patch('builtins.input', return_value='pl')
+    def test_status_pl_for_planning(self, _):
+        result = prompt_choice("Status", ["normal", "pending", "planning"], default="normal")
+        self.assertEqual(result, "planning")
+
+    @patch('builtins.input', side_effect=['p', 'pe'])
+    def test_status_p_ambiguous_pending_planning(self, _):
+        """'p' matches both pending and planning, retries."""
+        result = prompt_choice("Status", ["normal", "pending", "planning"], default="normal")
+        self.assertEqual(result, "pending")
+
+    @patch('builtins.input', return_value='c')
+    def test_edit_status_c_for_committed(self, _):
+        result = prompt_choice("Status", ["committed", "pending", "planning"], default="committed")
+        self.assertEqual(result, "committed")
+
+    # --- Underspend choices ---
+
+    @patch('builtins.input', return_value='k')
+    def test_underspend_k_for_keep(self, _):
+        result = prompt_choice("Underspend", ["keep", "return"], default="keep")
+        self.assertEqual(result, "keep")
+
+    @patch('builtins.input', return_value='r')
+    def test_underspend_r_for_return(self, _):
+        result = prompt_choice("Underspend", ["keep", "return"], default="keep")
+        self.assertEqual(result, "return")
+
+    # --- Exact match still works ---
+
+    @patch('builtins.input', return_value='credit_card')
+    def test_exact_match_full_word(self, _):
+        result = prompt_choice("Type", ["cash", "credit_card"], default="cash")
+        self.assertEqual(result, "credit_card")
+
+    @patch('builtins.input', return_value='planning')
+    def test_exact_match_full_word_status(self, _):
+        result = prompt_choice("Status", ["normal", "pending", "planning"], default="normal")
+        self.assertEqual(result, "planning")
+
+    # --- Default on empty ---
+
+    @patch('builtins.input', return_value='')
+    def test_default_on_empty(self, _):
+        result = prompt_choice("Type", ["cash", "credit_card"], default="cash")
+        self.assertEqual(result, "cash")
+
+    # --- Invalid input retries ---
+
+    @patch('builtins.input', side_effect=['xyz', 'cash'])
+    def test_invalid_string_retries(self, _):
+        result = prompt_choice("Type", ["cash", "credit_card"], default="cash")
+        self.assertEqual(result, "cash")
+
+    # --- Cancel ---
+
+    @patch('builtins.input', side_effect=EOFError)
+    def test_eof_returns_none(self, _):
+        result = prompt_choice("Type", ["cash", "credit_card"], default="cash")
+        self.assertIsNone(result)
+
+    @patch('builtins.input', side_effect=KeyboardInterrupt)
+    def test_ctrl_c_returns_none(self, _):
+        result = prompt_choice("Type", ["cash", "credit_card"], default="cash")
+        self.assertIsNone(result)
+
+
+# ==================== PROMPT_AMOUNT CLEANING ====================
+
+class TestPromptAmountCleaning(unittest.TestCase):
+    """Tests for prompt_amount $ and comma handling."""
+
+    # --- Dollar sign ---
+
+    @patch('builtins.input', return_value='$9.99')
+    def test_dollar_sign_stripped(self, _):
+        self.assertEqual(prompt_amount("Amount"), 9.99)
+
+    @patch('builtins.input', return_value='$50')
+    def test_dollar_sign_integer(self, _):
+        self.assertEqual(prompt_amount("Amount"), 50.0)
+
+    # --- Thousands separator ---
+
+    @patch('builtins.input', return_value='1,234.50')
+    def test_comma_thousands_with_decimals(self, _):
+        self.assertEqual(prompt_amount("Amount"), 1234.50)
+
+    @patch('builtins.input', return_value='1,234')
+    def test_comma_thousands_no_decimals(self, _):
+        self.assertEqual(prompt_amount("Amount"), 1234.0)
+
+    @patch('builtins.input', return_value='1,000,000')
+    def test_multiple_commas(self, _):
+        self.assertEqual(prompt_amount("Amount"), 1000000.0)
+
+    # --- Dollar + comma combined ---
+
+    @patch('builtins.input', return_value='$1,234')
+    def test_dollar_and_comma(self, _):
+        self.assertEqual(prompt_amount("Amount"), 1234.0)
+
+    @patch('builtins.input', return_value='$1,234.50')
+    def test_dollar_comma_and_decimals(self, _):
+        self.assertEqual(prompt_amount("Amount"), 1234.50)
+
+    # --- Locale decimal (comma as decimal separator) ---
+
+    @patch('builtins.input', return_value='9,99')
+    def test_locale_comma_decimal(self, _):
+        """European-style 9,99 → 9.99."""
+        self.assertEqual(prompt_amount("Amount"), 9.99)
+
+    @patch('builtins.input', return_value='15,50')
+    def test_locale_comma_decimal_larger(self, _):
+        self.assertEqual(prompt_amount("Amount"), 15.50)
+
+    # --- Plain numbers still work ---
+
+    @patch('builtins.input', return_value='42')
+    def test_plain_integer(self, _):
+        self.assertEqual(prompt_amount("Amount"), 42.0)
+
+    @patch('builtins.input', return_value='9.99')
+    def test_plain_decimal(self, _):
+        self.assertEqual(prompt_amount("Amount"), 9.99)
+
+    # --- Invalid input retries ---
+
+    @patch('builtins.input', side_effect=['abc', '10'])
+    def test_non_numeric_retries(self, _):
+        self.assertEqual(prompt_amount("Amount"), 10.0)
+
+    @patch('builtins.input', side_effect=['$', '5'])
+    def test_dollar_only_retries(self, _):
+        self.assertEqual(prompt_amount("Amount"), 5.0)
+
+    @patch('builtins.input', side_effect=['0', '10'])
+    def test_zero_rejected_retries(self, _):
+        self.assertEqual(prompt_amount("Amount"), 10.0)
+
+    @patch('builtins.input', side_effect=['-5', '10'])
+    def test_negative_rejected_retries(self, _):
+        self.assertEqual(prompt_amount("Amount"), 10.0)
+
+    # --- Default with cleaning ---
+
+    @patch('builtins.input', return_value='')
+    def test_default_still_works(self, _):
+        self.assertEqual(prompt_amount("Amount", default=25.0), 25.0)
 
 
 if __name__ == '__main__':
