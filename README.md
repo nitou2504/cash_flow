@@ -494,13 +494,16 @@ Allow family members to log transactions through the same bot. Their transaction
 
 ```bash
 TELEGRAM_EXTRA_USER_MOM=987654321,Visa Pichincha,Home Groceries
+# With optional no-budget phrase (handles dictation typos via LLM fuzzy match):
+TELEGRAM_EXTRA_USER_MOM=987654321,Visa Pichincha,Home Groceries,de sthefano
 ```
 
-Format: `TELEGRAM_EXTRA_USER_<NAME>=telegram_user_id,default_account,default_budget_name`
+Format: `TELEGRAM_EXTRA_USER_<NAME>=telegram_user_id,default_account,default_budget_name[,no_budget_phrase]`
 
 - `<NAME>` becomes the `source` tag on transactions (lowercased: `MOM` → `mom`)
 - Extra users are automatically authorized — no need to add them to `TELEGRAM_ALLOWED_USERS`
-- The configured account and budget are appended to the message before LLM parsing, so the LLM resolves the correct budget period and payment date automatically
+- The configured account is appended to the message for payment date resolution; the budget is matched in code to the active period
+- If `no_budget_phrase` is set, a parallel LLM call (small model) checks if the message contains a fuzzy match — if so, the budget is omitted. Handles dictation typos (e.g., "de sthefano" / "de estefano" / "de stephano")
 
 **How it works**:
 

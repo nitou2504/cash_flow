@@ -25,8 +25,10 @@ TELEGRAM_ALLOWED_USERS: set[int] = {
     int(uid.strip()) for uid in _allowed_raw.split(",") if uid.strip()
 }
 
-# Extra users: TELEGRAM_EXTRA_USER_<NAME>=user_id,account,budget_name
-# Example: TELEGRAM_EXTRA_USER_MOM=987654321,Visa Pichincha,Home Groceries
+# Extra users: TELEGRAM_EXTRA_USER_<NAME>=user_id,account,budget_name[,no_budget_phrase]
+# Example: TELEGRAM_EXTRA_USER_MOM=987654321,Visa Pichincha,Home Groceries,de sthefano
+# The optional no_budget_phrase triggers a small LLM check — if the user's message
+# contains a fuzzy match (handles dictation typos), the budget is omitted.
 TELEGRAM_EXTRA_USERS: dict[int, dict] = {}
 _extra_prefix = "TELEGRAM_EXTRA_USER_"
 for key, value in os.environ.items():
@@ -40,6 +42,7 @@ for key, value in os.environ.items():
                     "name": name,
                     "account": parts[1],
                     "budget": parts[2],
+                    "no_budget_phrase": parts[3] if len(parts) >= 4 else None,
                 }
             except ValueError:
                 pass

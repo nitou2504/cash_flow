@@ -492,6 +492,37 @@ User: "Create a Christmas shopping budget of 500 for December only on my Visa Pr
     return result
 
 
+def check_no_budget(user_input: str, phrase: str) -> bool:
+    """Check if user input contains a phrase meaning the budget should be skipped.
+
+    Uses the small/local LLM for fuzzy matching to handle dictation typos
+    (e.g., "de sthefano" vs "de estefano" vs "de Stephano").
+
+    Returns True if the phrase (or a close variation) is present.
+    """
+    system_prompt = f"""You are a simple text classifier. Determine if the user's message contains the phrase "{phrase}" or a close phonetic/spelling variation of it.
+
+The phrase may appear with different capitalization, accents, or dictation-induced typos. For example, if the phrase is "de sthefano", these should all match:
+- "de sthefano"
+- "de Sthefano"
+- "de estefano"
+- "de Stephano"
+- "de stefano"
+
+Respond with ONLY "true" or "false". No explanation."""
+
+    response_text = _call_llm(
+        system_prompt=system_prompt,
+        user_input=user_input,
+        function_name="check_no_budget"
+    )
+
+    if not response_text:
+        return False
+
+    return response_text.strip().lower() == "true"
+
+
 def parse_edit_instruction(
     conn: Connection,
     existing_transaction: Dict[str, Any],
