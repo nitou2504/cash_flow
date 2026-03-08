@@ -2021,6 +2021,21 @@ CREATE TABLE settings (
 );
 ```
 
+**`llm_examples`** - Raw user inputs paired with LLM parse results
+
+```sql
+CREATE TABLE llm_examples (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_input TEXT NOT NULL,
+    parsed_json TEXT NOT NULL,
+    transaction_ids TEXT,
+    source TEXT NOT NULL DEFAULT 'cli',
+    timestamp DATE DEFAULT CURRENT_DATE
+);
+```
+
+Captures the natural language input that produced each transaction, along with the full parsed JSON and the IDs of the resulting transactions. Only saved when a transaction is confirmed (not for batch imports or cancelled entries). Used for future fuzzy matching, few-shot example retrieval, and local model training.
+
 ---
 
 ### Key Architectural Principles
