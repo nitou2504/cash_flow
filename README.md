@@ -461,6 +461,11 @@ python3 cli.py bot stop       # Stop the container
 | `/summary` | Budget envelope view for the current month |
 | `/summary October` | Budget view for a specific month |
 | `/cancel` | Cancel current transaction |
+| `/lang` | Switch bot language (English / Spanish) |
+
+### Language
+
+The bot supports English and Spanish. Set a default with `TELEGRAM_DEFAULT_LANG=es` in `.env`, or let each user pick their language at runtime with `/lang`. The choice is persisted per user in the database.
 
 ### Usage
 
