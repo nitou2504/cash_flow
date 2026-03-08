@@ -1030,7 +1030,7 @@ class TestBotExtraUserInjection(unittest.TestCase):
             eu_payment_date = simulate_payment_date(eu_account, eu_date) if eu_account else eu_date
             active_budgets = repository.get_all_active_subscriptions(self.conn, eu_payment_date, eu_payment_date)
             matched_budget = next(
-                (b["id"] for b in active_budgets if b.get("is_budget") and b["name"].lower() == budget_name.lower()),
+                (b["id"] for b in active_budgets if b.get("is_budget") and (b["name"].lower() == budget_name.lower() or b["name"].lower().startswith(budget_name.lower()))),
                 None,
             )
             if matched_budget:
@@ -1074,7 +1074,7 @@ class TestBotExtraUserInjection(unittest.TestCase):
         # Create two budget periods with the same name — one expired, one active
         repository.add_subscription(self.conn, {
             "id": "budget_groceries_jan_feb",
-            "name": "Home Groceries",
+            "name": "Home Groceries Jan-Feb",
             "category": "Home Groceries",
             "monthly_amount": 300,
             "payment_account_id": "Visa Produbanco",
@@ -1084,7 +1084,7 @@ class TestBotExtraUserInjection(unittest.TestCase):
         })
         repository.add_subscription(self.conn, {
             "id": "budget_groceries_mar_apr",
-            "name": "Home Groceries",
+            "name": "Home Groceries Mar-Apr",
             "category": "Home Groceries",
             "monthly_amount": 300,
             "payment_account_id": "Visa Produbanco",
@@ -1103,7 +1103,7 @@ class TestBotExtraUserInjection(unittest.TestCase):
             self.conn, eu_payment_date, eu_payment_date
         )
         matched = next(
-            (b["id"] for b in active_budgets if b.get("is_budget") and b["name"].lower() == "home groceries"),
+            (b["id"] for b in active_budgets if b.get("is_budget") and (b["name"].lower() == "home groceries" or b["name"].lower().startswith("home groceries"))),
             None,
         )
         # Should match the mar_apr period, NOT the expired jan_feb one

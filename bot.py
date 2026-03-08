@@ -210,8 +210,13 @@ async def handle_new_expense(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 active_budgets = repository.get_all_active_subscriptions(
                     db_conn, eu_payment_date, eu_payment_date
                 )
+                budget_candidates = [b for b in active_budgets if b.get("is_budget")]
+                budget_name_lower = budget_name.lower()
                 matched_budget = next(
-                    (b["id"] for b in active_budgets if b.get("is_budget") and b["name"].lower() == budget_name.lower()),
+                    (b["id"] for b in budget_candidates if b["name"].lower() == budget_name_lower),
+                    None,
+                ) or next(
+                    (b["id"] for b in budget_candidates if b["name"].lower().startswith(budget_name_lower)),
                     None,
                 )
                 if matched_budget:
