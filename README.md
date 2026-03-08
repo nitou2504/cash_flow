@@ -214,12 +214,17 @@ Track expenses on-the-go using the Telegram chatbot. Add transactions via natura
    - Follow prompts to create your bot
    - Copy the token provided
 
-2. **Add token to `.env` file**
+2. **Add token and allowed users to `.env` file**
 
    ```bash
    TELEGRAM_BOT_TOKEN=your_token_here
+   TELEGRAM_ALLOWED_USERS=123456789,987654321
    GEMINI_API_KEY=your_gemini_key_here
    ```
+
+   `TELEGRAM_ALLOWED_USERS` is a comma-separated list of Telegram user IDs that are allowed to interact with the bot. **The bot is protected by this allowlist** — unauthorized users receive a rejection message and their attempts are logged. If the variable is omitted or empty, the bot is open to anyone, so always set it in production.
+
+   To find your Telegram user ID, send a message to [@userinfobot](https://t.me/userinfobot) on Telegram.
 
 3. **Start the bot**
 
