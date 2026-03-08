@@ -97,6 +97,7 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
     # --- Date Filtering ---
     today = date.today()
     start_date = today.replace(day=1)
+    date_field = 'date_created' if sort_by == 'date_created' else 'date_payed'
 
     if start_from:
         try:
@@ -112,14 +113,14 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
 
     pending_from_past = [
         t for t in display_transactions
-        if t['status'] == 'pending' and t['date_payed'] < start_date
+        if t['status'] == 'pending' and t[date_field] < start_date
     ]
-    
+
     transactions_in_period = [
         t for t in display_transactions
-        if start_date <= t['date_payed'] <= end_date
+        if start_date <= t[date_field] <= end_date
     ]
-    
+
     try:
         last_transaction_before_period = next(
             t for t in reversed(display_transactions) if t['date_payed'] < start_date
@@ -132,37 +133,63 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
         title=f"Cash Flow: {today.strftime('%B %Y')} - {end_date.strftime('%B %Y')}",
         show_header=True, header_style="bold magenta"
     )
-    table.add_column("ID", style="dim")
-    table.add_column("Date Payed")
-    table.add_column("Date Created", style="dim")
-    table.add_column("Description")
-    table.add_column("Account")
-    table.add_column("Amount", justify="right")
-    table.add_column("Category")
-    table.add_column("Budget")
-    table.add_column("Status")
-    table.add_column("Running Balance", justify="right")
-    table.add_column("MoM Change", justify="right")
+
+    if sort_by == "date_created":
+        table.add_column("ID", style="dim")
+        table.add_column("Date Created")
+        table.add_column("Date Payed", style="dim")
+        table.add_column("Description")
+        table.add_column("Account")
+        table.add_column("Amount", justify="right")
+        table.add_column("Category")
+        table.add_column("Budget")
+        table.add_column("Status")
+    else:
+        table.add_column("ID", style="dim")
+        table.add_column("Date Payed")
+        table.add_column("Date Created", style="dim")
+        table.add_column("Description")
+        table.add_column("Account")
+        table.add_column("Amount", justify="right")
+        table.add_column("Category")
+        table.add_column("Budget")
+        table.add_column("Status")
+        table.add_column("Running Balance", justify="right")
+        table.add_column("MoM Change", justify="right")
 
     if pending_from_past:
-        table.add_row(
-            "", "", "", "[bold yellow]Pending from Previous Months[/bold yellow]",
-            "", "", "", "", "", "", ""
-        )
-        for t in pending_from_past:
+        if sort_by == "date_created":
             table.add_row(
-                str(t['id']), str(t['date_payed']), str(t['date_created']),
-                t['description'], t['account'], f"{t['amount']:.2f}",
-                t['category'], t.get('budget', '') or '', t['status'],
-                f"{t['running_balance']:.2f}", "", style="grey50"
+                "", "", "", "[bold yellow]Pending from Previous Months[/bold yellow]",
+                "", "", "", "", ""
             )
+            for t in pending_from_past:
+                table.add_row(
+                    str(t['id']), str(t['date_created']), str(t['date_payed']),
+                    t['description'], t['account'], f"{t['amount']:.2f}",
+                    t['category'], t.get('budget', '') or '', t['status'],
+                    style="grey50"
+                )
+        else:
+            table.add_row(
+                "", "", "", "[bold yellow]Pending from Previous Months[/bold yellow]",
+                "", "", "", "", "", "", ""
+            )
+            for t in pending_from_past:
+                table.add_row(
+                    str(t['id']), str(t['date_payed']), str(t['date_created']),
+                    t['description'], t['account'], f"{t['amount']:.2f}",
+                    t['category'], t.get('budget', '') or '', t['status'],
+                    f"{t['running_balance']:.2f}", "", style="grey50"
+                )
         table.add_section()
 
-    table.add_row(
-        "", "", "", "Starting Balance", "", "", "", "", "",
-        f"[bold green]{starting_balance:.2f}[/]", ""
-    )
-    table.add_section()
+    if sort_by != "date_created":
+        table.add_row(
+            "", "", "", "Starting Balance", "", "", "", "", "",
+            f"[bold green]{starting_balance:.2f}[/]", ""
+        )
+        table.add_section()
 
     budgets = repository.get_all_budgets(conn)
     budget_ids = {b['id'] for b in budgets}
@@ -172,11 +199,11 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
 
     last_month = None
     for i, t in enumerate(transactions_in_period):
-        current_month = t['date_payed'].strftime('%Y-%m')
+        current_month = t[date_field].strftime('%Y-%m')
 
         # Check if this is the last transaction of the month or last transaction overall
         is_last_in_month = (i == len(transactions_in_period) - 1) or \
-                          (transactions_in_period[i + 1]['date_payed'].strftime('%Y-%m') != current_month)
+                          (transactions_in_period[i + 1][date_field].strftime('%Y-%m') != current_month)
 
         if last_month and current_month != last_month:
             table.add_section()
@@ -194,30 +221,38 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
         elif status == 'planning':
             row_style = "italic magenta"
 
-        # Calculate MoM change for last transaction in month
-        mom_change_str = ""
-        if is_last_in_month:
-            current_min = monthly_minimums.get(current_month, t['running_balance'])
-            month_idx = sorted_months.index(current_month) if current_month in sorted_months else -1
+        if sort_by == "date_created":
+            table.add_row(
+                str(t['id']), str(t['date_created']), str(t['date_payed']),
+                t['description'], t['account'], f"{t['amount']:.2f}",
+                t['category'], t.get('budget', '') or '', t['status'],
+                style=row_style
+            )
+        else:
+            # Calculate MoM change for last transaction in month
+            mom_change_str = ""
+            if is_last_in_month:
+                current_min = monthly_minimums.get(current_month, t['running_balance'])
+                month_idx = sorted_months.index(current_month) if current_month in sorted_months else -1
 
-            if month_idx > 0:
-                prev_month = sorted_months[month_idx - 1]
-                prev_min = monthly_minimums.get(prev_month, 0.0)
-                mom_change = current_min - prev_min
+                if month_idx > 0:
+                    prev_month = sorted_months[month_idx - 1]
+                    prev_min = monthly_minimums.get(prev_month, 0.0)
+                    mom_change = current_min - prev_min
 
-                if mom_change > 0:
-                    mom_change_str = f"[green]+{mom_change:.2f}[/green]"
-                elif mom_change < 0:
-                    mom_change_str = f"[red]{mom_change:.2f}[/red]"
-                else:
-                    mom_change_str = "0.00"
+                    if mom_change > 0:
+                        mom_change_str = f"[green]+{mom_change:.2f}[/green]"
+                    elif mom_change < 0:
+                        mom_change_str = f"[red]{mom_change:.2f}[/red]"
+                    else:
+                        mom_change_str = "0.00"
 
-        table.add_row(
-            str(t['id']), str(t['date_payed']), str(t['date_created']),
-            t['description'], t['account'], f"{t['amount']:.2f}",
-            t['category'], t.get('budget', '') or '', t['status'],
-            f"{t['running_balance']:.2f}", mom_change_str, style=row_style
-        )
+            table.add_row(
+                str(t['id']), str(t['date_payed']), str(t['date_created']),
+                t['description'], t['account'], f"{t['amount']:.2f}",
+                t['category'], t.get('budget', '') or '', t['status'],
+                f"{t['running_balance']:.2f}", mom_change_str, style=row_style
+            )
         last_month = current_month
 
     console = Console()

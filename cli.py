@@ -1565,11 +1565,10 @@ SUMMARY MODE (-s):
   - Cash transactions and non-credit accounts shown normally
   - Planning transactions shown individually unless -p is used
 
-SORTING:
-  --sort date_payed: Show transactions by payment date (default)
-                     Good for: seeing when money actually leaves your account
-  --sort date_created: Show transactions by purchase/creation date
-                       Good for: tracking when expenses actually happened
+CREATED-DATE MODE (-c):
+  Sort by purchase date instead of payment date.
+  Hides Running Balance, MoM Change, and Starting Balance (they depend on payment order).
+  Month borders and --from/-m filter by creation month instead of payment month.
 
 Examples:
   cli.py view                         # Default: 3 months from today
@@ -1577,7 +1576,7 @@ Examples:
   cli.py view --from 2025-10          # Start from October 2025
   cli.py view -s                      # Summary mode (cleaner view)
   cli.py view -s -p                   # Summary with planning included
-  cli.py view --sort date_created     # Sort by purchase date
+  cli.py view -c                      # Sort by purchase date (no balance cols)
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -1585,7 +1584,7 @@ Examples:
     view_parser.add_argument("--from", "-f", dest="start_from", type=str, help="Starting month in YYYY-MM format (default: current month)")
     view_parser.add_argument("--summary", "-s", action="store_true", help="Summary mode: aggregate credit card transactions into monthly payment entries")
     view_parser.add_argument("--include-planning", "-p", action="store_true", help="In summary mode, include planning transactions in aggregated totals (default: show separately)")
-    view_parser.add_argument("--sort", choices=["date_payed", "date_created"], default="date_payed", help="Sort transactions by payment date (default) or creation date")
+    view_parser.add_argument("--created", "-c", action="store_true", help="Sort by creation date (when you bought it, not when it's paid)")
 
     # Export command
     export_parser = subparsers.add_parser(
@@ -1837,7 +1836,7 @@ Configuration via environment variables (or .env):
         elif args.subcommand in ["delete", "del", "d"]:
             handle_subscriptions_delete(conn, args)
     elif args.command in ["view", "v"]:
-        interface.view_transactions(conn, args.months, args.summary, args.include_planning, args.start_from, args.sort)
+        interface.view_transactions(conn, args.months, args.summary, args.include_planning, args.start_from, "date_created" if args.created else "date_payed")
     elif args.command in ["export", "exp", "x"]:
         interface.export_transactions_to_csv(conn, args.file_path, args.with_balance)
     elif args.command in ["delete", "del", "d"]:
