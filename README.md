@@ -1,67 +1,10 @@
 # Personal Cash Flow Tool
 
-A CLI and Telegram bot for managing personal finances with natural language input. Type what you spent in plain English and the app parses dates, accounts, categories, and amounts automatically. Parsing is powered by LLMs via [LiteLLM](https://github.com/BerriAI/litellm) — works out of the box with a free Gemini API key, or route tasks to local models via Ollama for zero cost. See [LLM Configuration](#llm-configuration). Built around budget envelopes, credit card billing-cycle awareness, and a single timeline that forecasts your real cash position into the future.
+A CLI tool for managing personal finances. Built around budget envelopes, credit card billing-cycle awareness, and a single timeline that forecasts your real cash position into the future. Interactive mode (`-i`) gives you step-by-step guided entry with numbered menus, shortcuts, and previews — no configuration needed. Optionally, enable LLM-powered natural language input ("Spent 45.50 on groceries today") via [LiteLLM](https://github.com/BerriAI/litellm) with a free Gemini API key or local models through Ollama. A companion [Telegram bot](#telegram-bot) lets you track expenses on-the-go.
 
 ## See It In Action
 
-### Adding a transaction
-
-```bash
-python3 cli.py add "Spent 45.50 on groceries at Supermaxi today on Visa Pichincha"
-```
-
-```
-Transaction Preview
-┌────────────┬──────────────────────────┐
-│ Field      │ Value                    │
-├────────────┼──────────────────────────┤
-│ Date       │ 2026-03-07               │
-│ Date Payed │ 2026-04-05               │
-│ Desc       │ Supermaxi - groceries    │
-│ Account    │ Visa Pichincha           │
-│ Amount     │ -45.50                   │
-│ Category   │ Home Groceries           │
-│ Budget     │ budget_groceries_feb_mar │
-└────────────┴──────────────────────────┘
-
-Proceed with this request? [Y/n]
-```
-
-### Installments
-
-```bash
-python3 cli.py add "Bought laptop for 1200 in 12 installments on Visa Pichincha"
-```
-
-Creates 12 monthly transactions of -100.00 each, with payment dates aligned to the card's billing cycle.
-
-```bash
-python3 cli.py add "Phone plan 600 starting the 5th of 12 installments on Visa Pichincha"
-```
-
-Creates 8 remaining installments (12 − 5 + 1), labeled "Phone plan (5/12)" through "Phone plan (12/12)", each at $50.00.
-
-```bash
-python3 cli.py add "Bought a TV for 500 on Visa Pichincha with 3 months grace period"
-```
-
-Defers the first payment by 3 months — useful for "buy now, pay later" promotions.
-
-### Pending & expected income
-
-```bash
-python3 cli.py add "Friend will pay me 100 on March 15, pending"
-```
-
-Shows up in the timeline but doesn't affect your running balance until you clear it with `cli.py clear <id>`.
-
-```bash
-python3 cli.py add "Alex will pay me 150 in 3 installments starting next month, pending"
-```
-
-Creates 3 pending income transactions of +$50 each. Clear them as payments arrive.
-
-### Interactive mode (no LLM needed)
+### Interactive mode
 
 ```bash
 python3 cli.py add -i                          # Add transaction
@@ -72,7 +15,7 @@ python3 cli.py edit 123 -i                     # Edit transaction
 python3 cli.py subscriptions edit budget_food -i  # Edit budget/subscription
 ```
 
-Step-by-step guided entry with selection menus, defaults, and previews. Works offline when the LLM is unavailable (Gemini quota exhausted, Ollama down, etc.). Available on all entity commands — no flags or syntax to memorize.
+Step-by-step guided entry with selection menus, defaults, and previews. No LLM, no API keys, no configuration — works out of the box. Available on all entity commands.
 
 **Input shortcuts** — designed for speed:
 
@@ -130,10 +73,46 @@ Proceed? [Y/n]:
 Successfully added 1 transaction(s).
 ```
 
+### Natural language input (requires LLM)
+
+With an LLM configured (see [LLM Configuration](#llm-configuration)), you can skip the prompts and type transactions in plain English:
+
+```bash
+python3 cli.py add "Spent 45.50 on groceries at Supermaxi today on Visa Pichincha"
+```
+
+```
+Transaction Preview
+┌────────────┬──────────────────────────┐
+│ Field      │ Value                    │
+├────────────┼──────────────────────────┤
+│ Date       │ 2026-03-07               │
+│ Date Payed │ 2026-04-05               │
+│ Desc       │ Supermaxi - groceries    │
+│ Account    │ Visa Pichincha           │
+│ Amount     │ -45.50                   │
+│ Category   │ Home Groceries           │
+│ Budget     │ budget_groceries_feb_mar │
+└────────────┴──────────────────────────┘
+
+Proceed with this request? [Y/n]
+```
+
+The LLM auto-detects dates, accounts, categories, amounts, and transaction types — including installments, splits, pending status, and grace periods:
+
+```bash
+python3 cli.py add "Bought laptop for 1200 in 12 installments on Visa Pichincha"
+python3 cli.py add "Phone plan 600 starting the 5th of 12 installments on Visa Pichincha"
+python3 cli.py add "Bought a TV for 500 on Visa Pichincha with 3 months grace period"
+python3 cli.py add "Friend will pay me 100 on March 15, pending"
+python3 cli.py add "Split: 30 groceries, 15 snacks at Supermaxi"
+```
+
 ### Budget envelopes
 
 ```bash
-python3 cli.py subscriptions add "Monthly groceries budget of 400 on Cash"
+python3 cli.py subscriptions add -i            # Interactive
+python3 cli.py subscriptions add "Monthly groceries budget of 400 on Cash"  # Natural language
 ```
 
 Creates a recurring envelope that reserves $400 each month. Spending against the budget reduces the envelope—not your running balance—so you always see how much is truly committed vs. free. All subscriptions and budgets run on a monthly cycle — one transaction per month, anchored to the start date's day-of-month (see [Monthly cycle](#subscriptions-add---add-budget-or-subscription) for details).
@@ -158,11 +137,9 @@ Cash Flow View (Mar 2026 – Apr 2026)
 
 Budget envelopes appear as line items but don't reduce the running balance—they only reserve funds.
 
-### Telegram bot
+### Companion Telegram bot
 
-Send a message like _"Lunch 12.50 on Cash"_ to your bot; it replies with a preview and inline buttons to confirm, edit, or cancel.
-
-**`/summary` — Budget envelope view:**
+Track expenses on-the-go with the companion [Telegram bot](#telegram-bot). Send messages like _"Lunch 12.50 on Cash"_ and get a preview with inline buttons to confirm, edit, or cancel. Use `/summary` to check budget status.
 
 ```
 📊 Budgets: March 2026
@@ -177,29 +154,17 @@ Send a message like _"Lunch 12.50 on Cash"_ to your bot; it replies with a previ
    $120.00 of $80.00 | $40.00 over
 ```
 
-**`/summary` — Pending/planning toggle:**
-
-```
-⏳ Pending (2)
-Mar 15 | Friend owes dinner | +$25.00
-Apr 01 | Alex payment 1/3   | +$50.00
-
-📋 Planning: March 2026 (1)
-Mar 20 | New headphones      | -$80.00
-```
-
-Use navigation buttons to browse months or toggle between budget and planning views.
-
 ---
 
 ## What Makes This Different?
 
+- **Works Without LLMs**: Interactive mode (`-i`) provides full functionality with no API keys or configuration
 - **True Cash Flow Forecasting**: See exactly how much money you'll have on any future date, accounting for all commitments
 - **Smart Credit Card Handling**: Automatically calculates payment dates based on billing cycles—no more manual tracking
 - **Live Budget System**: Digital envelopes that update in real-time as you spend, with accurate remaining balances
-- **Natural Language Input**: Add transactions by typing "Spent 45.50 on groceries today" instead of filling forms
 - **Single Timeline View**: Past, present, and future transactions in one unified view—no separate budget sheets
-- **Telegram Bot Integration**: Track expenses on-the-go via Telegram chat with natural language and confirmation workflow
+- **Optional LLM Input**: Add transactions by typing "Spent 45.50 on groceries today" — powered by Gemini, Ollama, or any LiteLLM-compatible provider
+- **Companion Telegram Bot**: Track expenses on-the-go with natural language and inline confirmation
 
 ---
 
@@ -207,16 +172,17 @@ Use navigation buttons to browse months or toggle between budget and planning vi
 
 1. [See It In Action](#see-it-in-action)
 2. [Quick Start](#quick-start)
-3. [Telegram Bot](#telegram-bot)
-4. [Core Concepts](#core-concepts)
-5. [CLI Command Reference](#cli-command-reference)
-6. [Common Workflows](#common-workflows)
-7. [Advanced Features](#advanced-features)
-8. [Understanding Transaction Statuses](#understanding-transaction-statuses)
-9. [Understanding Credit Card Cycles](#understanding-credit-card-cycles)
-10. [Troubleshooting & FAQ](#troubleshooting--faq)
-11. [Technical Details](#technical-details)
-12. [Command Quick Reference](#command-quick-reference)
+3. [LLM Configuration](#llm-configuration)
+4. [Telegram Bot](#telegram-bot)
+5. [Core Concepts](#core-concepts)
+6. [CLI Command Reference](#cli-command-reference)
+7. [Common Workflows](#common-workflows)
+8. [Advanced Features](#advanced-features)
+9. [Understanding Transaction Statuses](#understanding-transaction-statuses)
+10. [Understanding Credit Card Cycles](#understanding-credit-card-cycles)
+11. [Troubleshooting & FAQ](#troubleshooting--faq)
+12. [Technical Details](#technical-details)
+13. [Command Quick Reference](#command-quick-reference)
 
 ---
 
@@ -226,7 +192,6 @@ Use navigation buttons to browse months or toggle between budget and planning vi
 
 - Python 3.10+
 - pip (Python package manager)
-- A Gemini API key (free tier perfectly usable) — see [LLM Configuration](#llm-configuration)
 
 ### Installation
 
@@ -245,104 +210,30 @@ Use navigation buttons to browse months or toggle between budget and planning vi
 3. **Set up your first account**
 
    ```bash
-   python3 cli.py create account Cash cash
+   python3 cli.py accounts add -i
    ```
 
-   The database ships with 11 default categories (Housing, Home Groceries, Personal Groceries, Dining-Snacks, Transportation, Health, Personal, Income, Savings, Loans, Others). You can add custom ones with `python3 cli.py categories add <name> "<description>"` — the description is a short explanation of what the category covers (e.g., "Eating out, takeout, coffee"), which the LLM uses to pick the right category automatically.
+   The database ships with 11 default categories (Housing, Home Groceries, Personal Groceries, Dining-Snacks, Transportation, Health, Personal, Income, Savings, Loans, Others). You can add custom ones with `python3 cli.py categories add -i`.
 
-4. **Record your first income**
+4. **Add your first transaction**
 
    ```bash
-   python3 cli.py add "Income 3000 on Cash"
+   python3 cli.py add -i
    ```
 
-5. **Add your first expense**
-
-   ```bash
-   python3 cli.py add "Spent 45.50 on groceries today"
-   ```
-
-6. **View your cash flow**
+5. **View your cash flow**
 
    ```bash
    python3 cli.py view
    ```
 
-You should see a table showing your transactions with running balance. You're ready to go!
-
----
-
-## Telegram Bot
-
-Track expenses on-the-go using the Telegram chatbot. Add transactions via natural language messages with an intuitive confirmation and correction workflow, and check budget status with the `/summary` command.
-
-### Quick Setup
-
-1. **Get your bot token from [@BotFather](https://t.me/BotFather)**
-   - Send `/newbot` to BotFather on Telegram
-   - Follow prompts to create your bot
-   - Copy the token provided
-
-2. **Add token and allowed users to `.env` file**
-
-   ```bash
-   TELEGRAM_BOT_TOKEN=your_token_here
-   TELEGRAM_ALLOWED_USERS=123456789,987654321
-   GEMINI_API_KEY=your_gemini_key_here
-   ```
-
-   `TELEGRAM_ALLOWED_USERS` is a comma-separated list of Telegram user IDs that are allowed to interact with the bot. **The bot is protected by this allowlist** — unauthorized users receive a rejection message and their attempts are logged. If the variable is omitted or empty, the bot is open to anyone, so always set it in production.
-
-   To find your Telegram user ID, send a message to [@userinfobot](https://t.me/userinfobot) on Telegram.
-
-3. **Start the bot**
-
-   ```bash
-   python3 bot.py
-   ```
-
-### Docker Deployment
-
-Run the bot as a persistent background service:
-
-```bash
-docker compose -f docker-compose.bot.yml up -d --build
-```
-
-The Docker setup mounts the project directory into the container, so the bot shares the same `cash_flow.db` as the CLI. If you use Ollama locally, the container routes to the host via `LLM_OLLAMA_BASE_URL=http://host.docker.internal:11434`.
-
-### Bot Commands
-
-| Command | Description |
-|---------|-------------|
-| `/start` | Welcome message and reset state |
-| `/help` | Usage instructions |
-| `/summary` | Budget envelope view for the current month |
-| `/summary October` | Budget view for a specific month |
-| `/cancel` | Cancel current transaction |
-
-### Usage
-
-Just send messages like:
-
-- `"Spent 50 on groceries today"`
-- `"Bought laptop for 1200 in 12 installments on Visa"`
-- `"Split: 30 on groceries, 15 on snacks"`
-
-The bot will:
-
-1. Parse your message using the same LLM backend as the CLI
-2. Show a formatted preview with inline buttons
-3. Let you **Confirm** or **Revise** before saving
-4. Allow corrections in natural language if needed
-
-The `/summary` view shows per-month budget envelopes with spent/remaining amounts and navigation buttons to browse months or toggle to a planning/pending view.
+You're ready to go — no API keys needed. For natural language input, see [LLM Configuration](#llm-configuration) to set up Gemini (free tier) or Ollama (local, free).
 
 ---
 
 ## LLM Configuration
 
-The application uses LLMs for natural language parsing via [LiteLLM](https://github.com/BerriAI/litellm), a unified interface that supports any provider (Gemini, Ollama, OpenAI, Anthropic, etc.). By default it uses Google Gemini, but you can route different tasks to different models — including free local models via Ollama.
+The CLI works fully without LLMs via interactive mode (`-i`). To enable natural language input (`cli.py add "Spent 50 on groceries"`), configure an LLM provider. The application uses [LiteLLM](https://github.com/BerriAI/litellm), a unified interface that supports any provider (Gemini, Ollama, OpenAI, Anthropic, etc.).
 
 ### Quick Start (Default - Gemini Only)
 
@@ -494,6 +385,74 @@ providers:
 ```
 
 See `llm_config.yaml.example` for full documentation with benchmark results and troubleshooting tips.
+
+---
+
+## Telegram Bot
+
+A companion chatbot for tracking expenses on-the-go. Requires an LLM provider (see above) since the bot uses natural language parsing.
+
+### Quick Setup
+
+1. **Get your bot token from [@BotFather](https://t.me/BotFather)**
+   - Send `/newbot` to BotFather on Telegram
+   - Follow prompts to create your bot
+   - Copy the token provided
+
+2. **Add token and allowed users to `.env` file**
+
+   ```bash
+   TELEGRAM_BOT_TOKEN=your_token_here
+   TELEGRAM_ALLOWED_USERS=123456789,987654321
+   GEMINI_API_KEY=your_gemini_key_here
+   ```
+
+   `TELEGRAM_ALLOWED_USERS` is a comma-separated list of Telegram user IDs that are allowed to interact with the bot. **The bot is protected by this allowlist** — unauthorized users receive a rejection message and their attempts are logged. If the variable is omitted or empty, the bot is open to anyone, so always set it in production.
+
+   To find your Telegram user ID, send a message to [@userinfobot](https://t.me/userinfobot) on Telegram.
+
+3. **Start the bot**
+
+   ```bash
+   python3 bot.py
+   ```
+
+### Docker Deployment
+
+Run the bot as a persistent background service:
+
+```bash
+docker compose -f docker-compose.bot.yml up -d --build
+```
+
+The Docker setup mounts the project directory into the container, so the bot shares the same `cash_flow.db` as the CLI. If you use Ollama locally, the container routes to the host via `LLM_OLLAMA_BASE_URL=http://host.docker.internal:11434`.
+
+### Bot Commands
+
+| Command | Description |
+|---------|-------------|
+| `/start` | Welcome message and reset state |
+| `/help` | Usage instructions |
+| `/summary` | Budget envelope view for the current month |
+| `/summary October` | Budget view for a specific month |
+| `/cancel` | Cancel current transaction |
+
+### Usage
+
+Just send messages like:
+
+- `"Spent 50 on groceries today"`
+- `"Bought laptop for 1200 in 12 installments on Visa"`
+- `"Split: 30 on groceries, 15 on snacks"`
+
+The bot will:
+
+1. Parse your message using the same LLM backend as the CLI
+2. Show a formatted preview with inline buttons
+3. Let you **Confirm** or **Revise** before saving
+4. Allow corrections in natural language if needed
+
+The `/summary` view shows per-month budget envelopes with spent/remaining amounts and navigation buttons to browse months or toggle to a planning/pending view.
 
 ---
 
