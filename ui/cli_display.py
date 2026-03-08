@@ -43,7 +43,7 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
             # Store the running balance of the last transaction for this account/date
             date_balance_map[key] = t['running_balance']
 
-        summarized_payments = {}  # Key: (account, date_payed), Value: {'amount': float, 'statuses': set}
+        summarized_payments = {}
         other_transactions = []
         planning_transactions = []
 
@@ -54,7 +54,10 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
                     planning_transactions.append(t)
                     continue
 
-                key = (t['account'], t['date_payed'])
+                if sort_by == "date_created":
+                    key = (t['account'], t['date_created'].strftime('%Y-%m'))
+                else:
+                    key = (t['account'], t['date_payed'])
                 if key not in summarized_payments:
                     summarized_payments[key] = {'amount': 0.0, 'statuses': set(), 'running_balance': 0.0}
 
@@ -66,26 +69,43 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
                 other_transactions.append(t)
 
         summary_transactions = []
-        for (account, date_payed), data in summarized_payments.items():
-            statuses = data['statuses']
-            status = 'forecast'
-            if 'committed' in statuses: status = 'committed'
-            elif 'pending' in statuses: status = 'pending'
-            elif 'planning' in statuses: status = 'planning'
+        if sort_by == "date_created":
+            for (account, creation_month), data in summarized_payments.items():
+                statuses = data['statuses']
+                status = 'forecast'
+                if 'committed' in statuses: status = 'committed'
+                elif 'pending' in statuses: status = 'pending'
+                elif 'planning' in statuses: status = 'planning'
 
-            summary_trans = {
-                'id': '--', 'date_payed': date_payed, 'date_created': date_payed,
-                'description': f"{account} Payment", 'account': account,
-                'amount': data['amount'], 'category': 'Credit Card', 'budget': '',
-                'status': status, 'origin_id': None,
-                'running_balance': data['running_balance']  # Use the actual running balance
-            }
-            summary_transactions.append(summary_trans)
+                month_date = datetime.strptime(creation_month, '%Y-%m').date().replace(day=1)
+                month_label = month_date.strftime('%b')
+                summary_trans = {
+                    'id': '--', 'date_created': month_date, 'date_payed': '',
+                    'description': f"{account} ({month_label})", 'account': account,
+                    'amount': data['amount'], 'category': 'Credit Card', 'budget': '',
+                    'status': status, 'origin_id': None, 'running_balance': 0.0,
+                }
+                summary_transactions.append(summary_trans)
+        else:
+            for (account, date_payed), data in summarized_payments.items():
+                statuses = data['statuses']
+                status = 'forecast'
+                if 'committed' in statuses: status = 'committed'
+                elif 'pending' in statuses: status = 'pending'
+                elif 'planning' in statuses: status = 'planning'
+
+                summary_trans = {
+                    'id': '--', 'date_payed': date_payed, 'date_created': date_payed,
+                    'description': f"{account} Payment", 'account': account,
+                    'amount': data['amount'], 'category': 'Credit Card', 'budget': '',
+                    'status': status, 'origin_id': None,
+                    'running_balance': data['running_balance']
+                }
+                summary_transactions.append(summary_trans)
 
         # Combine and sort all transactions
-        # Sort by the specified field (date_payed or date_created), then by ID
         if sort_by == "date_created":
-            combined = sorted(other_transactions + summary_transactions + planning_transactions, key=lambda x: (x['date_created'], x.get('id', 0) if x.get('id') != '--' else 999999))
+            combined = sorted(other_transactions + summary_transactions + planning_transactions, key=lambda x: (x['date_created'], x.get('id', 0) if x.get('id') != '--' else 0))
         else:  # default to date_payed
             combined = sorted(other_transactions + summary_transactions + planning_transactions, key=lambda x: (x['date_payed'], x.get('id', 0) if x.get('id') != '--' else 999999))
 
@@ -121,13 +141,23 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
         if start_date <= t[date_field] <= end_date
     ]
 
-    try:
-        last_transaction_before_period = next(
-            t for t in reversed(display_transactions) if t['date_payed'] < start_date
-        )
-        starting_balance = last_transaction_before_period['running_balance']
-    except StopIteration:
-        starting_balance = 0.0
+    # Pre-compute monthly spending totals for created-date mode (negative amounts, exclude pending)
+    monthly_spending = {}
+    if sort_by == "date_created":
+        for t in transactions_in_period:
+            if t['amount'] < 0 and t['status'] != 'pending':
+                month_key = t['date_created'].strftime('%Y-%m')
+                monthly_spending[month_key] = monthly_spending.get(month_key, 0.0) + t['amount']
+
+    starting_balance = 0.0
+    if sort_by != "date_created":
+        try:
+            last_transaction_before_period = next(
+                t for t in reversed(display_transactions) if t['date_payed'] < start_date
+            )
+            starting_balance = last_transaction_before_period['running_balance']
+        except StopIteration:
+            pass
 
     table = Table(
         title=f"Cash Flow: {today.strftime('%B %Y')} - {end_date.strftime('%B %Y')}",
@@ -144,6 +174,7 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
         table.add_column("Category")
         table.add_column("Budget")
         table.add_column("Status")
+        table.add_column("Month Spent", justify="right")
     else:
         table.add_column("ID", style="dim")
         table.add_column("Date Payed")
@@ -161,13 +192,13 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
         if sort_by == "date_created":
             table.add_row(
                 "", "", "", "[bold yellow]Pending from Previous Months[/bold yellow]",
-                "", "", "", "", ""
+                "", "", "", "", "", ""
             )
             for t in pending_from_past:
                 table.add_row(
                     str(t['id']), str(t['date_created']), str(t['date_payed']),
                     t['description'], t['account'], f"{t['amount']:.2f}",
-                    t['category'], t.get('budget', '') or '', t['status'],
+                    t['category'], t.get('budget', '') or '', t['status'], "",
                     style="grey50"
                 )
         else:
@@ -222,11 +253,19 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
             row_style = "italic magenta"
 
         if sort_by == "date_created":
+            month_total_str = ""
+            if is_last_in_month:
+                total = monthly_spending.get(current_month, 0.0)
+                if total < 0:
+                    month_total_str = f"[red]{total:.2f}[/red]"
+                else:
+                    month_total_str = "0.00"
+
             table.add_row(
                 str(t['id']), str(t['date_created']), str(t['date_payed']),
                 t['description'], t['account'], f"{t['amount']:.2f}",
                 t['category'], t.get('budget', '') or '', t['status'],
-                style=row_style
+                month_total_str, style=row_style
             )
         else:
             # Calculate MoM change for last transaction in month

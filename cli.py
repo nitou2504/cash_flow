@@ -1567,8 +1567,9 @@ SUMMARY MODE (-s):
 
 CREATED-DATE MODE (-c):
   Sort by purchase date instead of payment date.
-  Hides Running Balance, MoM Change, and Starting Balance (they depend on payment order).
+  Hides Running Balance, MoM Change, and Starting Balance; shows Month Total instead.
   Month borders and --from/-m filter by creation month instead of payment month.
+  Combine with -s to group credit card spending per creation month.
 
 Examples:
   cli.py view                         # Default: 3 months from today
@@ -1576,7 +1577,8 @@ Examples:
   cli.py view --from 2025-10          # Start from October 2025
   cli.py view -s                      # Summary mode (cleaner view)
   cli.py view -s -p                   # Summary with planning included
-  cli.py view -c                      # Sort by purchase date (no balance cols)
+  cli.py view -c                      # Sort by purchase date with month totals
+  cli.py view -c -s                   # CC grouped by creation month
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
