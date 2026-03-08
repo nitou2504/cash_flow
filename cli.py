@@ -1198,7 +1198,9 @@ def handle_bot(args: argparse.Namespace):
     action = args.bot_action
 
     if action == "restart":
-        print("Rebuilding and restarting bot container...")
+        print("Stopping bot container...")
+        subprocess.run(["docker", "compose", "-f", compose_file, "down"], check=True)
+        print("Rebuilding and starting bot container...")
         subprocess.run(["docker", "compose", "-f", compose_file, "up", "-d", "--build"], check=True)
     elif action == "stop":
         subprocess.run(["docker", "compose", "-f", compose_file, "down"], check=True)
