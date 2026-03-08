@@ -462,6 +462,39 @@ The bot will:
 
 The `/summary` view shows per-month budget envelopes with spent/remaining amounts and navigation buttons to browse months or toggle to a planning/pending view.
 
+### Extra Users (Delegates)
+
+Allow family members to log transactions through the same bot. Their transactions are tagged with a source and flagged for review — you verify them later via the CLI `review` command.
+
+**Setup**: Add one env var per extra user in `.env`:
+
+```bash
+TELEGRAM_EXTRA_USER_MOM=987654321,Visa Pichincha,Home Groceries
+```
+
+Format: `TELEGRAM_EXTRA_USER_<NAME>=telegram_user_id,default_account,default_budget_name`
+
+- `<NAME>` becomes the `source` tag on transactions (lowercased: `MOM` → `mom`)
+- Extra users are automatically authorized — no need to add them to `TELEGRAM_ALLOWED_USERS`
+- The budget name (e.g. "Home Groceries") is resolved at runtime to the active budget period
+- Default account and budget are injected only when the LLM doesn't pick a specific one
+
+**How it works**:
+
+1. Mom sends `supermaxi 25.50` to the bot
+2. Bot parses normally, then injects her defaults (account, budget, source=mom, needs_review=1)
+3. She sees a preview and confirms as usual
+4. You run `cli.py review ls` to see her transactions, fix categories/budgets, and approve
+
+Multiple extra users are supported — just add more env vars:
+
+```bash
+TELEGRAM_EXTRA_USER_MOM=111111,Visa Pichincha,Home Groceries
+TELEGRAM_EXTRA_USER_DAD=222222,Cash,Personal
+```
+
+See [review command](#review---review-extra-user-transactions) for the CLI review workflow.
+
 ---
 
 ## Core Concepts
@@ -655,6 +688,8 @@ Shows current values and prompts each field with the current value as default. P
 - `--category, -c`: Assign to category
 - `--budget, -b`: Link to budget
 - `--status, -s`: Change status (committed/pending/planning/forecast)
+- `--source`: Set transaction source (e.g. `mom`)
+- `--needs-review`: Set review flag (`0` or `1`)
 - `--all`: Apply changes to entire transaction group
 - `--interactive, -i`: Interactive guided mode
 
@@ -683,6 +718,41 @@ python3 cli.py clear 456 --all  # Commit all installments
 ```
 
 **Use case**: When a pending purchase is confirmed, or when you decide to commit to a planned expense.
+
+---
+
+#### `review` - Review extra user transactions
+
+Review and approve transactions created by [extra users](#extra-users-delegates) (e.g. family members). Alias: `rv`.
+
+**List unreviewed transactions**:
+
+```bash
+python3 cli.py review ls                     # all unreviewed
+python3 cli.py review ls --source mom        # filter by source
+```
+
+**Review a specific transaction**:
+
+```bash
+python3 cli.py review 605                    # show details + mark reviewed
+python3 cli.py review 605 clear              # mark reviewed without showing
+python3 cli.py review 605 -i                 # interactive edit + mark reviewed
+python3 cli.py review 605 --category "Personal Groceries"  # edit + mark reviewed
+python3 cli.py review 605 --budget budget_personal_jan_feb  # change budget + mark reviewed
+```
+
+**Workflow**: Extra user adds a transaction via Telegram → it appears in `review ls` → you verify/fix → it's marked as reviewed. The `source` field (e.g. "mom") is permanent metadata that remains after review.
+
+**Available edit flags** (same as `edit`):
+
+- `--description, -d`: Change description
+- `--amount, -a`: Change amount
+- `--date, -D`: Change date
+- `--category, -c`: Change category
+- `--budget, -b`: Change budget
+- `--status, -s`: Change status
+- `--interactive, -i`: Interactive guided edit
 
 ---
 
@@ -735,6 +805,8 @@ python3 cli.py create transaction "Maybe a TV" 800 Cash --planning
 | `--income`              | Mark as income                                        |
 | `--pending`             | Mark as pending                                       |
 | `--planning`            | Mark as planning                                      |
+| `--source`              | Transaction source (e.g. `mom`)                       |
+| `--needs-review`        | Mark for review (`0` or `1`)                          |
 
 ---
 
@@ -1973,7 +2045,7 @@ cash_flow/
 ├── ui/                         # Presentation layer
 │   ├── cli_display.py          #   Rich terminal tables and CSV export
 │   └── telegram_format.py      #   Telegram Markdown formatting and navigation
-├── tests/                      # Unit tests (80 tests, in-memory SQLite)
+├── tests/                      # Unit tests (385 tests, in-memory SQLite)
 ├── specs/                      # Feature specifications
 ├── llm_config.yaml.example     # LLM routing configuration template
 ├── Dockerfile.bot              # Docker image for the Telegram bot
@@ -2035,9 +2107,14 @@ CREATE TABLE transactions (
     budget TEXT,
     status TEXT DEFAULT 'committed',
     origin_id TEXT,
+    source TEXT DEFAULT NULL,
+    needs_review INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (account) REFERENCES accounts(account_id)
 );
 ```
+
+- `source`: Who created the transaction. `NULL` = owner, string (e.g. `"mom"`) = extra user. Permanent metadata.
+- `needs_review`: `0` = reviewed/owner-created, `1` = needs review. Used by the `review` command.
 
 **`settings`** - User settings
 
