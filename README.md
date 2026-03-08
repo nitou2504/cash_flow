@@ -11,7 +11,8 @@ python3 cli.py add -i                          # Add transaction
 python3 cli.py accounts add -i                 # Add account
 python3 cli.py categories add -i               # Add category
 python3 cli.py subscriptions add -i            # Add budget/subscription
-python3 cli.py edit 123 -i                     # Edit transaction
+python3 cli.py edit 123 -i                     # Edit transaction (interactive)
+python3 cli.py edit 123 "change amount to 50"  # Edit transaction (natural language)
 python3 cli.py subscriptions edit budget_food -i  # Edit budget/subscription
 ```
 
@@ -701,6 +702,17 @@ python3 cli.py edit 100 --date 2026-01-15
 python3 cli.py edit 200 --status planning --all  # Edit all installments
 ```
 
+**Natural language edit** (LLM-powered):
+
+```bash
+python3 cli.py edit 42 "change amount to 45.50"
+python3 cli.py edit 42 "move to home groceries budget"
+python3 cli.py edit 42 "change date to march 5" -y         # Skip confirmation
+python3 cli.py edit 42 "change category to Dining-Snacks" --all  # Edit all in group
+```
+
+Parses the instruction with the LLM, shows a before/after preview, and asks for confirmation. Use `-y` to skip the confirmation prompt.
+
 **Interactive guided edit** (no flags needed):
 
 ```bash
@@ -724,6 +736,7 @@ Shows current values and prompts each field with the current value as default. P
 - `--needs-review`: Set review flag (`0` or `1`)
 - `--all`: Apply changes to entire transaction group
 - `--interactive, -i`: Interactive guided mode
+- `-y, --yes`: Skip confirmation for natural language edits
 
 ---
 
