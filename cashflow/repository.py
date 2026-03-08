@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from sqlite3 import Connection
 from typing import List, Dict, Any
@@ -14,9 +15,10 @@ def get_account_by_name(conn: Connection, name: str) -> Dict[str, Any]:
         return dict(account)
     return None
 
-def add_transactions(conn: Connection, transactions: List[Dict[str, Any]]):
+def add_transactions(conn: Connection, transactions: List[Dict[str, Any]]) -> List[int]:
     """
     Inserts a list of one or more transaction dictionaries into the database.
+    Returns a list of inserted row IDs.
     """
     cursor = conn.cursor()
     query = """
@@ -25,8 +27,9 @@ def add_transactions(conn: Connection, transactions: List[Dict[str, Any]]):
             category, budget, status, origin_id
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
-    data = [
-        (
+    inserted_ids = []
+    for t in transactions:
+        cursor.execute(query, (
             t["date_created"],
             t["date_payed"],
             t["description"],
@@ -36,11 +39,20 @@ def add_transactions(conn: Connection, transactions: List[Dict[str, Any]]):
             t["budget"],
             t["status"],
             t["origin_id"],
-        )
-        for t in transactions
-    ]
-    cursor.executemany(query, data)
+        ))
+        inserted_ids.append(cursor.lastrowid)
     conn.commit()
+    return inserted_ids
+
+def save_llm_example(conn: Connection, user_input: str, parsed_json: dict, transaction_ids: List[int], source: str = "cli"):
+    """Saves a raw user input alongside the parsed result for future LLM training."""
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO llm_examples (user_input, parsed_json, transaction_ids, source) VALUES (?, ?, ?, ?)",
+        (user_input, json.dumps(parsed_json), ",".join(str(i) for i in transaction_ids), source)
+    )
+    conn.commit()
+
 
 def get_all_transactions(conn: Connection) -> List[Dict[str, Any]]:
     """
