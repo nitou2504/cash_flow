@@ -255,6 +255,72 @@ def format_summary_navigation_buttons(
     return InlineKeyboardMarkup(keyboard)
 
 
+def format_auto_confirm_message(
+    request_json: Dict[str, Any],
+    payment_date: date,
+    budget_remaining: Optional[float] = None,
+    budget_name: Optional[str] = None,
+    budget_allocated: Optional[float] = None,
+) -> str:
+    """
+    Compact reply for auto-confirmed (extra user) transactions.
+
+    Shows date created → payment date, description, amount,
+    and optional budget remaining line with health emoji.
+    """
+    date_created = request_json.get('date_created', date.today().isoformat())
+    dc = date.fromisoformat(date_created) if isinstance(date_created, str) else date_created
+    dc_str = dc.strftime('%b %d')
+    pd_str = payment_date.strftime('%b %d')
+
+    amount = request_json.get('amount', 0)
+    amount_str = f"+${abs(amount):.2f}" if request_json.get('is_income') else f"-${abs(amount):.2f}"
+
+    desc = escape_markdown(request_json.get('description', 'N/A'))
+
+    msg = f"✅ Saved!\n"
+    msg += f"📅 {dc_str} → {pd_str}\n"
+    msg += f"📝 {desc}\n"
+    msg += f"💵 {amount_str}\n"
+
+    if budget_remaining is not None and budget_name is not None:
+        bname = display_name(budget_name)
+        allocated = budget_allocated or 0
+        spent = allocated - budget_remaining
+        if budget_remaining <= 0:
+            emoji = "🔴"
+        elif allocated > 0 and spent / allocated > 0.8:
+            emoji = "🟡"
+        else:
+            emoji = "🟢"
+        msg += f"{emoji} {bname}: ${budget_remaining:,.2f} remaining\n"
+
+    return msg
+
+
+def format_summary_navigation_buttons_simple(
+    current_month_date: date,
+) -> InlineKeyboardMarkup:
+    """
+    Simplified navigation buttons for extra users — prev/next only, no planning toggle.
+    Uses the same callback format so the existing handler works unchanged.
+    """
+    prev_month = current_month_date - relativedelta(months=1)
+    next_month = current_month_date + relativedelta(months=1)
+
+    prev_callback = f"summary:{prev_month.strftime('%Y-%m')}:budget"
+    next_callback = f"summary:{next_month.strftime('%Y-%m')}:budget"
+
+    keyboard = [
+        [
+            InlineKeyboardButton("⬅️ Prev", callback_data=prev_callback),
+            InlineKeyboardButton("Next ➡️", callback_data=next_callback),
+        ]
+    ]
+
+    return InlineKeyboardMarkup(keyboard)
+
+
 def parse_month_from_args(args: str) -> Optional[date]:
     """
     Parse month from command arguments.
