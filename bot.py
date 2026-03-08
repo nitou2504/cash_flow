@@ -173,12 +173,20 @@ async def handle_new_expense(update: Update, context: ContextTypes.DEFAULT_TYPE,
             )
             return
 
+        # For extra users, append their default account and budget to the
+        # message so the LLM uses the correct account for payment date
+        # calculation and budget resolution — same proven flow as the owner
+        extra_user = get_extra_user_info(update)
+        llm_message = user_message
+        if extra_user:
+            llm_message = f"{user_message}, {extra_user['account']}, {extra_user['budget']} budget"
+
         # Calculate payment month for budget filtering
-        payment_month = tx_module.calculate_payment_month(user_message, accounts)
+        payment_month = tx_module.calculate_payment_month(llm_message, accounts)
 
         # Full parse
         request_json = llm_parser.parse_transaction_string(
-            db_conn, user_message, accounts, budgets, payment_month
+            db_conn, llm_message, accounts, budgets, payment_month
         )
 
         if not request_json:
@@ -188,39 +196,10 @@ async def handle_new_expense(update: Update, context: ContextTypes.DEFAULT_TYPE,
             )
             return
 
-        # Inject extra user defaults
-        extra_user = get_extra_user_info(update)
+        # Tag extra user transactions for review
         if extra_user:
             request_json["source"] = extra_user["name"]
             request_json["needs_review"] = True
-            # Set account if LLM didn't pick one or picked the default
-            if not request_json.get("account") or request_json["account"] == accounts[0]["account_id"]:
-                request_json["account"] = extra_user["account"]
-            # Resolve budget name to active budget period using payment date
-            if not request_json.get("budget"):
-                budget_name = extra_user["budget"]
-                # Calculate payment date from the extra user's account
-                eu_account = next((a for a in accounts if a['account_id'] == extra_user["account"]), None)
-                eu_date = date.fromisoformat(request_json.get('date_created', date.today().isoformat()))
-                if eu_account:
-                    eu_payment_date = tx_module.simulate_payment_date(eu_account, eu_date)
-                else:
-                    eu_payment_date = eu_date
-                # Find budget active during the payment month
-                active_budgets = repository.get_all_active_subscriptions(
-                    db_conn, eu_payment_date, eu_payment_date
-                )
-                budget_candidates = [b for b in active_budgets if b.get("is_budget")]
-                budget_name_lower = budget_name.lower()
-                matched_budget = next(
-                    (b["id"] for b in budget_candidates if b["name"].lower() == budget_name_lower),
-                    None,
-                ) or next(
-                    (b["id"] for b in budget_candidates if b["name"].lower().startswith(budget_name_lower)),
-                    None,
-                )
-                if matched_budget:
-                    request_json["budget"] = matched_budget
 
         # Calculate payment date for preview
         trans_date = date.fromisoformat(request_json.get('date_created', date.today().isoformat()))

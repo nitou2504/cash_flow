@@ -491,14 +491,14 @@ Format: `TELEGRAM_EXTRA_USER_<NAME>=telegram_user_id,default_account,default_bud
 
 - `<NAME>` becomes the `source` tag on transactions (lowercased: `MOM` → `mom`)
 - Extra users are automatically authorized — no need to add them to `TELEGRAM_ALLOWED_USERS`
-- The budget name is resolved at runtime to the active budget period using the payment date. Matching is exact first, then prefix — so `"Home Groceries"` matches `"Home Groceries Jan-Feb"`
-- Default account and budget are injected only when the LLM doesn't pick a specific one
+- The configured account and budget are appended to the message before LLM parsing, so the LLM resolves the correct budget period and payment date automatically
 
 **How it works**:
 
 1. Mom sends `supermaxi 25.50` to the bot
-2. Bot parses normally, then injects her defaults (account, budget, source=mom, needs_review=1)
-3. She sees a preview and confirms as usual
+2. Bot appends her defaults to the message (e.g. `supermaxi 25.50, Visa Pichincha, Home Groceries budget`) and parses via the same LLM flow as the owner
+3. After parsing, the transaction is tagged with `source=mom` and `needs_review=1`
+4. She sees a preview and confirms as usual
 4. You run `cli.py review ls` to see her transactions, fix categories/budgets, and approve
 
 Multiple extra users are supported — just add more env vars:

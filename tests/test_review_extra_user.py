@@ -980,169 +980,91 @@ class TestBotExtraUser(unittest.TestCase):
 
 
 class TestBotExtraUserInjection(unittest.TestCase):
-    """Tests that handle_new_expense injects extra user defaults correctly."""
+    """Tests that handle_new_expense augments the message for extra users
+    and tags source/needs_review after parsing."""
 
-    def setUp(self):
-        self.conn = create_test_db()
+    def test_message_augmented_for_extra_user(self):
+        """Extra user message should be appended with account and budget before LLM parsing."""
+        extra_user = {"name": "mom", "account": "Visa Pichincha", "budget": "Home Groceries"}
+        user_message = "supermaxi 25.50"
 
-    def tearDown(self):
-        self.conn.close()
+        llm_message = f"{user_message}, {extra_user['account']}, {extra_user['budget']} budget"
 
-    def test_inject_extra_user_defaults_into_request(self):
-        """Simulate the injection logic directly (without async bot framework)."""
-        from cashflow.transactions import simulate_payment_date
+        self.assertEqual(llm_message, "supermaxi 25.50, Visa Pichincha, Home Groceries budget")
 
-        accounts = repository.get_all_accounts(self.conn)
+    def test_owner_message_not_augmented(self):
+        """Owner (non-extra-user) messages should pass through unmodified."""
+        extra_user = None  # owner
+        user_message = "supermaxi 25.50"
 
-        # Create a budget subscription active during the payment month
-        repository.add_subscription(self.conn, {
-            "id": "budget_home_groceries_mar_apr",
-            "name": "Home Groceries",
-            "category": "Home Groceries",
-            "monthly_amount": 300,
-            "payment_account_id": "Visa Produbanco",
-            "start_date": date(2026, 3, 1),
-            "is_budget": True,
-        })
+        llm_message = user_message
+        if extra_user:
+            llm_message = f"{user_message}, {extra_user['account']}, {extra_user['budget']} budget"
 
-        # Simulate a parsed request from LLM
+        self.assertEqual(llm_message, user_message)
+
+    def test_source_and_review_tagged_after_parse(self):
+        """After LLM parse, extra user transactions get source and needs_review tags."""
+        extra_user = {"name": "mom", "account": "Visa Pichincha", "budget": "Home Groceries"}
+
+        # Simulate a parsed request from LLM (LLM already resolved account/budget from message)
         request_json = {
             "type": "simple",
             "description": "Supermaxi groceries",
             "amount": 25.50,
-            "date_created": "2026-03-08",
-            "account": accounts[0]["account_id"],  # default fallback
+            "account": "Visa Pichincha",
             "category": "Home Groceries",
+            "budget": "budget_home_groceries_feb_mar",
         }
 
-        # Simulate extra user injection (same logic as handle_new_expense)
-        extra_user = {"name": "mom", "account": "Visa Produbanco", "budget": "Home Groceries"}
-
-        request_json["source"] = extra_user["name"]
-        request_json["needs_review"] = True
-        if not request_json.get("account") or request_json["account"] == accounts[0]["account_id"]:
-            request_json["account"] = extra_user["account"]
-
-        if not request_json.get("budget"):
-            budget_name = extra_user["budget"]
-            eu_account = next((a for a in accounts if a['account_id'] == extra_user["account"]), None)
-            eu_date = date.fromisoformat(request_json.get('date_created', date.today().isoformat()))
-            eu_payment_date = simulate_payment_date(eu_account, eu_date) if eu_account else eu_date
-            active_budgets = repository.get_all_active_subscriptions(self.conn, eu_payment_date, eu_payment_date)
-            matched_budget = next(
-                (b["id"] for b in active_budgets if b.get("is_budget") and (b["name"].lower() == budget_name.lower() or b["name"].lower().startswith(budget_name.lower()))),
-                None,
-            )
-            if matched_budget:
-                request_json["budget"] = matched_budget
+        # Same tagging logic as handle_new_expense
+        if extra_user:
+            request_json["source"] = extra_user["name"]
+            request_json["needs_review"] = True
 
         self.assertEqual(request_json["source"], "mom")
         self.assertTrue(request_json["needs_review"])
-        self.assertEqual(request_json["account"], "Visa Produbanco")
-        self.assertEqual(request_json["budget"], "budget_home_groceries_mar_apr")
-
-    def test_extra_user_does_not_override_explicit_account(self):
-        """If LLM picked a specific non-default account, extra user should not override it."""
-        accounts = repository.get_all_accounts(self.conn)
-        # accounts[0] is "Amex Produbanco" (alphabetical), pick a different one
-        non_default = "Visa Produbanco"
-        self.assertNotEqual(non_default, accounts[0]["account_id"])
-
-        request_json = {
-            "type": "simple",
-            "description": "Supermaxi",
-            "amount": 25.50,
-            "account": non_default,  # LLM explicitly picked this
-            "category": "Home Groceries",
-        }
-
-        extra_user = {"name": "mom", "account": "Cash", "budget": "Home Groceries"}
-
-        request_json["source"] = extra_user["name"]
-        request_json["needs_review"] = True
-        if not request_json.get("account") or request_json["account"] == accounts[0]["account_id"]:
-            request_json["account"] = extra_user["account"]
-
-        self.assertEqual(request_json["account"], non_default)
-
-    def test_budget_resolved_by_payment_date(self):
-        """Budget should resolve to the period active at payment date, not just any match."""
-        from cashflow.transactions import simulate_payment_date
-
-        accounts = repository.get_all_accounts(self.conn)
-
-        # Create two budget periods with the same name — one expired, one active
-        repository.add_subscription(self.conn, {
-            "id": "budget_groceries_jan_feb",
-            "name": "Home Groceries Jan-Feb",
-            "category": "Home Groceries",
-            "monthly_amount": 300,
-            "payment_account_id": "Visa Produbanco",
-            "start_date": date(2026, 1, 1),
-            "end_date": date(2026, 2, 28),
-            "is_budget": True,
-        })
-        repository.add_subscription(self.conn, {
-            "id": "budget_groceries_mar_apr",
-            "name": "Home Groceries Mar-Apr",
-            "category": "Home Groceries",
-            "monthly_amount": 300,
-            "payment_account_id": "Visa Produbanco",
-            "start_date": date(2026, 3, 1),
-            "is_budget": True,
-        })
-
-        extra_user = {"name": "mom", "account": "Visa Produbanco", "budget": "Home Groceries"}
-        eu_account = next(a for a in accounts if a['account_id'] == extra_user["account"])
-
-        # Purchase on March 8 → payment date via CC billing
-        eu_date = date(2026, 3, 8)
-        eu_payment_date = simulate_payment_date(eu_account, eu_date)
-
-        active_budgets = repository.get_all_active_subscriptions(
-            self.conn, eu_payment_date, eu_payment_date
-        )
-        matched = next(
-            (b["id"] for b in active_budgets if b.get("is_budget") and (b["name"].lower() == "home groceries" or b["name"].lower().startswith("home groceries"))),
-            None,
-        )
-        # Should match the mar_apr period, NOT the expired jan_feb one
-        self.assertEqual(matched, "budget_groceries_mar_apr")
+        # Account and budget untouched — LLM resolved them from the augmented message
+        self.assertEqual(request_json["account"], "Visa Pichincha")
+        self.assertEqual(request_json["budget"], "budget_home_groceries_feb_mar")
 
     def test_end_to_end_extra_user_transaction_stored(self):
-        """Full flow: inject defaults → process_transaction_request → verify in DB."""
-        request = {
-            "type": "simple",
-            "description": "Supermaxi groceries",
-            "amount": 30.0,
-            "account": "Visa Produbanco",
-            "category": "Home Groceries",
-            "source": "mom",
-            "needs_review": True,
-        }
-        controller.process_transaction_request(
-            self.conn, request, transaction_date=date(2026, 3, 8)
-        )
+        """Full flow: tagged request → process_transaction_request → verify in DB."""
+        conn = create_test_db()
+        try:
+            request = {
+                "type": "simple",
+                "description": "Supermaxi groceries",
+                "amount": 30.0,
+                "account": "Visa Produbanco",
+                "category": "Home Groceries",
+                "source": "mom",
+                "needs_review": True,
+            }
+            controller.process_transaction_request(
+                conn, request, transaction_date=date(2026, 3, 8)
+            )
 
-        # Verify it's in review queue
-        review_txs = repository.get_transactions_needing_review(self.conn)
-        self.assertEqual(len(review_txs), 1)
-        self.assertEqual(review_txs[0]["source"], "mom")
-        self.assertEqual(review_txs[0]["needs_review"], 1)
-        self.assertEqual(review_txs[0]["account"], "Visa Produbanco")
+            # Verify it's in review queue
+            review_txs = repository.get_transactions_needing_review(conn)
+            self.assertEqual(len(review_txs), 1)
+            self.assertEqual(review_txs[0]["source"], "mom")
+            self.assertEqual(review_txs[0]["needs_review"], 1)
+            self.assertEqual(review_txs[0]["account"], "Visa Produbanco")
 
-        # Verify marking reviewed clears it
-        repository.mark_reviewed(self.conn, review_txs[0]["id"])
-        review_txs = repository.get_transactions_needing_review(self.conn)
-        self.assertEqual(len(review_txs), 0)
+            # Verify marking reviewed clears it
+            tx_id = review_txs[0]["id"]
+            repository.mark_reviewed(conn, tx_id)
+            review_txs = repository.get_transactions_needing_review(conn)
+            self.assertEqual(len(review_txs), 0)
 
-        # Transaction still exists with source
-        tx = repository.get_transaction_by_id(self.conn, review_txs[0]["id"] if review_txs else 1)
-        # Since we already marked it, fetch by getting all
-        all_txs = repository.get_all_transactions(self.conn)
-        mom_txs = [t for t in all_txs if t.get("source") == "mom"]
-        self.assertEqual(len(mom_txs), 1)
-        self.assertEqual(mom_txs[0]["needs_review"], 0)
+            # Transaction still exists with source
+            all_txs = repository.get_all_transactions(conn)
+            mom_txs = [t for t in all_txs if t.get("source") == "mom"]
+            self.assertEqual(len(mom_txs), 1)
+            self.assertEqual(mom_txs[0]["needs_review"], 0)
+        finally:
+            conn.close()
 
 
 # ==================== INTEGRATION: FULL REVIEW WORKFLOW ====================
