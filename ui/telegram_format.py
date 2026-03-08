@@ -293,7 +293,7 @@ def format_auto_confirm_message(
             emoji = "🟡"
         else:
             emoji = "🟢"
-        msg += f"{emoji} {bname}: ${budget_remaining:,.2f} remaining\n"
+        msg += f"{emoji} {bname}: *${budget_remaining:,.2f} remaining*\n"
 
     return msg
 

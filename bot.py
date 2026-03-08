@@ -107,7 +107,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "💬 _\"Spent 50 on groceries today\"_\n"
         "💬 _\"Bought laptop for 1200 in 12 installments on Visa\"_\n"
         "💬 _\"Income 3000 on Cash\"_\n\n"
-        "I'll parse it, show you a preview, and you can confirm or revise before saving.\n\n"
+        "I'll parse it and save it for you.\n\n"
         "Commands:\n"
         "/help - Show help message\n"
         "/summary - View monthly summary\n"
@@ -125,6 +125,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update):
         return await reject_unauthorized(update)
 
+    extra_user = get_extra_user_info(update)
+
     help_text = (
         "📖 *How to Use Cash Flow Bot*\n\n"
         "*Adding Expenses:*\n"
@@ -132,18 +134,31 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• \"Spent 45.50 on groceries\"\n"
         "• \"Bought TV for 600 in 12 installments\"\n"
         "• \"Split purchase: 30 on groceries, 15 on snacks\"\n\n"
-        "*Confirmation:*\n"
-        "I'll show a preview with buttons:\n"
-        "• ✅ Confirm - Save the transaction\n"
-        "• ✍️ Revise - Make corrections\n\n"
-        "*Making Corrections:*\n"
-        "After clicking Revise, tell me what to change:\n"
-        "• \"Actually it was 45.50 on Visa\"\n"
-        "• \"Change category to entertainment\"\n\n"
+    )
+
+    if should_auto_confirm(extra_user):
+        help_text += (
+            "*Saving:*\n"
+            "Transactions are saved automatically.\n"
+            "You'll see a confirmation with the amount and remaining budget.\n\n"
+        )
+    else:
+        help_text += (
+            "*Confirmation:*\n"
+            "I'll show a preview with buttons:\n"
+            "• ✅ Confirm - Save the transaction\n"
+            "• ✍️ Revise - Make corrections\n\n"
+            "*Making Corrections:*\n"
+            "After clicking Revise, tell me what to change:\n"
+            "• \"Actually it was 45.50 on Visa\"\n"
+            "• \"Change category to entertainment\"\n\n"
+        )
+
+    help_text += (
         "*Commands:*\n"
         "/start - Restart bot\n"
         "/help - Show this help message\n"
-        "/summary - View last 3 months summary\n"
+        "/summary - View monthly budget summary\n"
         "/summary [month] - View specific month (e.g., /summary October)\n"
         "/cancel - Cancel current transaction"
     )
