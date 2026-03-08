@@ -120,7 +120,8 @@ class LLMBackend:
             "LLM_PRE_PARSE_MODEL": "pre_parse_date_and_account",
             "LLM_TRANSACTION_PARSE_MODEL": "parse_transaction_string",
             "LLM_SUBSCRIPTION_PARSE_MODEL": "parse_subscription_string",
-            "LLM_ACCOUNT_PARSE_MODEL": "parse_account_string"
+            "LLM_ACCOUNT_PARSE_MODEL": "parse_account_string",
+            "LLM_EDIT_PARSE_MODEL": "parse_edit_instruction"
         }
 
         for env_var, function_name in function_mapping.items():

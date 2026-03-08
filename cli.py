@@ -448,6 +448,87 @@ def handle_edit_interactive(conn: sqlite3.Connection, args: argparse.Namespace):
             args._backup_skip = True
 
 
+def handle_edit_llm(conn: sqlite3.Connection, args: argparse.Namespace):
+    """Edit a transaction using natural language via LLM."""
+    tx = repository.get_transaction_by_id(conn, args.transaction_id)
+    if not tx:
+        print(f"Error: Transaction {args.transaction_id} not found.")
+        args._backup_skip = True
+        return
+
+    accounts = repository.get_all_accounts(conn)
+    budgets = repository.get_all_budgets(conn)
+
+    print("Parsing edit instruction...")
+    updates = llm_parser.parse_edit_instruction(
+        conn, tx, args.instruction, accounts, budgets
+    )
+
+    if updates is None:
+        print("Error: Failed to parse edit instruction.")
+        args._backup_skip = True
+        return
+
+    if not updates:
+        print("No changes detected from your instruction.")
+        args._backup_skip = True
+        return
+
+    # Extract date_created into new_date (controller takes it separately)
+    new_date = None
+    if 'date_created' in updates:
+        from datetime import date as date_cls
+        new_date = date_cls.fromisoformat(updates.pop('date_created'))
+
+    # Show before/after preview
+    console = Console()
+    table = Table(title=f"Edit Transaction #{args.transaction_id}")
+    table.add_column("Field", style="bold")
+    table.add_column("Current")
+    table.add_column("New", style="green")
+
+    field_labels = {
+        'description': 'Description', 'amount': 'Amount', 'account': 'Account',
+        'category': 'Category', 'budget': 'Budget', 'status': 'Status',
+    }
+    for field, value in updates.items():
+        label = field_labels.get(field, field)
+        current = str(tx.get(field, 'N/A'))
+        table.add_row(label, current, str(value))
+    if new_date:
+        table.add_row("Date", str(tx.get('date_created', 'N/A')), str(new_date))
+
+    console.print(table)
+
+    # Confirm
+    if not getattr(args, 'yes', False):
+        confirm = input("\nApply these changes? [Y/n] ")
+        if confirm.lower() not in ('y', ''):
+            print("Operation cancelled.")
+            args._backup_skip = True
+            return
+
+    parts = [f"#{args.transaction_id}", f'"{args.instruction}"']
+    args._backup_context = " ".join(parts)
+
+    try:
+        if getattr(args, 'all', False):
+            group_info = controller._get_transaction_group_info(conn, args.transaction_id)
+            siblings = group_info.get("siblings", [])
+            if len(siblings) <= 1:
+                controller.process_transaction_edit(conn, args.transaction_id, updates, new_date)
+                print(f"Successfully updated transaction {args.transaction_id}.")
+            else:
+                for sibling in siblings:
+                    controller.process_transaction_edit(conn, sibling['id'], updates, new_date)
+                print(f"Successfully updated {len(siblings)} transactions in group.")
+        else:
+            controller.process_transaction_edit(conn, args.transaction_id, updates, new_date)
+            print(f"Successfully updated transaction {args.transaction_id}.")
+    except (ValueError, sqlite3.Error) as e:
+        print(f"Error updating transaction: {e}")
+
+
 def handle_subscriptions_edit_interactive(conn: sqlite3.Connection, args: argparse.Namespace):
     """Interactive guided subscription edit."""
     from ui.interactive import interactive_edit_subscription
@@ -1852,6 +1933,7 @@ Examples:
 Edit transaction properties like status, amount, category, etc.
 Use --all to apply changes to all transactions in a group (e.g., mark all installments as pending).
 Use -i for interactive guided mode (shows current values, prompts each field).
+Natural language: cli.py edit 42 "change amount to 45.50" (uses LLM).
 
 INTERACTIVE AMOUNT EDITING (-i):
   Bare number (e.g. 99): keeps the original sign (expense stays expense).
@@ -1869,10 +1951,16 @@ Examples:
   cli.py edit 456 --status planning --all    # Change all installments
   cli.py edit 789 --category groceries --budget budget_food
   cli.py edit 123 -i                         # Interactive guided mode
+  cli.py edit 42 "change amount to 45.50"    # Natural language edit
+  cli.py edit 42 "move to home groceries budget" -y  # Skip confirmation
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     edit_parser.add_argument("transaction_id", type=int, help="Transaction ID to edit")
+    edit_parser.add_argument("instruction", nargs="?", default=None,
+                             help="Natural language edit (e.g., 'change amount to 45.50')")
+    edit_parser.add_argument("-y", "--yes", action="store_true",
+                             help="Skip confirmation for natural language edit")
     edit_parser.add_argument("--description", "-d", type=str, help="New description")
     edit_parser.add_argument("--amount", "-a", type=float, help="New amount")
     edit_parser.add_argument("--date", "-D", type=str, help="New creation date (YYYY-MM-DD)")
@@ -2128,6 +2216,8 @@ Configuration via environment variables (or .env):
     elif args.command in ["edit", "e"]:
         if getattr(args, 'interactive', False):
             handle_edit_interactive(conn, args)
+        elif getattr(args, 'instruction', None):
+            handle_edit_llm(conn, args)
         else:
             handle_edit(conn, args)
     elif args.command in ["clear", "cl"]:

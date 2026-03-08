@@ -492,6 +492,145 @@ User: "Create a Christmas shopping budget of 500 for December only on my Visa Pr
     return result
 
 
+def parse_edit_instruction(
+    conn: Connection,
+    existing_transaction: Dict[str, Any],
+    edit_instruction: str,
+    accounts: List[Dict[str, Any]],
+    budgets: List[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """Parse a natural language edit instruction into a dict of changed fields.
+
+    Returns only the fields that should change. Returns {} if no changes,
+    None on LLM failure.
+    """
+    account_names = [acc['account_id'] for acc in accounts]
+
+    budget_info = []
+    for b in budgets:
+        end_str = str(b['end_date']) if b.get('end_date') else "ongoing"
+        budget_info.append({
+            "id": b['id'],
+            "name": b['name'],
+            "active_from": str(b['start_date']),
+            "active_until": end_str
+        })
+
+    categories = repository.get_all_categories(conn)
+    category_names = [cat['name'] for cat in categories]
+    category_descriptions = {cat['name']: cat.get('description', '') for cat in categories}
+    category_info = ", ".join(
+        f"{name} ({desc})" if desc else name
+        for name, desc in category_descriptions.items()
+    )
+
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+    last_monday = _last_weekday(today, 0)
+    last_tuesday = _last_weekday(today, 1)
+    last_wednesday = _last_weekday(today, 2)
+    last_thursday = _last_weekday(today, 3)
+    last_friday = _last_weekday(today, 4)
+    last_sunday = _last_weekday(today, 6)
+
+    # Build current transaction summary for the prompt
+    tx = existing_transaction
+    tx_summary = (
+        f"ID: {tx['id']}\n"
+        f"Description: {tx['description']}\n"
+        f"Amount: {tx['amount']}\n"
+        f"Date: {tx['date_created']}\n"
+        f"Account: {tx['account']}\n"
+        f"Category: {tx.get('category', 'N/A')}\n"
+        f"Budget: {tx.get('budget', 'none')}\n"
+        f"Status: {tx['status']}"
+    )
+
+    system_prompt = f"""You are a financial transaction editor. Given the current state of a transaction and the user's edit instruction, return ONLY the fields that should change as a JSON object.
+
+**Current transaction:**
+{tx_summary}
+
+**Today: {today.strftime('%A, %B %d, %Y')} ({today.isoformat()})**
+
+**Pre-computed relative dates:**
+- Yesterday: {yesterday.isoformat()}
+- Last Monday: {last_monday.isoformat()}
+- Last Tuesday: {last_tuesday.isoformat()}
+- Last Wednesday: {last_wednesday.isoformat()}
+- Last Thursday: {last_thursday.isoformat()}
+- Last Friday: {last_friday.isoformat()}
+- Last Sunday: {last_sunday.isoformat()}
+
+**Valid accounts:** {account_names}
+**Valid categories (with descriptions):** {category_info}
+**Available budgets:** {json.dumps(budget_info, indent=2)}
+
+**Rules:**
+1. Return ONLY the fields that change. Do NOT include unchanged fields.
+2. Return empty {{}} if the instruction doesn't imply any changes.
+3. **Amount sign:** Preserve the current sign convention. If the current amount is negative (expense), keep the new amount negative. If positive (income), keep positive. Only flip the sign if the user explicitly says "make it income" or "make it an expense".
+4. **Budget:** Return the budget **ID** (not the name). Match the user's words to the budget name, then return the ID. Use "none" to remove a budget.
+5. **Date:** Use ISO format (YYYY-MM-DD) for the `date_created` field.
+6. **Account:** Must be exactly one of the valid account names.
+7. **Category:** Must exactly match one of the valid categories.
+8. **Status:** Must be one of: committed, pending, planning, forecast.
+
+**Editable fields:** description, amount, date_created, account, category, budget, status
+
+**Output ONLY JSON (no markdown, no explanation).**
+
+**Examples:**
+
+User: "change amount to 45.50"
+(current amount is -30.00)
+{{"amount": -45.50}}
+
+User: "change description to Amazon Books"
+{{"description": "Amazon Books"}}
+
+User: "change date to march 5"
+{{"date_created": "2026-03-05"}}
+
+User: "move to personal groceries budget"
+{{"budget": "budget_groceries_mar_apr"}}
+
+User: "change category to Dining-Snacks and amount to 12"
+(current amount is -8.50)
+{{"category": "Dining-Snacks", "amount": -12.00}}
+
+User: "mark as pending"
+{{"status": "pending"}}"""
+
+    response_text = _call_llm(
+        system_prompt=system_prompt,
+        user_input=edit_instruction,
+        function_name="parse_edit_instruction"
+    )
+
+    if not response_text:
+        logger.error("LLM call failed for edit instruction parsing.")
+        return None
+
+    try:
+        result = json.loads(response_text)
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.error(f"Failed to decode JSON from edit LLM response: {e}")
+        logger.error(f"Raw response: {response_text}")
+        return None
+
+    # Post-process: resolve account name if present
+    if 'account' in result:
+        result['account'] = resolve_account(result['account'], accounts, default=tx['account'])
+
+    # Validate category if present
+    if 'category' in result and result['category'] not in category_names:
+        logger.warning(f"LLM returned invalid category '{result['category']}', dropping field")
+        del result['category']
+
+    return result
+
+
 def parse_account_string(user_input: str) -> Dict[str, Any]:
     """Parse a natural language string into a structured JSON object for creating a new account."""
     system_prompt = f"""
