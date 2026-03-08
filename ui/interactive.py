@@ -694,3 +694,226 @@ def interactive_add_subscription(conn):
     except (KeyboardInterrupt, EOFError):
         console.print("\n[yellow]Cancelled.[/yellow]")
         return None
+
+def interactive_edit_transaction(conn, transaction_id):
+    """Interactive step-by-step transaction edit. Returns (updates_dict, new_date_or_None) or None."""
+    try:
+        tx = repository.get_transaction_by_id(conn, transaction_id)
+        if not tx:
+            console.print(f"[red]Transaction {transaction_id} not found.[/red]")
+            return None
+
+        console.print(f"[bold]Editing Transaction {transaction_id}[/bold]")
+        console.print("Press Enter to keep current value. Ctrl+C to cancel.\n")
+
+        # Show current values
+        table = Table(title="Current Values", show_header=True, header_style="bold cyan")
+        table.add_column("Field", style="dim")
+        table.add_column("Value")
+        table.add_row("Description", tx['description'])
+        table.add_row("Amount", f"{abs(tx['amount']):.2f}")
+        table.add_row("Date Created", str(tx['date_created']))
+        table.add_row("Account", tx['account'])
+        table.add_row("Category", tx.get('category') or '')
+        table.add_row("Budget", tx.get('budget') or '')
+        table.add_row("Status", tx['status'])
+        console.print(table)
+        console.print()
+
+        # Prompt each field
+        description = prompt_text("Description", default=tx['description'])
+        if description is None:
+            return None
+
+        current_amount = abs(tx['amount'])
+        amount = prompt_amount("Amount", default=current_amount)
+        if amount is None:
+            return None
+
+        current_date = date.fromisoformat(str(tx['date_created']))
+        new_date = prompt_date("Date created", default=current_date)
+        if new_date is None:
+            return None
+
+        categories = repository.get_all_categories(conn)
+        current_cat = tx.get('category') or ''
+        console.print(f"\n[dim]Current category: {current_cat or '(none)'}[/dim]")
+        category = prompt_select("Category", categories, _format_category, allow_skip=True)
+        category_name = category['name'] if category else current_cat or None
+
+        # Get budgets for the payment month
+        payment_date_str = str(tx['date_payed'])
+        payment_date = date.fromisoformat(payment_date_str)
+        payment_month = date(payment_date.year, payment_date.month, 1)
+        budgets = repository.get_all_budgets_with_status(conn, payment_month)
+        active_budgets = []
+        for b in budgets:
+            if b['status'] == 'Active':
+                b['_spent'] = repository.get_total_spent_for_budget_in_month(
+                    conn, b['id'], payment_month)
+                active_budgets.append(b)
+
+        current_budget = tx.get('budget') or ''
+        console.print(f"[dim]Current budget: {current_budget or '(none)'}[/dim]")
+        budget = prompt_select("Budget", active_budgets, _format_budget, allow_skip=True) if active_budgets else None
+        budget_id = budget['id'] if budget else current_budget or None
+
+        status = prompt_choice("Status", ["committed", "pending", "planning"], default=tx['status'])
+        if status is None:
+            return None
+
+        # Build updates with only changed fields
+        updates = {}
+        if description != tx['description']:
+            updates['description'] = description
+        if amount != current_amount:
+            # Preserve sign
+            updates['amount'] = -amount if tx['amount'] < 0 else amount
+        if category_name != (tx.get('category') or None):
+            updates['category'] = category_name
+        if budget_id != (tx.get('budget') or None):
+            updates['budget'] = budget_id
+        if status != tx['status']:
+            updates['status'] = status
+
+        date_changed = new_date != current_date
+
+        if not updates and not date_changed:
+            console.print("[yellow]No changes.[/yellow]")
+            return None
+
+        # Show changes
+        changes_table = Table(title="Changes", show_header=True, header_style="bold cyan")
+        changes_table.add_column("Field", style="dim")
+        changes_table.add_column("Old")
+        changes_table.add_column("New")
+        for field, new_val in updates.items():
+            old_val = tx.get(field, '')
+            changes_table.add_row(field, str(old_val), str(new_val))
+        if date_changed:
+            changes_table.add_row("date_created", str(current_date), str(new_date))
+        console.print(changes_table)
+
+        confirm = prompt_yes_no("\nApply changes?", default=True)
+        if not confirm:
+            console.print("[yellow]Cancelled.[/yellow]")
+            return None
+
+        return (updates, new_date if date_changed else None)
+
+    except (KeyboardInterrupt, EOFError):
+        console.print("\n[yellow]Cancelled.[/yellow]")
+        return None
+
+
+def interactive_edit_subscription(conn, subscription_id):
+    """Interactive step-by-step subscription edit. Returns updates dict or None."""
+    try:
+        sub = repository.get_subscription_by_id(conn, subscription_id)
+        if not sub:
+            console.print(f"[red]Subscription '{subscription_id}' not found.[/red]")
+            return None
+
+        console.print(f"[bold]Editing Subscription: {subscription_id}[/bold]")
+        console.print("Press Enter to keep current value. Ctrl+C to cancel.\n")
+
+        # Show current values
+        table = Table(title="Current Values", show_header=True, header_style="bold cyan")
+        table.add_column("Field", style="dim")
+        table.add_column("Value")
+        table.add_row("Name", sub['name'])
+        table.add_row("Amount", f"${sub['monthly_amount']:.2f}")
+        table.add_row("Account", sub['payment_account_id'])
+        table.add_row("Category", sub.get('category', ''))
+        table.add_row("Start", str(sub['start_date']))
+        table.add_row("End", str(sub.get('end_date')) if sub.get('end_date') else "Ongoing")
+        if sub.get('is_budget'):
+            table.add_row("Underspend", sub.get('underspend_behavior', 'keep'))
+        console.print(table)
+        console.print()
+
+        # Prompt each editable field
+        name = prompt_text("Name", default=sub['name'])
+        if name is None:
+            return None
+
+        amount = prompt_amount("Monthly amount", default=sub['monthly_amount'])
+        if amount is None:
+            return None
+
+        accounts = repository.get_all_accounts(conn)
+        console.print(f"\n[dim]Current account: {sub['payment_account_id']}[/dim]")
+        account = prompt_select("Account", accounts, _format_account, allow_skip=True)
+        account_id = account['account_id'] if account else sub['payment_account_id']
+
+        # End date
+        change_end = prompt_yes_no("Change end date?", default=False)
+        if change_end is None:
+            return None
+        end_date = sub.get('end_date')
+        end_date_changed = False
+        if change_end:
+            clear_end = prompt_yes_no("Remove end date (make ongoing)?", default=False)
+            if clear_end is None:
+                return None
+            if clear_end:
+                end_date = None
+                end_date_changed = True
+            else:
+                current_end = date.fromisoformat(str(sub['end_date'])) if sub.get('end_date') else date.today()
+                end_date = prompt_date("End date", default=current_end)
+                if end_date is None:
+                    return None
+                end_date_changed = True
+
+        # Underspend (budgets only)
+        underspend = sub.get('underspend_behavior', 'keep')
+        underspend_changed = False
+        if sub.get('is_budget'):
+            new_underspend = prompt_choice("Underspend behavior", ["keep", "return"], default=underspend)
+            if new_underspend is None:
+                return None
+            if new_underspend != underspend:
+                underspend = new_underspend
+                underspend_changed = True
+
+        # Build updates with only changed fields
+        updates = {}
+        if name != sub['name']:
+            updates['name'] = name
+        if amount != sub['monthly_amount']:
+            updates['monthly_amount'] = amount
+        if account_id != sub['payment_account_id']:
+            updates['payment_account_id'] = account_id
+        if end_date_changed:
+            if end_date is None:
+                updates['end_date'] = None
+            else:
+                updates['end_date'] = end_date if isinstance(end_date, date) else date.fromisoformat(str(end_date))
+        if underspend_changed:
+            updates['underspend_behavior'] = underspend
+
+        if not updates:
+            console.print("[yellow]No changes.[/yellow]")
+            return None
+
+        # Show changes
+        changes_table = Table(title="Changes", show_header=True, header_style="bold cyan")
+        changes_table.add_column("Field", style="dim")
+        changes_table.add_column("Old")
+        changes_table.add_column("New")
+        for field, new_val in updates.items():
+            old_val = sub.get(field, '')
+            changes_table.add_row(field, str(old_val) if old_val else "(none)", str(new_val) if new_val else "(none)")
+        console.print(changes_table)
+
+        confirm = prompt_yes_no("\nApply changes?", default=True)
+        if not confirm:
+            console.print("[yellow]Cancelled.[/yellow]")
+            return None
+
+        return updates
+
+    except (KeyboardInterrupt, EOFError):
+        console.print("\n[yellow]Cancelled.[/yellow]")
+        return None
