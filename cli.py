@@ -449,7 +449,7 @@ def handle_add(conn: sqlite3.Connection, args: argparse.Namespace):
             transaction_date = None
             if "date_created" in request_json:
                 transaction_date = date.fromisoformat(request_json["date_created"])
-            controller.process_transaction_request(conn, request_json, transaction_date=transaction_date)
+            controller.process_transaction_request(conn, request_json, transaction_date=transaction_date, user_input=args.description, source="cli")
         else:
             print("Operation cancelled.")
 

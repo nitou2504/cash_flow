@@ -341,7 +341,8 @@ async def handle_confirm(query, context: ContextTypes.DEFAULT_TYPE):
         if "date_created" in pending_tx:
             trans_date = date.fromisoformat(pending_tx["date_created"])
 
-        controller.process_transaction_request(db_conn, pending_tx, transaction_date=trans_date)
+        original_input = context.user_data.get('original_message', '')
+        controller.process_transaction_request(db_conn, pending_tx, transaction_date=trans_date, user_input=original_input, source="telegram")
 
         # Get updated balance (optional - could query from DB)
         # For now, just show success without balance
