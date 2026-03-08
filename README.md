@@ -419,6 +419,8 @@ A companion chatbot for tracking expenses on-the-go. Requires an LLM provider (s
 
    To find your Telegram user ID, send a message to [@userinfobot](https://t.me/userinfobot) on Telegram.
 
+   Optional: `TELEGRAM_AUTO_CONFIRM` controls whether transactions skip the preview+confirm step. Values: `extra_users_only` (default), `all`, `none`. See [Extra Users](#extra-users-delegates) for details.
+
 3. **Start the bot**
 
    ```bash
@@ -498,8 +500,18 @@ Format: `TELEGRAM_EXTRA_USER_<NAME>=telegram_user_id,default_account,default_bud
 1. Mom sends `supermaxi 25.50` to the bot
 2. Bot appends her defaults to the message (e.g. `supermaxi 25.50, Visa Pichincha, Home Groceries budget`) and parses via the same LLM flow as the owner
 3. After parsing, the transaction is tagged with `source=mom` and `needs_review=1`
-4. She sees a preview and confirms as usual
-4. You run `cli.py review ls` to see her transactions, fix categories/budgets, and approve
+4. Transaction is **auto-saved** — she sees a compact reply with date, description, amount, and remaining budget (no confirm/revise buttons)
+5. You run `cli.py review ls` to see her transactions, fix categories/budgets, and approve
+
+**Simplified `/summary` for extra users**: Shows only their configured budget (prefix-matched), no planning toggle. Defaults to the current payment month for their account.
+
+**Auto-confirm behavior** is controlled by `TELEGRAM_AUTO_CONFIRM`:
+
+| Value | Behavior |
+|---|---|
+| `extra_users_only` (default) | Extra users auto-save, owner gets preview + confirm/revise |
+| `all` | Everyone auto-saves (no preview step) |
+| `none` | Everyone gets preview + confirm/revise (original flow) |
 
 Multiple extra users are supported — just add more env vars:
 

@@ -1176,5 +1176,138 @@ class TestFullReviewWorkflow(unittest.TestCase):
         self.assertEqual(remaining[0]["source"], "dad")
 
 
+# ==================== AUTO-CONFIRM & SIMPLIFIED SUMMARY ====================
+
+class TestShouldAutoConfirm(unittest.TestCase):
+    """Tests for should_auto_confirm helper."""
+
+    @patch('bot.TELEGRAM_AUTO_CONFIRM', 'extra_users_only')
+    def test_extra_users_only_with_extra_user(self):
+        from bot import should_auto_confirm
+        self.assertTrue(should_auto_confirm({"name": "mom", "account": "Visa", "budget": "Home"}))
+
+    @patch('bot.TELEGRAM_AUTO_CONFIRM', 'extra_users_only')
+    def test_extra_users_only_with_owner(self):
+        from bot import should_auto_confirm
+        self.assertFalse(should_auto_confirm(None))
+
+    @patch('bot.TELEGRAM_AUTO_CONFIRM', 'all')
+    def test_all_mode_with_owner(self):
+        from bot import should_auto_confirm
+        self.assertTrue(should_auto_confirm(None))
+
+    @patch('bot.TELEGRAM_AUTO_CONFIRM', 'all')
+    def test_all_mode_with_extra_user(self):
+        from bot import should_auto_confirm
+        self.assertTrue(should_auto_confirm({"name": "mom"}))
+
+    @patch('bot.TELEGRAM_AUTO_CONFIRM', 'none')
+    def test_none_mode_with_extra_user(self):
+        from bot import should_auto_confirm
+        self.assertFalse(should_auto_confirm({"name": "mom"}))
+
+    @patch('bot.TELEGRAM_AUTO_CONFIRM', 'none')
+    def test_none_mode_with_owner(self):
+        from bot import should_auto_confirm
+        self.assertFalse(should_auto_confirm(None))
+
+
+class TestFormatAutoConfirm(unittest.TestCase):
+    """Tests for format_auto_confirm_message."""
+
+    def test_with_budget(self):
+        from ui.telegram_format import format_auto_confirm_message
+        request = {
+            "description": "Megamaxi - Detergente",
+            "amount": 6.77,
+            "date_created": "2026-03-08",
+        }
+        msg = format_auto_confirm_message(
+            request, date(2026, 4, 1),
+            budget_remaining=193.23, budget_name="budget_home_groceries_feb_mar",
+            budget_allocated=200.0,
+        )
+        self.assertIn("Saved!", msg)
+        self.assertIn("Mar 08", msg)
+        self.assertIn("Apr 01", msg)
+        self.assertIn("Megamaxi", msg)
+        self.assertIn("-$6.77", msg)
+        self.assertIn("193.23", msg)
+        self.assertIn("Budget Home Groceries Feb Mar", msg)
+        # Healthy budget → green
+        self.assertIn("🟢", msg)
+
+    def test_without_budget(self):
+        from ui.telegram_format import format_auto_confirm_message
+        request = {
+            "description": "Random purchase",
+            "amount": 10.00,
+            "date_created": "2026-03-08",
+        }
+        msg = format_auto_confirm_message(request, date(2026, 3, 8))
+        self.assertIn("Saved!", msg)
+        self.assertIn("-$10.00", msg)
+        self.assertNotIn("remaining", msg)
+
+    def test_over_budget_shows_red(self):
+        from ui.telegram_format import format_auto_confirm_message
+        request = {"description": "Test", "amount": 5.0, "date_created": "2026-03-08"}
+        msg = format_auto_confirm_message(
+            request, date(2026, 4, 1),
+            budget_remaining=-10.0, budget_name="budget_food",
+            budget_allocated=100.0,
+        )
+        self.assertIn("🔴", msg)
+
+    def test_yellow_when_over_80_pct(self):
+        from ui.telegram_format import format_auto_confirm_message
+        request = {"description": "Test", "amount": 5.0, "date_created": "2026-03-08"}
+        # allocated=100, spent=85, remaining=15 → 85% spent → yellow
+        msg = format_auto_confirm_message(
+            request, date(2026, 4, 1),
+            budget_remaining=15.0, budget_name="budget_food",
+            budget_allocated=100.0,
+        )
+        self.assertIn("🟡", msg)
+
+
+class TestSummaryNavigationButtonsSimple(unittest.TestCase):
+    """Tests for format_summary_navigation_buttons_simple."""
+
+    def test_buttons_structure(self):
+        from ui.telegram_format import format_summary_navigation_buttons_simple
+        markup = format_summary_navigation_buttons_simple(date(2026, 3, 1))
+        keyboard = markup.inline_keyboard
+        # Single row, 2 buttons
+        self.assertEqual(len(keyboard), 1)
+        self.assertEqual(len(keyboard[0]), 2)
+        self.assertIn("Prev", keyboard[0][0].text)
+        self.assertIn("Next", keyboard[0][1].text)
+
+    def test_callback_data_format(self):
+        from ui.telegram_format import format_summary_navigation_buttons_simple
+        markup = format_summary_navigation_buttons_simple(date(2026, 3, 1))
+        buttons = markup.inline_keyboard[0]
+        self.assertEqual(buttons[0].callback_data, "summary:2026-02:budget")
+        self.assertEqual(buttons[1].callback_data, "summary:2026-04:budget")
+
+
+class TestSummaryBudgetFilterPrefixMatch(unittest.TestCase):
+    """Tests for extra user budget filtering in summary."""
+
+    def test_prefix_filter(self):
+        """Budget data should be filtered by extra user's budget prefix."""
+        budget_data = [
+            {"name": "home_groceries_feb_mar", "allocated": 200, "spent": 50, "remaining": 150, "status": "active"},
+            {"name": "home_groceries_mar_apr", "allocated": 200, "spent": 0, "remaining": 200, "status": "forecast"},
+            {"name": "personal_groceries_feb_mar", "allocated": 100, "spent": 30, "remaining": 70, "status": "active"},
+        ]
+        extra_user = {"name": "mom", "account": "Visa Pichincha", "budget": "home_groceries"}
+        prefix = extra_user['budget'].lower()
+        filtered = [b for b in budget_data if b['name'].lower().startswith(prefix)]
+        self.assertEqual(len(filtered), 2)
+        self.assertTrue(all("home_groceries" in b['name'] for b in filtered))
+
+
 if __name__ == "__main__":
     unittest.main()
