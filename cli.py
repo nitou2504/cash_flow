@@ -349,6 +349,53 @@ def handle_add_interactive(conn: sqlite3.Connection):
         controller.process_transaction_request(conn, request, transaction_date=transaction_date)
 
 
+def handle_create_transaction(conn: sqlite3.Connection, args: argparse.Namespace):
+    """Creates a transaction from explicit flags (no LLM, no confirmation)."""
+    transaction_date = date.fromisoformat(args.date) if args.date else date.today()
+
+    if args.pending and args.planning:
+        print("Error: --pending and --planning are mutually exclusive.")
+        return
+
+    if args.installments:
+        if args.installments < 2:
+            print("Error: --installments must be at least 2.")
+            return
+        request = {
+            "type": "installment",
+            "description": args.description,
+            "total_amount": args.amount,
+            "installments": args.installments - args.start_installment + 1,
+            "total_installments": args.installments,
+            "start_from_installment": args.start_installment,
+            "account": args.account,
+            "category": args.category,
+            "budget": args.budget,
+            "grace_period_months": args.grace_period,
+            "is_income": args.income,
+            "is_pending": args.pending,
+            "is_planning": args.planning,
+        }
+    else:
+        if args.start_installment != 1:
+            print("Error: --start-installment requires --installments.")
+            return
+        request = {
+            "type": "simple",
+            "description": args.description,
+            "amount": args.amount,
+            "account": args.account,
+            "category": args.category,
+            "budget": args.budget,
+            "grace_period_months": args.grace_period,
+            "is_income": args.income,
+            "is_pending": args.pending,
+            "is_planning": args.planning,
+        }
+
+    controller.process_transaction_request(conn, request, transaction_date=transaction_date)
+
+
 def handle_add(conn: sqlite3.Connection, args: argparse.Namespace):
     """Parses a natural language string to add a transaction using LLM."""
     if args.import_file:
@@ -1055,10 +1102,10 @@ COMMON WORKFLOWS:
 
 ALIASES:
   Most commands have short aliases (shown in brackets below):
-  - accounts [acc, a]    - subscriptions [sub, s]    - view [v]
-  - categories [cat, c]  - export [exp, x]           - edit [e]
-  - delete [del, d]      - clear [cl]                - fix [f]
-  - backup [bk]
+  - create [cr]          - accounts [acc, a]         - view [v]
+  - subscriptions [sub, s] - categories [cat, c]     - edit [e]
+  - export [exp, x]      - delete [del, d]           - fix [f]
+  - clear [cl]           - backup [bk]
 
 For detailed help on any command: cli.py COMMAND -h
         """,
@@ -1107,6 +1154,122 @@ CSV import:
     add_parser.add_argument("--installments", action="store_true",
                             help="Treat CSV as installment format (use with --import)")
 
+    # ==================== EXPLICIT CREATION (SCRIPTABLE) ====================
+
+    create_parser = subparsers.add_parser(
+        "create",
+        aliases=["cr"],
+        help="Create entities with explicit parameters (no LLM)",
+        description="""
+Create transactions, accounts, budgets, or categories with explicit parameters.
+No LLM, no confirmation prompts. Good for automation, tests, and seeding.
+
+Subcommands:
+  transaction [tx, t]   Create a transaction
+  account [acc, a]      Create an account
+  budget [bud, b]       Create a budget/subscription
+  category [cat, c]     Create a category
+
+Examples:
+  cli.py create transaction "Supermaxi groceries" 45.50 Cash -c groceries
+  cli.py create account Cash cash
+  cli.py create budget "Groceries" 300 Cash groceries
+  cli.py create category dining "Eating out, takeout, coffee"
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    create_subparsers = create_parser.add_subparsers(
+        dest="create_entity", required=True, title="Entity Types", metavar="ENTITY",
+    )
+
+    # create transaction
+    create_tx_parser = create_subparsers.add_parser(
+        "transaction",
+        aliases=["tx", "t"],
+        help="Create a transaction with explicit parameters",
+        description="""
+Create a transaction directly from flags (no LLM, no confirmation).
+
+Examples:
+  cli.py create transaction "Supermaxi groceries" 45.50 Cash -c groceries
+  cli.py create transaction "Laptop" 1200 VisaCard -n 12 -c electronics
+  cli.py create transaction "Phone plan" 600 VisaCard -n 12 --start-installment 5
+  cli.py create transaction "Salary" 3000 Cash --income
+  cli.py create transaction "Maybe a TV" 800 Cash --planning
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    create_tx_parser.add_argument("description", help="Transaction description")
+    create_tx_parser.add_argument("amount", type=float, help="Amount (or total for installments)")
+    create_tx_parser.add_argument("account", help="Account ID")
+    create_tx_parser.add_argument("--category", "-c", help="Category name")
+    create_tx_parser.add_argument("--budget", "-b", help="Budget ID")
+    create_tx_parser.add_argument("--date", "-d", help="Transaction date (YYYY-MM-DD, default: today)")
+    create_tx_parser.add_argument("--installments", "-n", type=int, help="Number of installments (promotes amount to total)")
+    create_tx_parser.add_argument("--start-installment", type=int, default=1, help="Starting installment number (default: 1, use with --installments)")
+    create_tx_parser.add_argument("--grace-period", "-g", type=int, default=0, help="Grace period in months")
+    create_tx_parser.add_argument("--income", action="store_true", default=False, help="Mark as income (positive amount)")
+    create_tx_parser.add_argument("--pending", action="store_true", default=False, help="Mark as pending")
+    create_tx_parser.add_argument("--planning", action="store_true", default=False, help="Mark as planning")
+
+    # create account
+    create_acc_parser = create_subparsers.add_parser(
+        "account",
+        aliases=["acc", "a"],
+        help="Create an account with explicit parameters",
+        description="""
+Create a new account with explicit parameters.
+
+Examples:
+  cli.py create account Cash cash
+  cli.py create account VisaCard credit_card --cut-off-day 25 --payment-day 5
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    create_acc_parser.add_argument("id", help="Unique account ID/name (e.g., 'Cash', 'VisaCard')")
+    create_acc_parser.add_argument("type", choices=["cash", "credit_card"], help="Account type")
+    create_acc_parser.add_argument("--cut-off-day", "-c", type=int, help="Statement cut-off day (1-31, credit cards only)")
+    create_acc_parser.add_argument("--payment-day", "-p", type=int, help="Payment due day (1-31, credit cards only)")
+
+    # create budget
+    create_bud_parser = create_subparsers.add_parser(
+        "budget",
+        aliases=["bud", "b"],
+        help="Create a budget/subscription with explicit parameters",
+        description="""
+Create a budget or subscription with explicit parameters.
+
+Examples:
+  cli.py create budget "Groceries" 300 Cash groceries
+  cli.py create budget "Netflix" 15.99 VisaCard entertainment --start 2026-02-01
+  cli.py create budget "Vacation" 200 Cash savings --start 2026-02-01 --end 2026-12-31
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    create_bud_parser.add_argument("name", help="Budget name (e.g., 'Groceries', 'Netflix')")
+    create_bud_parser.add_argument("amount", type=float, help="Monthly amount in dollars")
+    create_bud_parser.add_argument("account", help="Account ID to charge")
+    create_bud_parser.add_argument("category", help="Category name")
+    create_bud_parser.add_argument("--start", "-s", type=str, help="Start date YYYY-MM-DD (default: today)")
+    create_bud_parser.add_argument("--end", "-e", type=str, help="End date YYYY-MM-DD (omit for ongoing)")
+    create_bud_parser.add_argument("--underspend", "-u", choices=["keep", "return"], help="Unused budget behavior: 'keep' or 'return'")
+
+    # create category
+    create_cat_parser = create_subparsers.add_parser(
+        "category",
+        aliases=["cat", "c"],
+        help="Create a new category",
+        description="""
+Create a new category with a description for LLM auto-categorization.
+
+Examples:
+  cli.py create category dining "Eating out, takeout, coffee"
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    create_cat_parser.add_argument("name", help="Category name (lowercase, no spaces)")
+    create_cat_parser.add_argument("description", help="What this category covers")
+
     # ==================== ACCOUNT MANAGEMENT ====================
 
     # Accounts command
@@ -1128,20 +1291,9 @@ CSV import:
         help="List all accounts with their details"
     )
 
-    acc_add_manual_parser = acc_subparsers.add_parser(
-        "add-manual",
-        aliases=["am"],
-        help="Add account manually with specific parameters",
-        description="Add a new account with explicit parameters (use 'add-natural' for easier setup)"
-    )
-    acc_add_manual_parser.add_argument("id", help="Unique account ID/name (e.g., 'Cash', 'VisaCard')")
-    acc_add_manual_parser.add_argument("type", choices=["cash", "credit_card"], help="Account type")
-    acc_add_manual_parser.add_argument("--cut-off-day", "-c", type=int, help="Statement cut-off day (1-31, required for credit cards)")
-    acc_add_manual_parser.add_argument("--payment-day", "-p", type=int, help="Payment due day (1-31, required for credit cards)")
-
     acc_add_natural_parser = acc_subparsers.add_parser(
-        "add-natural",
-        aliases=["an"],
+        "add",
+        aliases=["a", "an"],
         help="Add account using natural language (recommended)",
         description="""
 Add a new account using natural language.
@@ -1253,20 +1405,6 @@ Budgets automatically allocate funds each month and track spending against limit
     )
     subscriptions_list_parser.add_argument("--all", "-a", action="store_true", help="Include expired budgets/subscriptions")
     subscriptions_list_parser.add_argument("--budgets-only", "-b", action="store_true", help="Show only budgets (exclude subscriptions)")
-
-    subscriptions_add_parser = subscriptions_subparsers.add_parser(
-        "add-manual",
-        aliases=["am"],
-        help="Add budget/subscription with specific parameters",
-        description="Manually configure a budget or subscription with all parameters"
-    )
-    subscriptions_add_parser.add_argument("name", help="Budget name (e.g., 'Groceries', 'Netflix')")
-    subscriptions_add_parser.add_argument("amount", type=float, help="Monthly amount in dollars")
-    subscriptions_add_parser.add_argument("account", help="Account ID to charge")
-    subscriptions_add_parser.add_argument("category", help="Category name")
-    subscriptions_add_parser.add_argument("--start", "-s", type=str, help="Start date YYYY-MM-DD (default: today)")
-    subscriptions_add_parser.add_argument("--end", "-e", type=str, help="End date YYYY-MM-DD (omit for ongoing)")
-    subscriptions_add_parser.add_argument("--underspend", "-u", choices=["keep", "return"], help="Unused budget behavior: 'keep' leaves leftover in place for untracked purchases, 'return' releases it back to free balance (default: keep)")
 
     subscriptions_add_llm_parser = subscriptions_subparsers.add_parser(
         "add",
@@ -1546,12 +1684,19 @@ Configuration via environment variables (or .env):
         handle_backup(db_path, args)
     elif args.command == "add":
         handle_add(conn, args)
+    elif args.command in ["create", "cr"]:
+        if args.create_entity in ["transaction", "tx", "t"]:
+            handle_create_transaction(conn, args)
+        elif args.create_entity in ["account", "acc", "a"]:
+            handle_accounts_add_manual(conn, args)
+        elif args.create_entity in ["budget", "bud", "b"]:
+            handle_subscriptions_add_manual(conn, args)
+        elif args.create_entity in ["category", "cat", "c"]:
+            handle_categories_add(conn, args)
     elif args.command in ["accounts", "acc", "a"]:
         if args.subcommand in ["list", "ls", "l"]:
             handle_accounts_list(conn)
-        elif args.subcommand in ["add-manual", "am"]:
-            handle_accounts_add_manual(conn, args)
-        elif args.subcommand in ["add-natural", "an"]:
+        elif args.subcommand in ["add", "a", "an"]:
             handle_accounts_add_natural(conn, args)
         elif args.subcommand in ["adjust-billing", "ab"]:
             handle_accounts_adjust_billing(conn, args)
@@ -1567,8 +1712,6 @@ Configuration via environment variables (or .env):
     elif args.command in ["subscriptions", "sub", "s"]:
         if args.subcommand in ["list", "ls", "l"]:
             handle_subscriptions_list(conn, args)
-        elif args.subcommand in ["add-manual", "am"]:
-            handle_subscriptions_add_manual(conn, args)
         elif args.subcommand in ["add", "a"]:
             handle_subscriptions_add_llm(conn, args)
         elif args.subcommand in ["edit", "e"]:

@@ -231,7 +231,7 @@ Use navigation buttons to browse months or toggle between budget and planning vi
 3. **Set up your first account**
 
    ```bash
-   python3 cli.py accounts add-manual Cash cash
+   python3 cli.py create account Cash cash
    ```
 
    The database ships with 11 default categories (Housing, Home Groceries, Personal Groceries, Dining-Snacks, Transportation, Health, Personal, Income, Savings, Loans, Others). You can add custom ones with `python3 cli.py categories add <name> "<description>"` — the description is a short explanation of what the category covers (e.g., "Eating out, takeout, coffee"), which the LLM uses to pick the right category automatically.
@@ -692,6 +692,93 @@ python3 cli.py clear 456 --all  # Commit all installments
 
 ---
 
+### Explicit Creation (`create`)
+
+The `create` command (alias `cr`) provides scriptable, flag-based entity creation with no LLM and no confirmation prompts. Good for automation, tests, and seeding.
+
+#### `create transaction` - Create a transaction with explicit parameters
+
+```bash
+# Simple expense
+python3 cli.py create transaction "Supermaxi groceries" 45.50 Cash -c groceries
+
+# With budget
+python3 cli.py create transaction "Supermaxi groceries" 45.50 Cash -c groceries -b budget_groceries_feb_mar
+
+# Income
+python3 cli.py create transaction "Salary" 3000 Cash --income
+
+# Installments (12 monthly payments of 100 each)
+python3 cli.py create transaction "Laptop" 1200 VisaCard -n 12 -c electronics
+
+# Partial installments (starting from 5th of 12)
+python3 cli.py create transaction "Phone plan" 600 VisaCard -n 12 --start-installment 5
+
+# Specific date
+python3 cli.py create transaction "Dinner" 25 Cash -d 2026-03-01 -c dining
+
+# Pending / planning
+python3 cli.py create transaction "Friend owes me 50" 50 Cash --pending
+python3 cli.py create transaction "Maybe a TV" 800 Cash --planning
+```
+
+**Parameters**:
+
+| Positional      | Description                                      |
+|-----------------|--------------------------------------------------|
+| `description`   | Transaction description                          |
+| `amount`        | Amount (or total for installments)               |
+| `account`       | Account ID                                       |
+
+| Flag                    | Description                                           |
+|-------------------------|-------------------------------------------------------|
+| `--category, -c`        | Category name                                         |
+| `--budget, -b`          | Budget ID                                             |
+| `--date, -d`            | Transaction date YYYY-MM-DD (default: today)          |
+| `--installments, -n`    | Number of installments (promotes amount to total)     |
+| `--start-installment`   | Starting installment number (default: 1)              |
+| `--grace-period, -g`    | Grace period in months                                |
+| `--income`              | Mark as income                                        |
+| `--pending`             | Mark as pending                                       |
+| `--planning`            | Mark as planning                                      |
+
+---
+
+#### `create account` - Create an account
+
+```bash
+python3 cli.py create account Cash cash
+python3 cli.py create account VisaCard credit_card --cut-off-day 25 --payment-day 5
+```
+
+**Parameters**: `id` (name), `type` (cash/credit_card), `--cut-off-day, -c`, `--payment-day, -p`.
+
+---
+
+#### `create budget` - Create a budget/subscription
+
+```bash
+python3 cli.py create budget "Groceries" 300 Cash groceries
+python3 cli.py create budget "Netflix" 15.99 VisaCard entertainment --start 2026-02-01
+python3 cli.py create budget "Vacation" 200 Cash savings --start 2026-02-01 --end 2026-12-31
+```
+
+**Parameters**: `name`, `amount`, `account`, `category`, `--start, -s`, `--end, -e`, `--underspend, -u` (keep/return).
+
+---
+
+#### `create category` - Create a category
+
+```bash
+python3 cli.py create category dining "Eating out, takeout, coffee"
+```
+
+**Parameters**: `name` (lowercase, no spaces), `description` (helps LLM auto-categorize).
+
+> **Note**: Also available via `categories add` — both do the same thing.
+
+---
+
 ### Account Management
 
 #### `accounts list` - View all accounts
@@ -714,28 +801,7 @@ All Accounts
 
 ---
 
-#### `accounts add-manual` - Create account with parameters
-
-Add an account with explicit parameters.
-
-```bash
-# Cash account
-python3 cli.py accounts add-manual Cash cash
-
-# Credit card (requires cut-off and payment days)
-python3 cli.py accounts add-manual VisaCard credit_card --cut-off-day 25 --payment-day 5
-```
-
-**Parameters**:
-
-- `id`: Account name (e.g., "Cash", "VisaCard")
-- `type`: "cash" or "credit_card"
-- `--cut-off-day, -c`: Statement closing day (1-31, credit cards only)
-- `--payment-day, -p`: Payment due day (1-31, credit cards only)
-
----
-
-#### `accounts add-natural` - Natural language account creation (recommended)
+#### `accounts add` - Natural language account creation (recommended)
 
 Add accounts using natural language—easier than manual mode.
 
@@ -789,30 +855,6 @@ Subscriptions
 │ sub_netflix      │ Netflix    │ Subscription│ $15.99 │ Visa    │ 2025-06-01 │ Ongoing    │ Active │
 └──────────────────┴────────────┴────────────┴─────────┴─────────┴────────────┴────────────┴────────┘
 ```
-
----
-
-#### `subscriptions add-manual` - Create budget with parameters
-
-Manually configure a budget or subscription.
-
-```bash
-python3 cli.py subscriptions add-manual "Groceries" 300 Cash groceries
-python3 cli.py subscriptions add-manual "Netflix" 15.99 VisaCard entertainment \
-  --start 2026-02-01
-python3 cli.py subscriptions add-manual "Vacation Fund" 200 Cash savings \
-  --start 2026-02-01 --end 2026-12-31
-```
-
-**Parameters**:
-
-- `name`: Budget/subscription name
-- `amount`: Monthly amount
-- `account`: Account to charge
-- `category`: Category name
-- `--start, -s`: Start date (default: today)
-- `--end, -e`: End date (omit for ongoing)
-- `--underspend, -u`: "keep" (leave allocated for untracked purchases) or "return" (release back to free balance)
 
 ---
 
@@ -1603,7 +1645,7 @@ Purchase on Jan 28:
 When adding a credit card, you need both dates:
 
 ```bash
-python3 cli.py accounts add-manual VisaCard credit_card \
+python3 cli.py create account VisaCard credit_card \
   --cut-off-day 25 \
   --payment-day 5
 ```
@@ -2050,6 +2092,7 @@ Most commands have short aliases for faster typing:
 
 | Command         | Aliases      |
 |-----------------|--------------|
+| create          | cr           |
 | accounts        | acc, a       |
 | categories      | cat, c       |
 | subscriptions   | sub, s       |
