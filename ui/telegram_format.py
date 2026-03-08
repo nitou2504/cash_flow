@@ -149,9 +149,9 @@ def format_budget_envelopes(
 
         message += f"{emoji} *{name}*{status_tag}\n"
         if remaining < 0:
-            message += f"   ${spent:,.2f} of ${allocated:,.2f} | ${abs(remaining):,.2f} over\n\n"
+            message += f"   ${spent:,.2f} of ${allocated:,.2f} | *${abs(remaining):,.2f} over*\n\n"
         else:
-            message += f"   ${spent:,.2f} of ${allocated:,.2f} | ${remaining:,.2f} left\n\n"
+            message += f"   ${spent:,.2f} of ${allocated:,.2f} | *${remaining:,.2f} left*\n\n"
 
     return message
 
