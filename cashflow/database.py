@@ -135,7 +135,6 @@ def initialize_database(db_path: str = "cash_flow.db"):
 
     conn.commit()
     conn.close()
-    print("Database initialized successfully.")
 
 def initialize_database_with_mock_data(db_path: str = "cash_flow.db"):
     """
