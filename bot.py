@@ -27,10 +27,12 @@ from ui.telegram_format import (
     format_summary_navigation_buttons_simple,
     format_auto_confirm_message,
     parse_month_from_args,
+    month_name,
 )
+from ui.strings import t, LANG_DISPLAY_NAMES
 from cashflow.config import (
     TELEGRAM_BOT_TOKEN, DB_PATH, TELEGRAM_ALLOWED_USERS, TELEGRAM_EXTRA_USERS,
-    TELEGRAM_AUTO_CONFIRM,
+    TELEGRAM_AUTO_CONFIRM, TELEGRAM_DEFAULT_LANG,
     BACKUP_ENABLED, BACKUP_DIR, BACKUP_KEEP_TODAY, BACKUP_RECENT_DAYS, BACKUP_MAX_DAYS,
     BACKUP_LOG_RETENTION_DAYS,
 )
@@ -63,12 +65,23 @@ def get_extra_user_info(update: Update) -> dict | None:
     return TELEGRAM_EXTRA_USERS.get(user_id)
 
 
+def get_user_lang(update: Update) -> str:
+    """DB setting > env default > 'en'."""
+    user_id = update.effective_user.id if update.effective_user else None
+    if user_id:
+        stored = repository.get_setting(db_conn, f"lang:{user_id}")
+        if stored in ("en", "es"):
+            return stored
+    return TELEGRAM_DEFAULT_LANG
+
+
 async def reject_unauthorized(update: Update):
     """Send rejection message and log the attempt."""
     user = update.effective_user
     logger.warning(f"Unauthorized access attempt from user {user.id} (@{user.username})")
     if update.effective_message:
-        await update.effective_message.reply_text("You are not authorized to use this bot.")
+        lang = get_user_lang(update)
+        await update.effective_message.reply_text(t("unauthorized", lang))
 
 
 def should_auto_confirm(extra_user: dict | None) -> bool:
@@ -101,17 +114,15 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update):
         return await reject_unauthorized(update)
 
+    lang = get_user_lang(update)
+
     welcome_text = (
-        "👋 *Welcome to Cash Flow Bot!*\n\n"
-        "I help you track expenses easily. Just send me a message like:\n\n"
-        "💬 _\"Spent 50 on groceries today\"_\n"
-        "💬 _\"Bought laptop for 1200 in 12 installments on Visa\"_\n"
-        "💬 _\"Income 3000 on Cash\"_\n\n"
-        "I'll parse it and save it for you.\n\n"
-        "Commands:\n"
-        "/help - Show help message\n"
-        "/summary - View monthly summary\n"
-        "/cancel - Cancel current transaction"
+        f"👋 *{t('welcome_header', lang)}*\n\n"
+        + t("welcome", lang,
+            example_simple='💬 _"Spent 50 on groceries today"_',
+            example_installment='💬 _"Bought laptop for 1200 in 12 installments on Visa"_',
+            example_income='💬 _"Income 3000 on Cash"_',
+        )
     )
 
     await update.message.reply_text(welcome_text, parse_mode='Markdown')
@@ -125,43 +136,18 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update):
         return await reject_unauthorized(update)
 
+    lang = get_user_lang(update)
     extra_user = get_extra_user_info(update)
 
-    help_text = (
-        "📖 *How to Use Cash Flow Bot*\n\n"
-        "*Adding Expenses:*\n"
-        "Just send a natural language message:\n"
-        "• \"Spent 45.50 on groceries\"\n"
-        "• \"Bought TV for 600 in 12 installments\"\n"
-        "• \"Split purchase: 30 on groceries, 15 on snacks\"\n\n"
-    )
+    help_text = f"📖 *{t('help_header', lang)}*\n\n{t('help_adding', lang)}\n\n"
 
     if should_auto_confirm(extra_user):
-        help_text += (
-            "*Saving:*\n"
-            "Transactions are saved automatically.\n"
-            "You'll see a confirmation with the amount and remaining budget.\n\n"
-        )
+        help_text += t("help_confirm_auto", lang) + "\n\n"
     else:
-        help_text += (
-            "*Confirmation:*\n"
-            "I'll show a preview with buttons:\n"
-            "• ✅ Confirm - Save the transaction\n"
-            "• ✍️ Revise - Make corrections\n\n"
-            "*Making Corrections:*\n"
-            "After clicking Revise, tell me what to change:\n"
-            "• \"Actually it was 45.50 on Visa\"\n"
-            "• \"Change category to entertainment\"\n\n"
-        )
+        help_text += t("help_confirm_manual", lang,
+                       btn_confirm="✅", btn_revise="✍️") + "\n\n"
 
-    help_text += (
-        "*Commands:*\n"
-        "/start - Restart bot\n"
-        "/help - Show this help message\n"
-        "/summary - View monthly budget summary\n"
-        "/summary [month] - View specific month (e.g., /summary October)\n"
-        "/cancel - Cancel current transaction"
-    )
+    help_text += t("help_commands", lang)
 
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
@@ -171,9 +157,50 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update):
         return await reject_unauthorized(update)
 
+    lang = get_user_lang(update)
     context.user_data.clear()
     await update.message.reply_text(
-        "🛑 Current transaction cancelled.",
+        f"🛑 {t('cancel', lang)}",
+        parse_mode='Markdown'
+    )
+
+
+async def lang_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /lang command — show current language and choice buttons."""
+    if not is_authorized(update):
+        return await reject_unauthorized(update)
+
+    lang = get_user_lang(update)
+    lang_name = LANG_DISPLAY_NAMES.get(lang, lang)
+
+    keyboard = [
+        [
+            InlineKeyboardButton("English", callback_data="lang:en"),
+            InlineKeyboardButton("Español", callback_data="lang:es"),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    text = t("lang_current", lang, lang_name=lang_name) + "\n\n" + t("lang_choose", lang)
+    await update.message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+
+
+async def lang_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle language selection button clicks."""
+    if not is_authorized(update):
+        return await reject_unauthorized(update)
+
+    query = update.callback_query
+    await query.answer()
+
+    new_lang = query.data.split(":")[1]
+    user_id = update.effective_user.id
+
+    repository.set_setting(db_conn, f"lang:{user_id}", new_lang)
+
+    lang_name = LANG_DISPLAY_NAMES.get(new_lang, new_lang)
+    await query.edit_message_text(
+        t("lang_switched", new_lang, lang_name=lang_name),
         parse_mode='Markdown'
     )
 
@@ -198,9 +225,10 @@ async def process_new_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def handle_new_expense(update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
     """Parse a new expense description and show preview."""
     chat_id = update.effective_chat.id
+    lang = get_user_lang(update)
 
     # Show processing indicator
-    processing_msg = await update.message.reply_text("🔄 Processing...", parse_mode='Markdown')
+    processing_msg = await update.message.reply_text(f"🔄 {t('processing', lang)}", parse_mode='Markdown')
 
     try:
         # Get accounts and budgets for parsing context
@@ -209,7 +237,7 @@ async def handle_new_expense(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
         if not accounts:
             await processing_msg.edit_text(
-                format_error_message("No accounts found. Please set up accounts via CLI first."),
+                format_error_message(t("error_no_accounts", lang), lang),
                 parse_mode='Markdown'
             )
             return
@@ -232,7 +260,7 @@ async def handle_new_expense(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
         if not request_json:
             await processing_msg.edit_text(
-                format_error_message("I couldn't understand that. Please try rephrasing."),
+                format_error_message(t("error_parse_failed", lang), lang),
                 parse_mode='Markdown'
             )
             return
@@ -265,19 +293,20 @@ async def handle_new_expense(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 request_json.get('budget'), payment_date
             )
             reply = format_auto_confirm_message(
-                request_json, payment_date, budget_remaining, budget_name, budget_allocated
+                request_json, payment_date, budget_remaining, budget_name, budget_allocated, lang=lang
             )
             await processing_msg.edit_text(reply, parse_mode='Markdown')
             return
 
         # Format preview message
-        preview_text = format_transaction_preview(request_json, payment_date)
+        preview_text = format_transaction_preview(request_json, payment_date, lang=lang)
 
         # Create inline keyboard
         keyboard = [
             [
-                InlineKeyboardButton("✅ Confirm", callback_data="confirm"),
-                InlineKeyboardButton("✍️ Revise", callback_data="revise"),
+                InlineKeyboardButton(f"✅ {t('btn_confirm', lang)}", callback_data="confirm"),
+                InlineKeyboardButton(f"✍️ {t('btn_revise', lang)}", callback_data="revise"),
+                InlineKeyboardButton(f"🛑 {t('btn_cancel', lang)}", callback_data="cancel"),
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -298,13 +327,13 @@ async def handle_new_expense(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
     except ValueError as e:
         await processing_msg.edit_text(
-            format_error_message(str(e)),
+            format_error_message(str(e), lang),
             parse_mode='Markdown'
         )
     except Exception as e:
         logger.error(f"Error processing expense: {e}", exc_info=True)
         await processing_msg.edit_text(
-            format_error_message("An unexpected error occurred. Please try again."),
+            format_error_message(t("error_unexpected", lang), lang),
             parse_mode='Markdown'
         )
 
@@ -312,9 +341,10 @@ async def handle_new_expense(update: Update, context: ContextTypes.DEFAULT_TYPE,
 async def handle_correction(update: Update, context: ContextTypes.DEFAULT_TYPE, correction_text: str):
     """Process user correction and re-parse."""
     chat_id = update.effective_chat.id
+    lang = get_user_lang(update)
 
     # Show processing indicator
-    processing_msg = await update.message.reply_text("🔄 Updating...", parse_mode='Markdown')
+    processing_msg = await update.message.reply_text(f"🔄 {t('updating', lang)}", parse_mode='Markdown')
 
     try:
         # Combine original message + correction for re-parsing
@@ -334,7 +364,7 @@ async def handle_correction(update: Update, context: ContextTypes.DEFAULT_TYPE, 
 
         if not request_json:
             await processing_msg.edit_text(
-                format_error_message("I couldn't apply that correction. Please try rephrasing."),
+                format_error_message(t("error_correction_failed", lang), lang),
                 parse_mode='Markdown'
             )
             return
@@ -345,13 +375,14 @@ async def handle_correction(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         payment_date = tx_module.simulate_payment_date(account, trans_date) if account else trans_date
 
         # Format updated preview
-        preview_text = format_transaction_preview(request_json, payment_date)
+        preview_text = format_transaction_preview(request_json, payment_date, lang=lang)
 
         # Create keyboard
         keyboard = [
             [
-                InlineKeyboardButton("✅ Confirm", callback_data="confirm"),
-                InlineKeyboardButton("✍️ Revise", callback_data="revise"),
+                InlineKeyboardButton(f"✅ {t('btn_confirm', lang)}", callback_data="confirm"),
+                InlineKeyboardButton(f"✍️ {t('btn_revise', lang)}", callback_data="revise"),
+                InlineKeyboardButton(f"🛑 {t('btn_cancel', lang)}", callback_data="cancel"),
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -374,7 +405,7 @@ async def handle_correction(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     except Exception as e:
         logger.error(f"Error processing correction: {e}", exc_info=True)
         await processing_msg.edit_text(
-            format_error_message("An error occurred while updating. Please try again."),
+            format_error_message(t("error_correction_update", lang), lang),
             parse_mode='Markdown'
         )
 
@@ -392,19 +423,24 @@ async def button_callback_handler(update: Update, context: ContextTypes.DEFAULT_
     callback_data = query.data
 
     if callback_data == "confirm":
-        await handle_confirm(query, context)
+        await handle_confirm(update, query, context)
     elif callback_data == "revise":
-        await handle_revise(query, context)
+        await handle_revise(update, query, context)
+    elif callback_data == "cancel":
+        lang = get_user_lang(update)
+        context.user_data.clear()
+        await query.edit_message_text(f"🛑 {t('cancel', lang)}", parse_mode='Markdown')
 
 
-async def handle_confirm(query, context: ContextTypes.DEFAULT_TYPE):
+async def handle_confirm(update: Update, query, context: ContextTypes.DEFAULT_TYPE):
     """Save the transaction to database."""
+    lang = get_user_lang(update)
     try:
         pending_tx = context.user_data.get('pending_transaction')
 
         if not pending_tx:
             await query.edit_message_text(
-                format_error_message("No pending transaction found. Please start over."),
+                format_error_message(t("error_no_pending", lang), lang),
                 parse_mode='Markdown'
             )
             return
@@ -425,7 +461,7 @@ async def handle_confirm(query, context: ContextTypes.DEFAULT_TYPE):
 
         # Get updated balance (optional - could query from DB)
         # For now, just show success without balance
-        success_msg = format_success_message(pending_tx.get('description', 'Transaction'))
+        success_msg = format_success_message(pending_tx.get('description', 'Transaction'), lang=lang)
 
         # Edit message to show success (remove buttons)
         await query.edit_message_text(
@@ -438,28 +474,25 @@ async def handle_confirm(query, context: ContextTypes.DEFAULT_TYPE):
 
     except ValueError as e:
         await query.edit_message_text(
-            format_error_message(str(e)),
+            format_error_message(str(e), lang),
             parse_mode='Markdown'
         )
     except Exception as e:
         logger.error(f"Error saving transaction: {e}", exc_info=True)
         await query.edit_message_text(
-            format_error_message("Failed to save transaction. Please try again."),
+            format_error_message(t("error_save_failed", lang), lang),
             parse_mode='Markdown'
         )
 
 
-async def handle_revise(query, context: ContextTypes.DEFAULT_TYPE):
+async def handle_revise(update: Update, query, context: ContextTypes.DEFAULT_TYPE):
     """Enable correction mode."""
+    lang = get_user_lang(update)
     # Remove buttons and prompt for correction
     await query.edit_message_reply_markup(reply_markup=None)
 
     await query.message.reply_text(
-        "✍️ *What would you like to change?*\n\n"
-        "Tell me in natural language, like:\n"
-        "• \"Change amount to 45.50\"\n"
-        "• \"Use Visa card instead\"\n"
-        "• \"Change category to entertainment\"",
+        f"✍️ {t('revise_prompt', lang)}",
         parse_mode='Markdown'
     )
 
@@ -535,13 +568,14 @@ async def handle_summary_request(
         from_callback: True if called from button callback
         extra_user: Extra user config dict, or None for owner
     """
+    lang = get_user_lang(update)
     if extra_user:
         show_planning = False
     try:
         if from_callback:
-            await update.callback_query.answer("Loading...")
+            await update.callback_query.answer(f"{t('loading', lang)}")
         else:
-            processing_msg = await update.message.reply_text("🔄 Loading...", parse_mode='Markdown')
+            processing_msg = await update.message.reply_text(f"🔄 {t('loading', lang)}", parse_mode='Markdown')
 
         period_end = (target_month + relativedelta(months=1)) - timedelta(days=1)
 
@@ -549,17 +583,20 @@ async def handle_summary_request(
             all_transactions = repository.get_transactions_with_running_balance(db_conn)
             all_pending = []
             month_planning = []
-            for t in all_transactions:
-                dp = t['date_payed']
+            for tx in all_transactions:
+                dp = tx['date_payed']
                 if isinstance(dp, str):
                     dp = date.fromisoformat(dp)
-                t['date_payed'] = dp
-                if t.get('status') == 'pending':
-                    all_pending.append(t)
-                elif t.get('status') == 'planning' and target_month <= dp <= period_end:
-                    month_planning.append(t)
+                tx['date_payed'] = dp
+                if tx.get('status') == 'pending':
+                    all_pending.append(tx)
+                elif tx.get('status') == 'planning' and target_month <= dp <= period_end:
+                    month_planning.append(tx)
+
+            m_name = month_name(target_month.month, lang)
+            month_label = f"{m_name} {target_month.year}"
             message_text = format_planning_pending(
-                all_pending, month_planning, target_month.strftime('%B %Y')
+                all_pending, month_planning, month_label, lang=lang
             )
         else:
             # Budget envelope view using repository functions
@@ -591,12 +628,12 @@ async def handle_summary_request(
                 prefix = extra_user['budget'].lower()
                 budget_data = [b for b in budget_data if b['name'].lower().startswith(prefix)]
 
-            message_text = format_budget_envelopes(budget_data, target_month)
+            message_text = format_budget_envelopes(budget_data, target_month, lang=lang)
 
         if extra_user:
-            buttons = format_summary_navigation_buttons_simple(target_month)
+            buttons = format_summary_navigation_buttons_simple(target_month, lang=lang)
         else:
-            buttons = format_summary_navigation_buttons(target_month, show_planning)
+            buttons = format_summary_navigation_buttons(target_month, show_planning, lang=lang)
 
         if from_callback:
             await update.callback_query.edit_message_text(
@@ -613,7 +650,7 @@ async def handle_summary_request(
 
     except Exception as e:
         logger.error(f"Error generating summary: {e}", exc_info=True)
-        error_msg = format_error_message("Failed to generate summary. Please try again.")
+        error_msg = format_error_message(t("error_summary_failed", lang), lang)
 
         if from_callback:
             await update.callback_query.edit_message_text(
@@ -635,6 +672,7 @@ async def summary_navigation_callback(
     if not is_authorized(update):
         return await reject_unauthorized(update)
 
+    lang = get_user_lang(update)
     query = update.callback_query
     await query.answer()  # Acknowledge button click
 
@@ -643,7 +681,7 @@ async def summary_navigation_callback(
 
     if len(parts) < 2:
         await query.edit_message_text(
-            format_error_message("Invalid callback format."),
+            format_error_message(t("error_invalid_callback", lang), lang),
             parse_mode='Markdown'
         )
         return
@@ -667,7 +705,7 @@ async def summary_navigation_callback(
     except Exception as e:
         logger.error(f"Error parsing navigation callback: {e}", exc_info=True)
         await query.edit_message_text(
-            format_error_message("Invalid selection. Please try again."),
+            format_error_message(t("error_invalid_selection", lang), lang),
             parse_mode='Markdown'
         )
 
@@ -679,8 +717,9 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Update {update} caused error {context.error}", exc_info=context.error)
 
     if update and update.effective_message:
+        lang = get_user_lang(update) if update.effective_user else "en"
         await update.effective_message.reply_text(
-            "❌ An error occurred. Please try again or contact support.",
+            f"❌ {t('error_generic', lang)}",
             parse_mode='Markdown'
         )
 
@@ -709,6 +748,13 @@ def main():
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("cancel", cancel_command))
     application.add_handler(CommandHandler("summary", summary_command))
+    application.add_handler(CommandHandler("lang", lang_command))
+
+    # Language selection callback (must come BEFORE generic CallbackQueryHandler)
+    application.add_handler(CallbackQueryHandler(
+        lang_callback,
+        pattern=r'^lang:(en|es)$'
+    ))
 
     # Summary navigation (must come BEFORE generic CallbackQueryHandler)
     application.add_handler(CallbackQueryHandler(
