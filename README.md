@@ -1,6 +1,6 @@
 # Personal Cash Flow Tool
 
-A CLI tool for managing personal finances. Built around budget envelopes, credit card billing-cycle awareness, and a single timeline that forecasts your real cash position into the future. Interactive mode (`-i`) gives you step-by-step guided entry with numbered menus, shortcuts, and previews — no configuration needed. Optionally, enable LLM-powered natural language input ("Spent 45.50 on groceries today") via [LiteLLM](https://github.com/BerriAI/litellm) with a free Gemini API key or local models through Ollama. A companion [Telegram bot](#telegram-bot) lets you track expenses on-the-go.
+A CLI tool for managing personal finances. Built around budget envelopes, credit card billing-cycle awareness, and a single timeline that forecasts your real cash position into the future. Interactive mode (`-i`) gives you step-by-step guided entry with numbered menus, shortcuts, and previews — no configuration needed. Optionally, enable LLM-powered natural language input ("Spent 45.50 on groceries today") via [LiteLLM](https://github.com/BerriAI/litellm) with a free Gemini API key or local models through Ollama. A companion [Telegram bot](#telegram-bot) lets you track expenses on-the-go — and with [delegate users](#extra-users-delegates), family members can log shared expenses that you review and approve.
 
 ## See It In Action
 
@@ -149,7 +149,7 @@ All subscriptions and budgets run on a monthly cycle — one transaction per mon
 
 ### Companion Telegram bot
 
-Track expenses on-the-go with the companion [Telegram bot](#telegram-bot). Send messages like _"Lunch 12.50 on Cash"_ and get a preview with inline buttons to confirm, edit, or cancel. Use `/summary` to check budget status.
+Track expenses on-the-go with the companion [Telegram bot](#telegram-bot). Send messages like _"Lunch 12.50 on Cash"_ and get a preview with inline buttons to confirm, edit, or cancel. Add [delegate users](#extra-users-delegates) so family members can log shared expenses — their transactions are flagged for your review. Use `/summary` to check budget status.
 
 ```
 📊 Budgets: March 2026
@@ -173,7 +173,7 @@ Track expenses on-the-go with the companion [Telegram bot](#telegram-bot). Send 
 - **Smart Credit Card Handling**: Automatically calculates payment dates based on billing cycles — no more manual tracking
 - **Live Budget Envelopes**: Spending reduces the envelope in real-time so you always see how much is left, while your running balance shows real disposable cash
 - **Single Timeline**: Past, present, and future transactions in one unified view — no separate budget sheets
-- **Even faster with LLMs**: Add an LLM provider to unlock natural language input ("Spent 45.50 on groceries today") and the companion [Telegram bot](#telegram-bot) for tracking on-the-go
+- **Even faster with LLMs**: Add an LLM provider to unlock natural language input ("Spent 45.50 on groceries today") and the companion [Telegram bot](#telegram-bot) for tracking on-the-go — with shared finance support for family members
 
 ---
 
@@ -411,7 +411,7 @@ See `llm_config.yaml.example` for full documentation with benchmark results and 
 
 ## Telegram Bot
 
-A companion chatbot for tracking expenses on-the-go. Requires an LLM provider (see above) since the bot uses natural language parsing.
+A companion chatbot for tracking expenses on-the-go, with support for shared household finances via [delegate users](#extra-users-delegates). Requires an LLM provider (see above) since the bot uses natural language parsing.
 
 ### Quick Setup
 
