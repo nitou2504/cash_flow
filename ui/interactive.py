@@ -2,6 +2,7 @@
 
 import sqlite3
 from datetime import date, timedelta
+from dateutil.relativedelta import relativedelta
 from rich.console import Console
 from rich.table import Table
 
@@ -913,6 +914,91 @@ def interactive_edit_subscription(conn, subscription_id):
             return None
 
         return updates
+
+    except (KeyboardInterrupt, EOFError):
+        console.print("\n[yellow]Cancelled.[/yellow]")
+        return None
+
+def interactive_statement_fix(conn, account_id, month):
+    """Interactive statement fix flow. Returns statement_amount (float) or None."""
+    try:
+        account = repository.get_account_by_name(conn, account_id)
+        if not account:
+            console.print(f"[red]Account '{account_id}' not found.[/red]")
+            return None
+
+        if account['account_type'] == 'credit_card':
+            payment_date = date(month.year, month.month, account['payment_day'])
+        else:
+            next_month = month + relativedelta(months=1)
+            payment_date = next_month.replace(day=1) - relativedelta(days=1)
+
+        # Get transactions on payment date
+        all_trans = repository.get_all_transactions(conn)
+        payment_trans = [
+            t for t in all_trans
+            if t['account'] == account_id
+            and t['date_payed'] == payment_date
+            and t['status'] in ['committed', 'forecast']
+        ]
+
+        current_total = sum(t['amount'] for t in payment_trans)
+
+        # Display header
+        console.print(f"\n[bold]Statement Adjustment for {account_id} - {month.strftime('%B %Y')}[/bold]")
+        console.print(f"Payment date: {payment_date}\n")
+
+        # Show table with transactions
+        if payment_trans:
+            table = Table(title=f"Transactions on {payment_date}")
+            table.add_column("ID", style="cyan", width=6)
+            table.add_column("Date", style="dim", width=12)
+            table.add_column("Description")
+            table.add_column("Amount", justify="right", width=10)
+
+            for t in payment_trans:
+                table.add_row(
+                    str(t['id']),
+                    str(t['date_created']),
+                    t['description'],
+                    f"{t['amount']:.2f}"
+                )
+
+            table.add_row("", "", "CURRENT TOTAL", f"{current_total:.2f}", style="bold")
+            console.print(table)
+        else:
+            console.print(f"[yellow]No transactions found on {payment_date}[/yellow]")
+            console.print(f"Current total: $0.00")
+
+        console.print()
+
+        # Ask for statement amount
+        statement_amount = prompt_amount("Actual statement amount")
+        if statement_amount is None:
+            return None
+
+        # Statement amounts for expenses are negative
+        statement_amount = -abs(statement_amount)
+
+        # Calculate difference
+        difference = statement_amount - current_total
+
+        if abs(difference) < 0.01:
+            console.print("\n[green]No adjustment needed - statement matches current total![/green]")
+            return None
+
+        # Show adjustment summary
+        adjustment_amount = -difference
+        adj_sign = "+" if adjustment_amount >= 0 else "-"
+        diff_sign = "+" if difference >= 0 else "-"
+        console.print(f"\nAdjustment: ${current_total:.2f} -> ${statement_amount:.2f} (difference: {diff_sign}${abs(difference):.2f})")
+
+        confirm = prompt_yes_no("Proceed?", default=True)
+        if not confirm:
+            console.print("[yellow]Cancelled.[/yellow]")
+            return None
+
+        return statement_amount
 
     except (KeyboardInterrupt, EOFError):
         console.print("\n[yellow]Cancelled.[/yellow]")
