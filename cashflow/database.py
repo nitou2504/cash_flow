@@ -78,6 +78,16 @@ def create_tables(conn: Connection):
             description TEXT NOT NULL
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS llm_examples (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_input TEXT NOT NULL,
+            parsed_json TEXT NOT NULL,
+            transaction_ids TEXT,
+            source TEXT NOT NULL DEFAULT 'cli',
+            timestamp DATE DEFAULT CURRENT_DATE
+        )
+    """)
     conn.commit()
 
 def insert_mock_data(conn: Connection):
