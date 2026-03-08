@@ -17,6 +17,9 @@ BACKUP_LOG_RETENTION_DAYS = int(os.getenv("BACKUP_LOG_RETENTION_DAYS", "30"))
 # Telegram
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_AUTO_CONFIRM = os.getenv("TELEGRAM_AUTO_CONFIRM", "extra_users_only")
+TELEGRAM_DEFAULT_LANG = os.getenv("TELEGRAM_DEFAULT_LANG", "en")
+if TELEGRAM_DEFAULT_LANG not in ("en", "es"):
+    TELEGRAM_DEFAULT_LANG = "en"
 _allowed_raw = os.getenv("TELEGRAM_ALLOWED_USERS", "")
 TELEGRAM_ALLOWED_USERS: set[int] = {
     int(uid.strip()) for uid in _allowed_raw.split(",") if uid.strip()
