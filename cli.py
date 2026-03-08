@@ -1191,6 +1191,26 @@ def handle_add_installments(conn: sqlite3.Connection, args: argparse.Namespace):
     if processed_count > 0:
         controller.run_monthly_rollover(conn, date.today())
 
+def handle_bot(args: argparse.Namespace):
+    """Manage the Telegram bot Docker container."""
+    import subprocess
+    compose_file = "docker-compose.bot.yml"
+    action = args.bot_action
+
+    if action == "restart":
+        print("Rebuilding and restarting bot container...")
+        subprocess.run(["docker", "compose", "-f", compose_file, "up", "-d", "--build"], check=True)
+    elif action == "stop":
+        subprocess.run(["docker", "compose", "-f", compose_file, "down"], check=True)
+    elif action == "logs":
+        cmd = ["docker", "compose", "-f", compose_file, "logs"]
+        if getattr(args, 'follow', False):
+            cmd.append("-f")
+        else:
+            cmd.extend(["--tail", "50"])
+        subprocess.run(cmd)
+
+
 def handle_backup(db_path: str, args: argparse.Namespace):
     """Handle backup subcommands: create, list, restore."""
     console = Console()
@@ -1961,6 +1981,24 @@ Statement Fix:
     fix_parser.add_argument("--interactive", "-i", action="store_true",
                            help="Interactive mode: show transactions and prompt for statement amount")
 
+    # ==================== BOT ====================
+
+    bot_parser = subparsers.add_parser(
+        "bot",
+        help="Manage the Telegram bot Docker container",
+        description="""
+Manage the Telegram bot Docker container.
+
+Commands:
+  cli.py bot restart    # Rebuild and restart the bot container
+  cli.py bot logs       # Tail the bot container logs
+  cli.py bot stop       # Stop the bot container
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    bot_parser.add_argument("bot_action", choices=["restart", "logs", "stop"], help="Action to perform")
+    bot_parser.add_argument("--follow", "-f", action="store_true", help="Follow log output (for logs)")
+
     # ==================== BACKUP ====================
 
     backup_parser = subparsers.add_parser(
@@ -1994,7 +2032,7 @@ Configuration via environment variables (or .env):
     args = parser.parse_args()
 
     # --- Auto-backup before mutating commands ---
-    read_only_commands = {"view", "v", "export", "exp", "x", "backup", "bk"}
+    read_only_commands = {"view", "v", "export", "exp", "x", "backup", "bk", "bot"}
     read_only_subcommands = {"list", "ls", "l"}
     is_read_only = args.command in read_only_commands
     if args.command in ["accounts", "acc", "a", "categories", "cat", "c", "subscriptions", "sub", "s"]:
@@ -2012,7 +2050,11 @@ Configuration via environment variables (or .env):
         db_backup.apply_log_retention(BACKUP_DIR, BACKUP_LOG_RETENTION_DAYS)
 
     # --- Command Handling ---
-    if args.command in ["backup", "bk"]:
+    if args.command == "bot":
+        handle_bot(args)
+        conn.close()
+        return
+    elif args.command in ["backup", "bk"]:
         handle_backup(db_path, args)
     elif args.command == "add":
         handle_add(conn, args)
