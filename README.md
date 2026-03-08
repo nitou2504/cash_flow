@@ -1939,7 +1939,28 @@ python3 -m unittest discover -s tests      # Run all tests
 python3 -m unittest tests.test_budgets     # Run a specific test module
 ```
 
-Tests use in-memory databases (`:memory:`) for speed and isolation.
+Tests use in-memory databases (`:memory:`) for speed and isolation. Use `create_test_db()` from `cashflow.database` for test setup — it initializes all tables, mock data, categories, and settings in one call:
+
+```python
+from cashflow.database import create_test_db
+
+class TestMyFeature(unittest.TestCase):
+    def setUp(self):
+        self.conn = create_test_db()
+
+    def tearDown(self):
+        self.conn.close()
+```
+
+**Available mock data in `create_test_db()`**:
+
+| Type | Values |
+|------|--------|
+| **Accounts** | `Cash` (cash), `Visa Produbanco` (credit_card, cut-off=14, payment=25), `Amex Produbanco` (credit_card, cut-off=2, payment=15) |
+| **Categories** | Housing, Home Groceries, Personal Groceries, Dining-Snacks, Transportation, Health, Personal, Income, Savings, Loans, Others |
+| **Settings** | `forecast_horizon_months` = 6 |
+
+When writing tests, use only the categories listed above — the app validates categories against the database. For budgets, use the category that best fits your test scenario (e.g. `"Others"` for generic tests, `"Home Groceries"` for food-related tests).
 
 ---
 
