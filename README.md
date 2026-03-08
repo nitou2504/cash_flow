@@ -506,24 +506,23 @@ The power of this system comes from a simple but profound principle: **everythin
 
 The forecast is accurate because it's not based on abstract limits; it's based on the **actual cash impact** of every financial event. The key is that money allocated to a budget is considered 'spent' from your cash flow the moment you allocate it. Spending against that budget later simply categorizes the expense without affecting your overall cash balance again. This prevents double-counting and ensures you always know exactly how much disposable cash you have.
 
-To see this in action, imagine a "Cash Flow Report" that calculates your running balance. Notice how an expense made from a budget does not impact the balance, because that money was already earmarked.
+To see this in action, here's a `cli.py view` excerpt. Notice how the grocery expense does not change the balance — the budget envelope absorbed it:
 
 ```
---- Your Cash Flow Report (Excerpt for Nov 2025) ---
-date_payed  | description              | cash_flow_impact | running_balance
----------------------------------------------------------------------------
-            | Balance from Oct 31        |                  | $2000.00
-2025-11-01  | Monthly Salary           | +3000.00         | $5000.00
-2025-11-01  | Food Budget Allocation   | -400.00          | $4600.00
-2025-11-15  | Netflix Subscription     | -15.99           | $4584.01
-2025-11-20  | Groceries                | -80.00           | $4584.01 (No change)
-            | *Food Budget transaction is updated to -320*  |                  | $4584.01        <-- Envelope updates, cash balance is unaffected.
-2025-11-25  | New Laptop (2/6)         | -200.00          | $4384.01
+cli.py view
+┌──────────┬────────────────────────┬──────────┬────────┬────────────┐
+│ Paid     │ Description            │ Account  │ Amount │ Balance    │
+├──────────┼────────────────────────┼──────────┼────────┼────────────┤
+│ ...      │ Balance from Oct       │          │        │ 2000.00    │
+│ 11/01    │ Monthly Salary         │ Cash     │  +3000 │ 5000.00    │
+│ 11/01    │ budget_food ✉          │ Cash     │   -320 │ 4680.00    │  ← was -400, absorbed $80
+│ 11/15    │ Netflix Subscription   │ Cash     │ -15.99 │ 4664.01    │
+│ 11/20    │ Groceries              │ Cash     │    -80 │ 4584.01    │  ← balance unchanged
+│ 11/25    │ New Laptop (2/6)       │ Cash     │   -200 │ 4384.01    │
+└──────────┴────────────────────────┴──────────┴────────┴────────────┘
 ```
 
-Behind the scenes, the `$80` grocery expense is still recorded as a transaction, and the "Food Budget" allocation is automatically updated to show `$320` remaining. As if using the envelope money, then seeing how much you still have in it.
-
-So, your cash balance remains correct and your budget allocation is always up-to-date and easy to track.
+The `$80` grocery expense is recorded as a transaction, and the budget envelope is automatically updated from `-400` to `-320`. The running balance stays at `4584.01` — the same as if you hadn't made the purchase — because that money was already earmarked.
 
 This approach offers great flexibility. If your circumstances change, you can edit a budget's amount mid-month, and the system will instantly recalculate its balance, giving you a constantly accurate financial picture. This unified view removes the guesswork and gives you a clear, honest picture of your financial future.
 
