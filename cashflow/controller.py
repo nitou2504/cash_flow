@@ -115,7 +115,7 @@ def _apply_expense_to_budget(conn: sqlite3.Connection, transaction: Dict[str, An
         )
 
 
-def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any], transaction_date: date = None):
+def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any], transaction_date: date = None, user_input: str = None, source: str = "cli"):
     """
     Acts as the main router for incoming transaction requests.
     """
@@ -202,8 +202,12 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
 
     if new_transactions:
         # First, save the transactions to the database
-        repository.add_transactions(conn, new_transactions)
+        inserted_ids = repository.add_transactions(conn, new_transactions)
         print(f"Successfully added {len(new_transactions)} transaction(s).")
+
+        # Save raw input for future LLM training/matching
+        if user_input:
+            repository.save_llm_example(conn, user_input, request, inserted_ids, source)
 
         # --- Real-time Budget Update Logic ---
         # Now, apply their effects to the corresponding budgets
