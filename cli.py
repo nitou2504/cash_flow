@@ -167,10 +167,13 @@ def handle_subscriptions_list(conn: sqlite3.Connection, args: argparse.Namespace
     table.add_column("Type")
     table.add_column("Underspend")
     table.add_column("Amount", justify="right")
+    table.add_column("Remaining", justify="right")
     table.add_column("Account")
     table.add_column("Start Date")
     table.add_column("End Date")
     table.add_column("Status")
+
+    current_month = date.today().replace(day=1)
 
     for sub in subscriptions:
         # Format end_date display
@@ -188,12 +191,31 @@ def handle_subscriptions_list(conn: sqlite3.Connection, args: argparse.Namespace
 
         underspend = sub.get('underspend_behavior', '') if sub['is_budget'] else ''
 
+        # Compute remaining for active budgets
+        remaining_str = ""
+        if sub['is_budget'] and status == 'Active':
+            # Determine the relevant month: current month for ongoing,
+            # or the budget's active period for time-limited budgets
+            budget_month = current_month
+            if sub.get('end_date'):
+                start_d = sub['start_date'] if isinstance(sub['start_date'], date) else date.fromisoformat(str(sub['start_date']))
+                end_d = sub['end_date'] if isinstance(sub['end_date'], date) else date.fromisoformat(str(sub['end_date']))
+                budget_month = max(start_d.replace(day=1), min(current_month, end_d.replace(day=1)))
+
+            spent = repository.get_total_spent_for_budget_in_month(conn, sub['id'], budget_month)
+            remaining = sub['monthly_amount'] - spent
+            if remaining < 0:
+                remaining_str = f"[red]${remaining:.0f}/${sub['monthly_amount']:.0f}[/red]"
+            else:
+                remaining_str = f"[green]${remaining:.0f}[/green]/${sub['monthly_amount']:.0f}"
+
         table.add_row(
             sub['id'],
             sub['name'],
             sub_type,
             underspend,
             f"${sub['monthly_amount']:.2f}",
+            remaining_str,
             sub['payment_account_id'],
             str(sub['start_date']),
             end_date_str,
