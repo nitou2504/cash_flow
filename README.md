@@ -40,7 +40,7 @@ Account:
   3. Visa Produbanco (credit_card, cut-off: 14, pay: 25)
 [number or name]> 2
 
-Amount: $45.50
+Amount [prefix + for income]: $45.50
 
 Category:
   1. Dining-Snacks - Eating out, takeout, coffee, and social food/drinks
@@ -54,7 +54,6 @@ Budget:
 [number or name, empty to skip]> 1
 
 Status [1.NORMAL / 2.pending / 3.planning]:
-Is this income? [y/N]:
 
 Transaction Preview
 ┌────────────┬──────────────────────────┐

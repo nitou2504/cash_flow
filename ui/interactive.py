@@ -100,6 +100,31 @@ def prompt_amount(label="Amount", default=None):
         except ValueError:
             console.print("[red]Enter a valid number.[/red]")
 
+def prompt_expense_amount(label="Amount"):
+    """Amount defaulting to expense. Bare number = expense, + prefix = income."""
+    while True:
+        try:
+            raw = input(f"{label} [prefix + for income]: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            return None, None
+        if not raw:
+            console.print("[red]Amount is required.[/red]")
+            continue
+        try:
+            is_income = raw.lstrip("$").startswith("+")
+            cleaned = raw.replace("$", "")
+            if re.fullmatch(r'[+-]?\d+,\d{2}', cleaned):
+                cleaned = cleaned.replace(",", ".")
+            else:
+                cleaned = cleaned.replace(",", "")
+            val = float(cleaned)
+            if val == 0:
+                console.print("[red]Amount cannot be zero.[/red]")
+                continue
+            return abs(val), is_income
+        except ValueError:
+            console.print("[red]Enter a valid number. Prefix + for income.[/red]")
+
 def prompt_signed_amount(label="Amount", default=None):
     """Edit amount preserving sign. Bare number keeps original sign, +/- overrides."""
     sign_hint = "+income" if default is not None and default > 0 else "-expense"
@@ -424,21 +449,18 @@ def _prompt_category_and_budget(categories, active_budgets):
 
 
 def _prompt_flags():
-    """Prompt for status and income flag."""
+    """Prompt for status flag."""
     status = prompt_choice("Status", ["normal", "pending", "planning"], default="normal")
     if status is None:
-        return None, None, None
-    is_income = prompt_yes_no("Is this income?", default=False)
-    if is_income is None:
-        return None, None, None
-    return is_income, status == "pending", status == "planning"
+        return None, None
+    return status == "pending", status == "planning"
 
 
 def _flow_simple(account_name, account, transaction_date, description,
                  categories, active_budgets):
     """Simple transaction flow."""
-    # 5. Amount
-    amount = prompt_amount()
+    # 5. Amount (bare = expense, + prefix = income)
+    amount, is_income = prompt_expense_amount()
     if amount is None:
         return None
 
@@ -446,9 +468,10 @@ def _flow_simple(account_name, account, transaction_date, description,
     category_name, budget_id = _prompt_category_and_budget(categories, active_budgets)
 
     # 8. Flags
-    is_income, is_pending, is_planning = _prompt_flags()
-    if is_income is None:
+    result = _prompt_flags()
+    if result[0] is None:
         return None
+    is_pending, is_planning = result
 
     request = {
         "type": "simple",
@@ -475,8 +498,8 @@ def _flow_simple(account_name, account, transaction_date, description,
 def _flow_installment(account_name, account, transaction_date, description,
                       categories, active_budgets):
     """Installment transaction flow."""
-    # Total amount
-    total_amount = prompt_amount("Total amount")
+    # Total amount (bare = expense, + prefix = income)
+    total_amount, is_income = prompt_expense_amount("Total amount")
     if total_amount is None:
         return None
 
@@ -499,9 +522,10 @@ def _flow_installment(account_name, account, transaction_date, description,
     category_name, budget_id = _prompt_category_and_budget(categories, active_budgets)
 
     # Flags
-    is_income, is_pending, is_planning = _prompt_flags()
-    if is_income is None:
+    result = _prompt_flags()
+    if result[0] is None:
         return None
+    is_pending, is_planning = result
 
     request = {
         "type": "installment",
@@ -537,13 +561,16 @@ def _flow_split(account_name, account, transaction_date, description,
                 categories, active_budgets):
     """Split transaction flow."""
     splits = []
+    is_income = False
     console.print("\n[bold]Enter splits[/bold] (at least 2). Type 'done' when finished.")
 
     while True:
         console.print(f"\n[dim]--- Split {len(splits) + 1} ---[/dim]")
-        amount = prompt_amount(f"Split {len(splits) + 1} amount")
+        amount, split_income = prompt_expense_amount(f"Split {len(splits) + 1} amount")
         if amount is None:
             return None
+        if split_income:
+            is_income = True
 
         category_name, budget_id = _prompt_category_and_budget(categories, active_budgets)
 
@@ -561,9 +588,10 @@ def _flow_split(account_name, account, transaction_date, description,
                 break
 
     # Flags
-    is_income, is_pending, is_planning = _prompt_flags()
-    if is_income is None:
+    result = _prompt_flags()
+    if result[0] is None:
         return None
+    is_pending, is_planning = result
 
     request = {
         "type": "split",

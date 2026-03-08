@@ -42,11 +42,10 @@ NO = ''       # default No for yes/no prompts
 YES_FLAG = 'y'
 DEFAULT = ''  # press Enter for default
 
-# Flag patterns: status choice + is_income yes/no
-FLAGS_NORMAL = [DEFAULT, NO]           # normal status, not income
-FLAGS_INCOME = [DEFAULT, YES_FLAG]     # normal status, income
-FLAGS_PENDING = ['pending', NO]        # pending status, not income
-FLAGS_PLANNING = ['planning', NO]      # planning status, not income
+# Flag patterns: status choice (income is now determined by amount sign)
+FLAGS_NORMAL = [DEFAULT]              # normal status
+FLAGS_PENDING = ['pending']           # pending status
+FLAGS_PLANNING = ['planning']         # planning status
 
 
 class TestPromptHelpers(unittest.TestCase):
@@ -192,10 +191,10 @@ def _simple_inputs(account=CASH, amount='25.50', category=CAT_HOME_GROC,
         tx_date,      # date
         description,  # description
         account,      # account
-        amount,       # amount
+        amount,       # amount (prefix + for income)
         category,     # category (skippable)
         # NO budget prompt (no budgets in test DB)
-        *flags,       # status + is_income
+        *flags,       # status
         confirm,      # confirm
     ]
 
@@ -225,7 +224,7 @@ class TestInteractiveSimple(unittest.TestCase):
         self.assertEqual(request['_transaction_date'], date.today())
 
     @patch('builtins.input', side_effect=_simple_inputs(
-        description='Salary', amount='1000', category=CAT_INCOME, flags=FLAGS_INCOME))
+        description='Salary', amount='+1000', category=CAT_INCOME))
     def test_simple_income(self, _):
         request = interactive_add_transaction(self.conn)
         self.assertIsNotNone(request)
@@ -499,9 +498,9 @@ class TestInteractiveEndToEnd(unittest.TestCase):
         '2026-03-01',   # date
         'Salary',       # description
         CASH,           # account
-        '2000',         # amount
+        '+2000',        # amount: + prefix = income
         CAT_INCOME,     # category: Income
-        *FLAGS_INCOME,  # flags
+        *FLAGS_NORMAL,  # flags
         DEFAULT,        # confirm
     ])
     def test_e2e_income(self, _):
