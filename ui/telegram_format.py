@@ -304,7 +304,10 @@ def format_auto_confirm_message(
             emoji = "🟡"
         else:
             emoji = "🟢"
-        msg += f"{emoji} {bname}: *${budget_remaining:,.2f} {t('remaining', lang)}*\n"
+        if budget_remaining < 0:
+            msg += f"{emoji} {bname}: *${abs(budget_remaining):,.2f} {t('over', lang)}*\n"
+        else:
+            msg += f"{emoji} {bname}: *${budget_remaining:,.2f} {t('remaining', lang)}*\n"
 
     return msg
 
