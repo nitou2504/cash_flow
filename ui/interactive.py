@@ -14,7 +14,7 @@ from cashflow.transactions import simulate_payment_date
 console = Console()
 
 
-def prompt_select(title, items, display_fn, allow_skip=False):
+def prompt_select(title, items, display_fn, allow_skip=False, current_value=None):
     """Numbered list selection. User types number or substring to select."""
     if not items:
         console.print(f"[yellow]No {title.lower()} available.[/yellow]")
@@ -23,6 +23,9 @@ def prompt_select(title, items, display_fn, allow_skip=False):
     console.print(f"\n[bold]{title}:[/bold]")
     for i, item in enumerate(items, 1):
         console.print(f"  {i}. {display_fn(item)}")
+
+    if current_value is not None:
+        console.print(f"[dim]Current: {current_value or '(none)'}[/dim]")
 
     hint = "number or name" + (", empty to skip" if allow_skip else "")
     while True:
@@ -820,25 +823,27 @@ def interactive_edit_transaction(conn, transaction_id):
         console.print(table)
         console.print()
 
-        # Prompt each field
+        # Prompt each field with current value shown inline
+        console.print(f"[dim]Current: {tx['description']}[/dim]")
         description = prompt_text("Description", default=tx['description'])
         if description is None:
             return None
 
         current_amount = tx['amount']
+        console.print(f"[dim]Current: {current_amount:.2f}[/dim]")
         amount = prompt_signed_amount("Amount", default=current_amount)
         if amount is None:
             return None
 
         current_date = date.fromisoformat(str(tx['date_created']))
+        console.print(f"[dim]Current: {current_date}[/dim]")
         new_date = prompt_date("Date created", default=current_date)
         if new_date is None:
             return None
 
         categories = repository.get_all_categories(conn)
         current_cat = tx.get('category') or ''
-        console.print(f"\n[dim]Current category: {current_cat or '(none)'}[/dim]")
-        category = prompt_select("Category", categories, _format_category, allow_skip=True)
+        category = prompt_select("Category", categories, _format_category, allow_skip=True, current_value=current_cat)
         category_name = category['name'] if category else current_cat or None
 
         # Get budgets for the payment month
@@ -854,10 +859,10 @@ def interactive_edit_transaction(conn, transaction_id):
                 active_budgets.append(b)
 
         current_budget = tx.get('budget') or ''
-        console.print(f"[dim]Current budget: {current_budget or '(none)'}[/dim]")
-        budget = prompt_select("Budget", active_budgets, _format_budget, allow_skip=True) if active_budgets else None
+        budget = prompt_select("Budget", active_budgets, _format_budget, allow_skip=True, current_value=current_budget) if active_budgets else None
         budget_id = budget['id'] if budget else current_budget or None
 
+        console.print(f"[dim]Current: {tx['status']}[/dim]")
         status = prompt_choice("Status", ["committed", "pending", "planning"], default=tx['status'])
         if status is None:
             return None
