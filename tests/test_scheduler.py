@@ -1,20 +1,17 @@
 
 import unittest
 from unittest.mock import patch
-import sqlite3
 from datetime import date
 from dateutil.relativedelta import relativedelta
 
 from cashflow.controller import generate_forecasts
-from cashflow.database import create_tables, insert_mock_data, create_connection
+from cashflow.database import create_test_db
 from cashflow.repository import add_subscription, get_all_transactions, add_transactions
 
 class TestScheduler(unittest.TestCase):
     def setUp(self):
         """Set up an in-memory database for each test."""
-        self.conn = create_connection(":memory:")
-        create_tables(self.conn)
-        insert_mock_data(self.conn)
+        self.conn = create_test_db()
 
         # Sample subscription that runs indefinitely
         self.sub_indefinite = {

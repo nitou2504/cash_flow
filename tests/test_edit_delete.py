@@ -1,9 +1,8 @@
 import unittest
-import sqlite3
 from datetime import date
 from unittest.mock import patch
 
-from cashflow.database import create_connection, create_tables, insert_mock_data
+from cashflow.database import create_test_db
 from cashflow.repository import (
     add_transactions, get_all_transactions, get_transaction_by_id,
     add_subscription, get_budget_allocation_for_month
@@ -13,9 +12,7 @@ from cashflow.controller import process_transaction_update, process_transaction_
 class TestTransactionEditingAndDeletion(unittest.TestCase):
     def setUp(self):
         """Set up an in-memory database and seed it with initial data for each test."""
-        self.conn = create_connection(":memory:")
-        create_tables(self.conn)
-        insert_mock_data(self.conn)
+        self.conn = create_test_db()
         self.today = date(2025, 10, 10)
 
         # --- Setup a consistent scenario for testing ---
@@ -129,9 +126,7 @@ class TestTransactionEditingAndDeletion(unittest.TestCase):
 
 class TestOverspendingScenarios(unittest.TestCase):
     def setUp(self):
-        self.conn = create_connection(":memory:")
-        create_tables(self.conn)
-        insert_mock_data(self.conn)
+        self.conn = create_test_db()
         self.today = date(2025, 10, 10)
 
         # Setup a -100 budget

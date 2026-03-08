@@ -2,15 +2,13 @@ import unittest
 from datetime import date
 from unittest.mock import patch
 
-from cashflow.database import create_connection, create_tables, insert_mock_data
+from cashflow.database import create_test_db
 from cashflow.repository import add_subscription, get_transactions_by_origin_id
 from cashflow.controller import generate_forecasts
 
 class TestIncomeTransactions(unittest.TestCase):
     def setUp(self):
-        self.conn = create_connection(":memory:")
-        create_tables(self.conn)
-        insert_mock_data(self.conn)
+        self.conn = create_test_db()
         self.today = date(2025, 11, 5)
 
     def tearDown(self):

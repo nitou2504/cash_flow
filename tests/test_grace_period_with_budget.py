@@ -3,16 +3,14 @@ from datetime import date
 from unittest.mock import patch
 from dateutil.relativedelta import relativedelta
 
-from cashflow.database import create_connection, create_tables, insert_mock_data
+from cashflow.database import create_test_db
 from cashflow.controller import process_transaction_request, run_monthly_rollover
 from cashflow.repository import add_subscription, get_budget_allocation_for_month, get_setting, get_all_transactions
 
 class TestGracePeriodWithBudget(unittest.TestCase):
     def setUp(self):
         """Set up an in-memory database for testing."""
-        self.conn = create_connection(":memory:")
-        create_tables(self.conn)
-        insert_mock_data(self.conn)
+        self.conn = create_test_db()
         self.today = date(2025, 10, 5)
         self.budget_id = "budget_shopping"
 

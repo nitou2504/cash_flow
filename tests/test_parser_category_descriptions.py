@@ -2,7 +2,7 @@ import unittest
 import json
 from unittest.mock import patch
 
-from cashflow.database import create_connection, create_tables, initialize_categories
+from cashflow.database import create_test_db
 
 
 ACCOUNTS = [
@@ -28,9 +28,7 @@ class TestCategoryDescriptionsInPrompt(unittest.TestCase):
 
     def setUp(self):
         """Set up an in-memory database with categories."""
-        self.conn = create_connection(":memory:")
-        create_tables(self.conn)
-        initialize_categories(self.conn)
+        self.conn = create_test_db()
 
     def tearDown(self):
         self.conn.close()

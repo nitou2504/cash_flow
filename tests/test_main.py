@@ -1,20 +1,17 @@
 
 import unittest
-import sqlite3
 from unittest.mock import patch, MagicMock
 
 from cashflow.controller import process_transaction_request
 
 # Placeholder for database setup logic
-from cashflow.database import create_tables, insert_mock_data, create_connection
+from cashflow.database import create_test_db
 
 
 class TestMainController(unittest.TestCase):
     def setUp(self):
         """Set up an in-memory database for each test."""
-        self.conn = create_connection(":memory:")
-        create_tables(self.conn)
-        insert_mock_data(self.conn)
+        self.conn = create_test_db()
 
     def tearDown(self):
         """Close the database connection after each test."""
@@ -129,16 +126,7 @@ class TestMainController(unittest.TestCase):
 class TestMonthlyRollover(unittest.TestCase):
     def setUp(self):
         """Set up a full in-memory database for an integration test."""
-        self.conn = create_connection(":memory:")
-        create_tables(self.conn)
-        insert_mock_data(self.conn)
-        # Explicitly create the settings table for the test
-        self.conn.execute("""
-            CREATE TABLE IF NOT EXISTS settings (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            )
-        """)
+        self.conn = create_test_db()
 
     def tearDown(self):
         """Close the database connection after each test."""

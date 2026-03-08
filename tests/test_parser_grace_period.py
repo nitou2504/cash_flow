@@ -3,17 +3,14 @@ import json
 from unittest.mock import patch, call
 from datetime import date
 
-from cashflow.database import create_connection, create_tables, insert_mock_data, initialize_categories
+from cashflow.database import create_test_db
 from cashflow.repository import get_all_accounts, get_all_budgets
 from llm.parser import parse_transaction_string
 
 
 class TestParserGracePeriod(unittest.TestCase):
     def setUp(self):
-        self.conn = create_connection(":memory:")
-        create_tables(self.conn)
-        insert_mock_data(self.conn)
-        initialize_categories(self.conn)
+        self.conn = create_test_db()
         self.accounts = get_all_accounts(self.conn)
         self.budgets = get_all_budgets(self.conn)
 

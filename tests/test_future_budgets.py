@@ -3,7 +3,7 @@ from datetime import date
 from unittest.mock import patch
 from dateutil.relativedelta import relativedelta
 
-from cashflow.database import create_connection, create_tables, insert_mock_data
+from cashflow.database import create_test_db
 from cashflow.repository import (
     add_subscription, get_budget_allocation_for_month, get_all_transactions,
     get_setting, add_transactions
@@ -13,17 +13,8 @@ from cashflow.controller import process_transaction_request, generate_forecasts,
 class TestFutureBudgetImpact(unittest.TestCase):
     def setUp(self):
         """Set up an in-memory database and seed it for each test."""
-        self.conn = create_connection(":memory:")
-        create_tables(self.conn)
-        insert_mock_data(self.conn)
+        self.conn = create_test_db()
         self.today = date(2025, 10, 15)
-
-        # Insert default settings required for the test
-        self.conn.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-            ("forecast_horizon_months", "6")
-        )
-        self.conn.commit()
 
         # --- Setup Subscriptions ---
         # 1. Shopping Budget

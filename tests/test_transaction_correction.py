@@ -3,7 +3,7 @@ from datetime import date
 from unittest.mock import patch
 from dateutil.relativedelta import relativedelta
 
-from cashflow.database import create_connection, create_tables, insert_mock_data
+from cashflow.database import create_test_db
 from cashflow.repository import (
     add_subscription, get_budget_allocation_for_month, get_all_transactions
 )
@@ -14,9 +14,7 @@ from cashflow.controller import (
 class TestTransactionCorrection(unittest.TestCase):
     def setUp(self):
         """Set up an in-memory database for the correction scenario."""
-        self.conn = create_connection(":memory:")
-        create_tables(self.conn)
-        insert_mock_data(self.conn)
+        self.conn = create_test_db()
         
         # We are operating in October, but will correct a transaction from September
         self.today = date(2025, 10, 5)

@@ -1,21 +1,17 @@
 
 import unittest
-import sqlite3
 from datetime import date
 from unittest.mock import patch
 from dateutil.relativedelta import relativedelta
 
 from cashflow.controller import process_transaction_request, run_monthly_budget_reconciliation, run_monthly_rollover
-from cashflow.database import create_connection, create_tables, insert_mock_data, initialize_categories
+from cashflow.database import create_test_db
 from cashflow.repository import add_subscription, get_all_transactions, add_transactions, get_budget_allocation_for_month
 
 class TestBudgetLogic(unittest.TestCase):
     def setUp(self):
         """Set up an in-memory database for each test."""
-        self.conn = create_connection(":memory:")
-        create_tables(self.conn)
-        insert_mock_data(self.conn)
-        initialize_categories(self.conn)
+        self.conn = create_test_db()
 
         # 1. Create a budget subscription for "Home Groceries"
         self.food_budget_sub = {
@@ -131,10 +127,7 @@ class TestRolloverBudgetReconciliation(unittest.TestCase):
     """Integration tests for budget reconciliation triggered via run_monthly_rollover."""
 
     def setUp(self):
-        self.conn = create_connection(":memory:")
-        create_tables(self.conn)
-        insert_mock_data(self.conn)
-        initialize_categories(self.conn)
+        self.conn = create_test_db()
 
         # "return" budget starting two months ago
         self.two_months_ago = date.today().replace(day=1) - relativedelta(months=2)

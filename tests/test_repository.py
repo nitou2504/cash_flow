@@ -1,5 +1,4 @@
 import unittest
-import sqlite3
 from datetime import date
 
 from cashflow.repository import (
@@ -14,16 +13,13 @@ from cashflow.repository import (
     get_setting,
     commit_past_and_current_forecasts,
 )
-from cashflow.database import create_tables, insert_mock_data, create_connection
+from cashflow.database import create_test_db
 
 
 class TestRepository(unittest.TestCase):
     def setUp(self):
         """Set up an in-memory database for each test."""
-        self.conn = create_connection(":memory:")
-        self.conn.row_factory = sqlite3.Row
-        create_tables(self.conn)
-        insert_mock_data(self.conn)
+        self.conn = create_test_db()
 
     def tearDown(self):
         """Close the database connection after each test."""
@@ -113,10 +109,7 @@ class TestRepository(unittest.TestCase):
 class TestSubscriptionRepository(unittest.TestCase):
     def setUp(self):
         """Set up an in-memory database for each test."""
-        self.conn = sqlite3.connect(":memory:")
-        self.conn.row_factory = sqlite3.Row
-        create_tables(self.conn)
-        insert_mock_data(self.conn)
+        self.conn = create_test_db()
 
         # Sample subscriptions
         self.sub1 = {
@@ -175,7 +168,7 @@ class TestSubscriptionRepository(unittest.TestCase):
         
         remaining_forecasts = get_all_transactions(self.conn)
         self.assertEqual(len(remaining_forecasts), 1)
-        self.assertEqual(remaining_forecasts[0]["date_created"], "2025-10-15")
+        self.assertEqual(remaining_forecasts[0]["date_created"], date(2025, 10, 15))
 
     def test_update_future_forecasts_account(self):
         """Tests updating the payment account for future forecast transactions."""
@@ -195,16 +188,7 @@ class TestSubscriptionRepository(unittest.TestCase):
 class TestSettingsRepository(unittest.TestCase):
     def setUp(self):
         """Set up an in-memory database for each test."""
-        self.conn = sqlite3.connect(":memory:")
-        self.conn.row_factory = sqlite3.Row
-        create_tables(self.conn)
-        # The settings table needs to be created for these tests
-        self.conn.execute("""
-            CREATE TABLE IF NOT EXISTS settings (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            )
-        """)
+        self.conn = create_test_db()
 
     def tearDown(self):
         """Close the database connection after each test."""
