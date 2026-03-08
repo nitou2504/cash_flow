@@ -24,8 +24,8 @@ def add_transactions(conn: Connection, transactions: List[Dict[str, Any]]) -> Li
     query = """
         INSERT INTO transactions (
             date_created, date_payed, description, account, amount,
-            category, budget, status, origin_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            category, budget, status, origin_id, source, needs_review
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
     inserted_ids = []
     for t in transactions:
@@ -39,6 +39,8 @@ def add_transactions(conn: Connection, transactions: List[Dict[str, Any]]) -> Li
             t["budget"],
             t["status"],
             t["origin_id"],
+            t.get("source"),
+            t.get("needs_review", 0),
         ))
         inserted_ids.append(cursor.lastrowid)
     conn.commit()
@@ -542,3 +544,23 @@ def delete_subscription(conn: Connection, subscription_id: str):
     query = "DELETE FROM subscriptions WHERE id = ?"
     cursor.execute(query, (subscription_id,))
     conn.commit()
+
+
+def get_transactions_needing_review(conn: Connection, source: str = None) -> List[Dict[str, Any]]:
+    """Retrieves all transactions that need review, optionally filtered by source."""
+    cursor = conn.cursor()
+    if source:
+        cursor.execute(
+            "SELECT * FROM transactions WHERE needs_review = 1 AND source = ? ORDER BY date_payed DESC",
+            (source,),
+        )
+    else:
+        cursor.execute(
+            "SELECT * FROM transactions WHERE needs_review = 1 ORDER BY date_payed DESC"
+        )
+    return [dict(row) for row in cursor.fetchall()]
+
+
+def mark_reviewed(conn: Connection, transaction_id: int):
+    """Marks a transaction as reviewed (needs_review = 0)."""
+    update_transaction(conn, transaction_id, {"needs_review": 0})

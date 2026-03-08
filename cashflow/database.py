@@ -63,6 +63,8 @@ def create_tables(conn: Connection):
             budget TEXT,
             status TEXT NOT NULL,
             origin_id TEXT,
+            source TEXT DEFAULT NULL,
+            needs_review INTEGER NOT NULL DEFAULT 0,
             FOREIGN KEY (account) REFERENCES accounts (account_id)
         )
     """)
@@ -88,6 +90,21 @@ def create_tables(conn: Connection):
             timestamp DATE DEFAULT CURRENT_DATE
         )
     """)
+    ensure_schema_upgrades(conn)
+    conn.commit()
+
+def ensure_schema_upgrades(conn: Connection):
+    """Apply schema migrations for columns added after initial release."""
+    cursor = conn.cursor()
+    upgrades = [
+        "ALTER TABLE transactions ADD COLUMN source TEXT DEFAULT NULL",
+        "ALTER TABLE transactions ADD COLUMN needs_review INTEGER NOT NULL DEFAULT 0",
+    ]
+    for sql in upgrades:
+        try:
+            cursor.execute(sql)
+        except sqlite3.OperationalError:
+            pass  # column already exists
     conn.commit()
 
 def insert_mock_data(conn: Connection):

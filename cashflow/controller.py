@@ -155,6 +155,8 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
                 is_income=request.get("is_income", False),
                 is_pending=request.get("is_pending", False),
                 is_planning=request.get("is_planning", False),
+                source=request.get("source"),
+                needs_review=request.get("needs_review", False),
             )
         )
     elif transaction_type == "installment":
@@ -186,6 +188,8 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
             is_income=request.get("is_income", False),
             is_pending=request.get("is_pending", False),
             is_planning=request.get("is_planning", False),
+            source=request.get("source"),
+            needs_review=request.get("needs_review", False),
         )
     elif transaction_type == "split":
         new_transactions = transactions.create_split_transactions(
@@ -196,6 +200,8 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
             is_income=request.get("is_income", False),
             is_pending=request.get("is_pending", False),
             is_planning=request.get("is_planning", False),
+            source=request.get("source"),
+            needs_review=request.get("needs_review", False),
         )
     else:
         raise ValueError(f"Invalid transaction type: {transaction_type}")
