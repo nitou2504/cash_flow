@@ -136,7 +136,7 @@ Successfully added 1 transaction(s).
 python3 cli.py subscriptions add "Monthly groceries budget of 400 on Cash"
 ```
 
-Creates a recurring envelope that reserves $400 each month. Spending against the budget reduces the envelope—not your running balance—so you always see how much is truly committed vs. free.
+Creates a recurring envelope that reserves $400 each month. Spending against the budget reduces the envelope—not your running balance—so you always see how much is truly committed vs. free. All subscriptions and budgets run on a monthly cycle — one transaction per month, anchored to the start date's day-of-month (see [Monthly cycle](#subscriptions-add---add-budget-or-subscription) for details).
 
 ### Viewing cash flow
 
@@ -909,6 +909,13 @@ python3 cli.py subscriptions add -i
 Prompts for kind (subscription/budget/income), name, amount, account, category, dates, and underspend behavior. Auto-generates the subscription ID. Shows a preview table before creating and generates forecast transactions. End date defaults to end of start month and supports `+N` shortcut (e.g., `+3` = 3 months after start date, snapped to end of month).
 
 **What it does**: Parses your description or walks you through step by step, shows preview, asks for confirmation, and generates forecast transactions.
+
+**Monthly cycle**: Everything runs on a monthly cycle anchored to `start_date`:
+
+- The **day-of-month** from `start_date` is used for every forecast transaction. A budget starting on March 7th creates allocations on the 7th of each month (Apr 7, May 7, etc.). If the day doesn't exist in a month (e.g., the 31st in February), it falls back to the last day of that month.
+- **End date is inclusive**: a subscription with `start=03-01, end=04-05` generates transactions for both March 1st and April 1st, because April 1st falls before the end date. But `start=03-20, end=04-05` only generates March 20th — April 20th would be past the end date.
+- **Cash accounts**: `date_payed = date_created` (same day). **Credit cards**: payment date is calculated from the card's billing cycle (cut-off/payment days).
+- **Budget spending** is tracked per calendar month regardless of the allocation day — all March expenses count toward the March budget whether the allocation landed on the 1st or the 15th.
 
 ---
 
