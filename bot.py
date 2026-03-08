@@ -24,10 +24,13 @@ from ui.telegram_format import (
     format_budget_envelopes,
     format_planning_pending,
     format_summary_navigation_buttons,
+    format_summary_navigation_buttons_simple,
+    format_auto_confirm_message,
     parse_month_from_args,
 )
 from cashflow.config import (
     TELEGRAM_BOT_TOKEN, DB_PATH, TELEGRAM_ALLOWED_USERS, TELEGRAM_EXTRA_USERS,
+    TELEGRAM_AUTO_CONFIRM,
     BACKUP_ENABLED, BACKUP_DIR, BACKUP_KEEP_TODAY, BACKUP_RECENT_DAYS, BACKUP_MAX_DAYS,
     BACKUP_LOG_RETENTION_DAYS,
 )
@@ -66,6 +69,29 @@ async def reject_unauthorized(update: Update):
     logger.warning(f"Unauthorized access attempt from user {user.id} (@{user.username})")
     if update.effective_message:
         await update.effective_message.reply_text("You are not authorized to use this bot.")
+
+
+def should_auto_confirm(extra_user: dict | None) -> bool:
+    """Check if the current transaction should skip the confirm/revise flow."""
+    if TELEGRAM_AUTO_CONFIRM == "all":
+        return True
+    if TELEGRAM_AUTO_CONFIRM == "extra_users_only" and extra_user is not None:
+        return True
+    return False
+
+
+def _get_budget_remaining(budget_id: str, payment_date: date) -> tuple[float | None, str | None, float | None]:
+    """Return (remaining_amount, display_name, allocated) for a budget in the payment month."""
+    if not budget_id:
+        return None, None, None
+    budget_sub = repository.get_subscription_by_id(db_conn, budget_id)
+    if not budget_sub:
+        return None, None, None
+    payment_month = payment_date.replace(day=1)
+    spent = repository.get_total_spent_for_budget_in_month(db_conn, budget_id, payment_month)
+    allocated = budget_sub['monthly_amount']
+    remaining = allocated - spent
+    return remaining, budget_sub['name'], allocated
 
 
 # ==================== COMMAND HANDLERS ====================
@@ -209,6 +235,25 @@ async def handle_new_expense(update: Update, context: ContextTypes.DEFAULT_TYPE,
             payment_date = tx_module.simulate_payment_date(account, trans_date)
         else:
             payment_date = trans_date
+
+        # Auto-confirm for extra users (or all, depending on config)
+        if should_auto_confirm(extra_user):
+            if BACKUP_ENABLED:
+                db_backup.auto_backup(DB_PATH, BACKUP_DIR, BACKUP_KEEP_TODAY, BACKUP_RECENT_DAYS,
+                                         BACKUP_MAX_DAYS, operation="telegram add",
+                                         log_retention_days=BACKUP_LOG_RETENTION_DAYS)
+            controller.process_transaction_request(
+                db_conn, request_json, transaction_date=trans_date,
+                user_input=user_message, source="telegram"
+            )
+            budget_remaining, budget_name, budget_allocated = _get_budget_remaining(
+                request_json.get('budget'), payment_date
+            )
+            reply = format_auto_confirm_message(
+                request_json, payment_date, budget_remaining, budget_name, budget_allocated
+            )
+            await processing_msg.edit_text(reply, parse_mode='Markdown')
+            return
 
         # Format preview message
         preview_text = format_transaction_preview(request_json, payment_date)
@@ -435,6 +480,8 @@ async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update):
         return await reject_unauthorized(update)
 
+    extra_user = get_extra_user_info(update)
+
     target_month = None
     if context.args:
         args_str = ' '.join(context.args)
@@ -442,9 +489,16 @@ async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if target_month is None:
         today = date.today()
-        target_month = date(today.year, today.month, 1)
+        if extra_user:
+            account = next((a for a in repository.get_all_accounts(db_conn)
+                            if a['account_id'] == extra_user['account']), None)
+            if account:
+                pd = tx_module.simulate_payment_date(account, today)
+                target_month = date(pd.year, pd.month, 1)
+        if target_month is None:
+            target_month = date(today.year, today.month, 1)
 
-    await handle_summary_request(update, context, target_month, from_callback=False)
+    await handle_summary_request(update, context, target_month, from_callback=False, extra_user=extra_user)
 
 
 async def handle_summary_request(
@@ -452,7 +506,8 @@ async def handle_summary_request(
     context: ContextTypes.DEFAULT_TYPE,
     target_month: date,
     show_planning: bool = False,
-    from_callback: bool = False
+    from_callback: bool = False,
+    extra_user: dict | None = None,
 ):
     """
     Unified handler for summary requests showing a single month.
@@ -463,7 +518,10 @@ async def handle_summary_request(
         target_month: First day of month to display
         show_planning: If True, show planning/pending view; if False, show budget envelope view
         from_callback: True if called from button callback
+        extra_user: Extra user config dict, or None for owner
     """
+    if extra_user:
+        show_planning = False
     try:
         if from_callback:
             await update.callback_query.answer("Loading...")
@@ -514,9 +572,16 @@ async def handle_summary_request(
                     'status': allocation['status'],
                 })
 
+            if extra_user:
+                prefix = extra_user['budget'].lower()
+                budget_data = [b for b in budget_data if b['name'].lower().startswith(prefix)]
+
             message_text = format_budget_envelopes(budget_data, target_month)
 
-        buttons = format_summary_navigation_buttons(target_month, show_planning)
+        if extra_user:
+            buttons = format_summary_navigation_buttons_simple(target_month)
+        else:
+            buttons = format_summary_navigation_buttons(target_month, show_planning)
 
         if from_callback:
             await update.callback_query.edit_message_text(
@@ -574,12 +639,14 @@ async def summary_navigation_callback(
     try:
         year, month = map(int, month_str.split('-'))
         target_month = date(year, month, 1)
-        show_planning = (view_type == "plan")
+        extra_user = get_extra_user_info(update)
+        show_planning = False if extra_user else (view_type == "plan")
 
         await handle_summary_request(
             update, context, target_month,
             show_planning=show_planning,
-            from_callback=True
+            from_callback=True,
+            extra_user=extra_user,
         )
 
     except Exception as e:
