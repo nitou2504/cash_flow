@@ -12,6 +12,7 @@ BACKUP_DIR = os.getenv("BACKUP_DIR", "backups")
 BACKUP_KEEP_TODAY = int(os.getenv("BACKUP_KEEP_TODAY", "5"))
 BACKUP_RECENT_DAYS = int(os.getenv("BACKUP_RECENT_DAYS", "7"))
 BACKUP_MAX_DAYS = int(os.getenv("BACKUP_MAX_DAYS", "30"))
+BACKUP_LOG_RETENTION_DAYS = int(os.getenv("BACKUP_LOG_RETENTION_DAYS", "30"))
 
 # Telegram
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")

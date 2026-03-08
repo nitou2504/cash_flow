@@ -29,6 +29,7 @@ from ui.telegram_format import (
 from cashflow.config import (
     TELEGRAM_BOT_TOKEN, DB_PATH, TELEGRAM_ALLOWED_USERS,
     BACKUP_ENABLED, BACKUP_DIR, BACKUP_KEEP_TODAY, BACKUP_RECENT_DAYS, BACKUP_MAX_DAYS,
+    BACKUP_LOG_RETENTION_DAYS,
 )
 from cashflow import backup as db_backup
 
@@ -331,7 +332,9 @@ async def handle_confirm(query, context: ContextTypes.DEFAULT_TYPE):
 
         # Auto-backup before mutating
         if BACKUP_ENABLED:
-            db_backup.auto_backup(DB_PATH, BACKUP_DIR, BACKUP_KEEP_TODAY, BACKUP_RECENT_DAYS, BACKUP_MAX_DAYS)
+            db_backup.auto_backup(DB_PATH, BACKUP_DIR, BACKUP_KEEP_TODAY, BACKUP_RECENT_DAYS,
+                                     BACKUP_MAX_DAYS, operation="telegram add",
+                                     log_retention_days=BACKUP_LOG_RETENTION_DAYS)
 
         # Process transaction
         trans_date = None

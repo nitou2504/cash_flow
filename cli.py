@@ -23,6 +23,7 @@ from cashflow import repository
 from cashflow import backup as db_backup
 from cashflow.config import (
     BACKUP_ENABLED, BACKUP_DIR, BACKUP_KEEP_TODAY, BACKUP_RECENT_DAYS, BACKUP_MAX_DAYS,
+    BACKUP_LOG_RETENTION_DAYS,
 )
 from ui import cli_display as interface
 from llm import parser as llm_parser
@@ -1001,15 +1002,22 @@ def handle_add_installments(conn: sqlite3.Connection, args: argparse.Namespace):
 def handle_backup(db_path: str, args: argparse.Namespace):
     """Handle backup subcommands: create, list, restore."""
     console = Console()
-    action = getattr(args, "backup_action", None)
+    backup_args = args.backup_args
 
-    if action in ["list", "ls", "l"]:
+    if not backup_args:
+        # unnamed manual backup
+        path = db_backup.create_backup(db_path, BACKUP_DIR, manual=True)
+        db_backup.write_backup_log(BACKUP_DIR, path.name, "manual backup")
+        console.print(f"[green]Backup created: {path.name}[/green]")
+
+    elif backup_args[0] in ("list", "ls", "l"):
         backups = db_backup.list_backups(BACKUP_DIR)
         if not backups:
             print("No backups found.")
             return
         table = Table(title=f"Backups in {BACKUP_DIR}/")
         table.add_column("Filename")
+        table.add_column("Type")
         table.add_column("Date")
         table.add_column("Time")
         table.add_column("Size")
@@ -1017,14 +1025,18 @@ def handle_backup(db_path: str, args: argparse.Namespace):
             size_kb = b["size"] / 1024
             table.add_row(
                 b["path"].name,
+                "[bold cyan]manual[/bold cyan]" if b["manual"] else "auto",
                 b["date"].isoformat(),
                 b["datetime"].strftime("%H:%M:%S"),
                 f"{size_kb:.0f} KB",
             )
         console.print(table)
 
-    elif action in ["restore", "r"]:
-        backup_file = args.file
+    elif backup_args[0] in ("restore", "r"):
+        if len(backup_args) < 2:
+            print("Error: restore requires a filename")
+            return
+        backup_file = backup_args[1]
         # Allow just filename (resolve to backup dir)
         backup_path = Path(backup_file)
         if not backup_path.exists():
@@ -1039,13 +1051,68 @@ def handle_backup(db_path: str, args: argparse.Namespace):
             return
 
         pre_restore = db_backup.restore_backup(str(backup_path), db_path, BACKUP_DIR)
+        db_backup.write_backup_log(BACKUP_DIR, pre_restore.name, "pre-restore")
         console.print(f"[green]Database restored from {backup_path.name}[/green]")
         console.print(f"[dim]Pre-restore backup saved: {pre_restore.name}[/dim]")
 
     else:
-        # No subcommand = manual backup
-        path = db_backup.create_backup(db_path, BACKUP_DIR)
+        # first arg(s) = backup name
+        name = " ".join(backup_args)
+        path = db_backup.create_backup(db_path, BACKUP_DIR, manual=True, name=name)
+        db_backup.write_backup_log(BACKUP_DIR, path.name, f"manual backup: {name}")
         console.print(f"[green]Backup created: {path.name}[/green]")
+
+
+def describe_operation(args: argparse.Namespace) -> str:
+    """Build a one-line description of the CLI operation for backup logging."""
+    cmd = getattr(args, "command", "")
+    parts = [cmd]
+
+    if cmd == "add":
+        desc = getattr(args, "description", None)
+        imp = getattr(args, "import_file", None)
+        interactive = getattr(args, "interactive", False)
+        if interactive:
+            parts.append("-i")
+        elif imp:
+            parts.append(f"--import {imp}")
+        elif desc:
+            parts.append(desc)
+    elif cmd in ("create", "cr"):
+        entity = getattr(args, "create_entity", "")
+        parts.append(entity)
+        desc = getattr(args, "description", None)
+        if desc:
+            parts.append(desc)
+    elif cmd in ("delete", "del", "d"):
+        tid = getattr(args, "id", "")
+        parts.append(f"#{tid}")
+    elif cmd in ("edit", "e"):
+        tid = getattr(args, "id", "")
+        parts.append(f"#{tid}")
+    elif cmd in ("clear", "cl"):
+        tid = getattr(args, "id", "")
+        parts.append(f"#{tid}")
+    elif cmd in ("fix", "f"):
+        balance = getattr(args, "balance", None)
+        payment = getattr(args, "payment", None)
+        account = getattr(args, "account", None)
+        if balance is not None:
+            parts.append(f"--balance {balance}")
+        if payment:
+            parts.append(f"--payment {payment}")
+        if account:
+            parts.append(f"--account {account}")
+    elif cmd in ("accounts", "acc", "a", "categories", "cat", "c", "subscriptions", "sub", "s"):
+        sub = getattr(args, "subcommand", "")
+        if sub:
+            parts.append(sub)
+        name = getattr(args, "id", None) or getattr(args, "name", None)
+        if name:
+            parts.append(str(name))
+
+    result = " ".join(str(p) for p in parts if p)
+    return result[:80]
 
 
 def main():
@@ -1643,28 +1710,26 @@ Statement Fix:
         description="""
 Manage database backups. Creates timestamped copies using SQLite's backup API.
 
-Auto-backup runs before every mutating operation (add, edit, delete, etc.)
-with a retention policy that keeps the first + last N backups per day,
-then one per day for older backups, and deletes very old ones.
+Usage:
+  backup                     Create an unnamed manual backup
+  backup "pre-migration"     Create a named manual backup
+  backup list                List all backups (with type column)
+  backup restore <file>      Restore from a backup file
+
+Manual backups are never auto-deleted by the retention policy.
 
 Configuration via environment variables (or .env):
-  BACKUP_ENABLED     Enable auto-backup (default: true)
-  BACKUP_DIR         Backup directory (default: backups)
-  BACKUP_KEEP_TODAY  Keep last N backups for today (default: 5)
-  BACKUP_RECENT_DAYS Days to keep one-per-day (default: 7)
-  BACKUP_MAX_DAYS    Delete backups older than this (default: 30)
+  BACKUP_ENABLED            Enable auto-backup (default: true)
+  BACKUP_DIR                Backup directory (default: backups)
+  BACKUP_KEEP_TODAY         Keep last N backups for today (default: 5)
+  BACKUP_RECENT_DAYS        Days to keep one-per-day (default: 7)
+  BACKUP_MAX_DAYS           Delete backups older than this (default: 30)
+  BACKUP_LOG_RETENTION_DAYS Days to keep backup log entries (default: 30)
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    backup_subparsers = backup_parser.add_subparsers(dest="backup_action")
-
-    # backup (no subcommand) = create manual backup
-    # backup list
-    backup_subparsers.add_parser("list", aliases=["ls", "l"], help="List existing backups")
-
-    # backup restore <file>
-    backup_restore_parser = backup_subparsers.add_parser("restore", aliases=["r"], help="Restore from a backup file")
-    backup_restore_parser.add_argument("file", help="Backup filename or full path to restore from")
+    backup_parser.add_argument("backup_args", nargs="*", default=[], metavar="ACTION",
+        help='list (ls/l) | restore (r) FILE | "name" for named backup')
 
     args = parser.parse_args()
 
@@ -1677,7 +1742,10 @@ Configuration via environment variables (or .env):
             is_read_only = True
 
     if BACKUP_ENABLED and not is_read_only:
-        db_backup.auto_backup(db_path, BACKUP_DIR, BACKUP_KEEP_TODAY, BACKUP_RECENT_DAYS, BACKUP_MAX_DAYS)
+        operation = describe_operation(args)
+        db_backup.auto_backup(db_path, BACKUP_DIR, BACKUP_KEEP_TODAY, BACKUP_RECENT_DAYS,
+                              BACKUP_MAX_DAYS, operation=operation,
+                              log_retention_days=BACKUP_LOG_RETENTION_DAYS)
 
     # --- Command Handling ---
     if args.command in ["backup", "bk"]:

@@ -1088,16 +1088,30 @@ Proceed? [Y/n]:
 #### `backup` - Create a manual backup
 
 ```bash
-python3 cli.py backup                    # Create a backup now
-python3 cli.py backup list               # List all backups
+python3 cli.py backup                    # Create an unnamed manual backup
+python3 cli.py backup "pre-migration"    # Create a named manual backup
+python3 cli.py backup list               # List all backups (with type column)
 python3 cli.py backup restore <file>     # Restore from a backup
 ```
 
 **What it does**: Creates timestamped database snapshots using SQLite's backup API, which is safe even while the database is in use.
 
-**Auto-backup**: Runs automatically before every mutating CLI command (add, edit, delete, clear, fix, etc.) and before Telegram bot transactions. Read-only commands (view, export) do not trigger a backup.
+**Manual vs auto backups**: Manual backups (created via `cli.py backup`) are never auto-deleted by the retention policy. You can optionally give them a name for easy identification. Auto backups are created before every mutating CLI command and are subject to retention.
 
-**Retention policy**: Backups are automatically pruned to save disk space:
+| Type | Filename pattern | Example |
+|------|-----------------|---------|
+| Auto | `cash_flow_YYYYMMDD_HHMMSS_ffffff.db` | `cash_flow_20260307_143625_123456.db` |
+| Manual | `cash_flow_manual_YYYYMMDD_HHMMSS_ffffff.db` | `cash_flow_manual_20260307_143625_123456.db` |
+| Manual (named) | `cash_flow_manual_YYYYMMDD_HHMMSS_ffffff_SLUG.db` | `cash_flow_manual_20260307_143625_123456_pre_migration.db` |
+
+**Backup log**: Every backup (auto and manual) is recorded in `backups/backup.log` with the triggering operation:
+
+```
+2026-03-07 14:36:25 | cash_flow_20260307_143625_123456.db | add pichincha, mar 7, supermaxi
+2026-03-07 14:40:00 | cash_flow_manual_20260307_144000_654321_pre_migration.db | manual backup: pre-migration
+```
+
+**Retention policy**: Auto backups are automatically pruned to save disk space. Manual backups are never auto-deleted.
 
 | Age | Kept |
 |-----|------|
@@ -1114,6 +1128,7 @@ python3 cli.py backup restore <file>     # Restore from a backup
 | `BACKUP_KEEP_TODAY` | `5` | Number of recent backups to keep for today (plus the first) |
 | `BACKUP_RECENT_DAYS` | `7` | Days threshold for "keep last per day" policy |
 | `BACKUP_MAX_DAYS` | `30` | Delete backups older than this many days |
+| `BACKUP_LOG_RETENTION_DAYS` | `30` | Days to keep backup log entries |
 
 **Restore example**:
 
@@ -1122,7 +1137,7 @@ python3 cli.py backup list                              # Find the backup you wa
 python3 cli.py backup restore cash_flow_20260307_150623_093810.db  # Restore it
 ```
 
-Restore always creates a pre-restore safety backup first, so you can undo a restore if needed.
+Restore always creates a pre-restore safety backup (marked as manual) first, so you can undo a restore if needed.
 
 ---
 
@@ -2148,8 +2163,9 @@ python3 cli.py view --sort date_created   # Sort by purchase date
 python3 cli.py export report.csv --with-balance
 
 # === BACKUP ===
-python3 cli.py backup                     # Manual backup
-python3 cli.py backup list                # List backups
+python3 cli.py backup                     # Manual backup (unnamed)
+python3 cli.py backup "pre-migration"     # Manual backup (named)
+python3 cli.py backup list                # List backups (with type)
 python3 cli.py backup restore <file>      # Restore from backup
 ```
 
