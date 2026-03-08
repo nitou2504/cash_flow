@@ -97,6 +97,22 @@ def should_auto_confirm(extra_user: dict | None) -> bool:
     return False
 
 
+def _describe_telegram_op(action: str, request_json: dict = None, tx: dict = None, extra_user: dict = None) -> str:
+    """Build a descriptive operation string for backup logs."""
+    parts = [f"telegram {action}"]
+    if extra_user:
+        parts.append(f"[{extra_user['name']}]")
+    source = request_json or tx
+    if source:
+        desc = source.get('description', '')
+        amount = source.get('amount', 0)
+        if desc:
+            parts.append(desc)
+        if amount:
+            parts.append(f"${abs(amount):.2f}")
+    return " ".join(parts)[:80]
+
+
 def _get_budget_remaining(budget_id: str, payment_date: date) -> tuple[float | None, str | None, float | None]:
     """Return (remaining_amount, display_name, allocated) for a budget in the payment month."""
     if not budget_id:
@@ -289,8 +305,9 @@ async def handle_new_expense(update: Update, context: ContextTypes.DEFAULT_TYPE,
         # Auto-confirm for extra users (or all, depending on config)
         if should_auto_confirm(extra_user):
             if BACKUP_ENABLED:
+                op = _describe_telegram_op("add", request_json=request_json, extra_user=extra_user)
                 db_backup.auto_backup(DB_PATH, BACKUP_DIR, BACKUP_KEEP_TODAY, BACKUP_RECENT_DAYS,
-                                         BACKUP_MAX_DAYS, operation="telegram add",
+                                         BACKUP_MAX_DAYS, operation=op,
                                          log_retention_days=BACKUP_LOG_RETENTION_DAYS)
             controller.process_transaction_request(
                 db_conn, request_json, transaction_date=trans_date,
@@ -474,8 +491,9 @@ async def handle_confirm(update: Update, query, context: ContextTypes.DEFAULT_TY
 
         # Auto-backup before mutating
         if BACKUP_ENABLED:
+            op = _describe_telegram_op("add", request_json=pending_tx)
             db_backup.auto_backup(DB_PATH, BACKUP_DIR, BACKUP_KEEP_TODAY, BACKUP_RECENT_DAYS,
-                                     BACKUP_MAX_DAYS, operation="telegram add",
+                                     BACKUP_MAX_DAYS, operation=op,
                                      log_retention_days=BACKUP_LOG_RETENTION_DAYS)
 
         # Process transaction
@@ -612,9 +630,10 @@ async def review_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             tx = repository.get_transaction_by_id(db_conn, tx_id)
             if tx:
                 if BACKUP_ENABLED:
+                    op = _describe_telegram_op("review approve", tx=tx)
                     db_backup.auto_backup(DB_PATH, BACKUP_DIR, BACKUP_KEEP_TODAY,
                                          BACKUP_RECENT_DAYS, BACKUP_MAX_DAYS,
-                                         operation="telegram review approve",
+                                         operation=op,
                                          log_retention_days=BACKUP_LOG_RETENTION_DAYS)
                 repository.mark_reviewed(db_conn, tx_id)
                 context.user_data['review_count'] = context.user_data.get('review_count', 0) + 1
@@ -641,9 +660,10 @@ async def review_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             tx = repository.get_transaction_by_id(db_conn, tx_id)
             if tx:
                 if BACKUP_ENABLED:
+                    op = _describe_telegram_op("review edit", tx=tx)
                     db_backup.auto_backup(DB_PATH, BACKUP_DIR, BACKUP_KEEP_TODAY,
                                          BACKUP_RECENT_DAYS, BACKUP_MAX_DAYS,
-                                         operation="telegram review edit",
+                                         operation=op,
                                          log_retention_days=BACKUP_LOG_RETENTION_DAYS)
                 controller.process_transaction_edit(db_conn, tx_id, changes, new_date)
                 repository.mark_reviewed(db_conn, tx_id)
