@@ -1221,6 +1221,7 @@ Natural language (requires LLM):
 
 Interactive (no LLM needed):
   cli.py add -i
+  Amount defaults to expense; prefix with + for income (e.g. +1000 for salary).
 
 CSV import:
   cli.py add --import transactions.csv
