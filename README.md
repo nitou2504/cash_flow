@@ -168,13 +168,12 @@ Track expenses on-the-go with the companion [Telegram bot](#telegram-bot). Send 
 
 ## What Makes This Different?
 
-- **Works Without LLMs**: Interactive mode (`-i`) provides full functionality with no API keys or configuration
+- **Works out of the box**: Interactive mode (`-i`) covers every operation — no API keys, no configuration, just install and go
 - **True Cash Flow Forecasting**: See exactly how much money you'll have on any future date, accounting for all commitments
-- **Smart Credit Card Handling**: Automatically calculates payment dates based on billing cycles—no more manual tracking
-- **Live Budget System**: Digital envelopes that update in real-time as you spend, with accurate remaining balances
-- **Single Timeline View**: Past, present, and future transactions in one unified view—no separate budget sheets
-- **Optional LLM Input**: Add transactions by typing "Spent 45.50 on groceries today" — powered by Gemini, Ollama, or any LiteLLM-compatible provider
-- **Companion Telegram Bot**: Track expenses on-the-go with natural language and inline confirmation
+- **Smart Credit Card Handling**: Automatically calculates payment dates based on billing cycles — no more manual tracking
+- **Live Budget Envelopes**: Spending reduces the envelope in real-time so you always see how much is left, while your running balance shows real disposable cash
+- **Single Timeline**: Past, present, and future transactions in one unified view — no separate budget sheets
+- **Even faster with LLMs**: Add an LLM provider to unlock natural language input ("Spent 45.50 on groceries today") and the companion [Telegram bot](#telegram-bot) for tracking on-the-go
 
 ---
 
