@@ -100,6 +100,35 @@ def prompt_amount(label="Amount", default=None):
         except ValueError:
             console.print("[red]Enter a valid number.[/red]")
 
+def prompt_signed_amount(label="Amount", default=None):
+    """Edit amount preserving sign. Bare number keeps original sign, +/- overrides."""
+    sign_hint = "+income" if default is not None and default > 0 else "-expense"
+    suffix = f" [{default}, prefix +/- to change sign]" if default is not None else ""
+    while True:
+        try:
+            raw = input(f"{label}{suffix}: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            return None
+        if not raw and default is not None:
+            return default
+        try:
+            has_explicit_sign = raw.lstrip("$").startswith("+") or raw.lstrip("$").startswith("-")
+            cleaned = raw.replace("$", "")
+            if re.fullmatch(r'[+-]?\d+,\d{2}', cleaned):
+                cleaned = cleaned.replace(",", ".")
+            else:
+                cleaned = cleaned.replace(",", "")
+            val = float(cleaned)
+            if val == 0:
+                console.print("[red]Amount cannot be zero.[/red]")
+                continue
+            if not has_explicit_sign and default is not None:
+                # Bare number: keep original sign
+                val = abs(val) * (1 if default > 0 else -1)
+            return val
+        except ValueError:
+            console.print("[red]Enter a valid number. Use +/- prefix to change sign.[/red]")
+
 
 def _end_of_month(d):
     """Return the last day of the month containing date d."""
@@ -754,7 +783,7 @@ def interactive_edit_transaction(conn, transaction_id):
         table.add_column("Field", style="dim")
         table.add_column("Value")
         table.add_row("Description", tx['description'])
-        table.add_row("Amount", f"{abs(tx['amount']):.2f}")
+        table.add_row("Amount", f"{tx['amount']:.2f}")
         table.add_row("Date Created", str(tx['date_created']))
         table.add_row("Account", tx['account'])
         table.add_row("Category", tx.get('category') or '')
@@ -768,8 +797,8 @@ def interactive_edit_transaction(conn, transaction_id):
         if description is None:
             return None
 
-        current_amount = abs(tx['amount'])
-        amount = prompt_amount("Amount", default=current_amount)
+        current_amount = tx['amount']
+        amount = prompt_signed_amount("Amount", default=current_amount)
         if amount is None:
             return None
 
@@ -810,8 +839,7 @@ def interactive_edit_transaction(conn, transaction_id):
         if description != tx['description']:
             updates['description'] = description
         if amount != current_amount:
-            # Preserve sign
-            updates['amount'] = -amount if tx['amount'] < 0 else amount
+            updates['amount'] = amount
         if category_name != (tx.get('category') or None):
             updates['category'] = category_name
         if budget_id != (tx.get('budget') or None):

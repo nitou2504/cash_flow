@@ -646,6 +646,8 @@ python3 cli.py edit 456 -i --all  # Interactive edit applied to all installments
 
 Shows current values and prompts each field with the current value as default. Press Enter to keep, or type a new value to change. Only changed fields are applied.
 
+**Amount sign handling**: bare number (e.g. `99`) keeps the original sign — an expense stays an expense. Prefix with `+` to force positive (income/refund) or `-` to force negative (expense).
+
 **Available options**:
 
 - `--description, -d`: Change description

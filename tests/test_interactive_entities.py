@@ -491,7 +491,7 @@ class TestInteractiveEditTransaction(unittest.TestCase):
 
     @patch('builtins.input', side_effect=[
         'New desc',         # description
-        '75.00',            # amount (changed)
+        '-75.00',           # amount (changed, explicit sign)
         '2026-03-05',       # date (changed)
         DEFAULT,            # category: skip
         # no budget prompt
@@ -543,7 +543,7 @@ class TestInteractiveEditTransaction(unittest.TestCase):
 
     @patch('builtins.input', side_effect=[
         DEFAULT,            # description: keep
-        '99.99',            # amount: changed
+        '99.99',            # amount: bare number keeps original sign (-expense)
         DEFAULT,            # date
         DEFAULT,            # category
         # no budget prompt
@@ -551,7 +551,7 @@ class TestInteractiveEditTransaction(unittest.TestCase):
         DEFAULT,            # confirm
     ])
     def test_edit_amount_preserves_sign(self, _):
-        """Editing amount on an expense keeps the negative sign."""
+        """Bare number preserves original sign (expense stays negative)."""
         result = interactive_edit_transaction(self.conn, self.tx_id)
         self.assertIsNotNone(result)
         updates, _ = result
@@ -597,7 +597,7 @@ class TestInteractiveEditTransactionE2E(unittest.TestCase):
 
     @patch('builtins.input', side_effect=[
         'Edited desc',      # description
-        '99.00',            # amount
+        '99.00',            # amount: bare number, keeps negative sign
         DEFAULT,            # date
         DEFAULT,            # category: skip
         # no budget prompt

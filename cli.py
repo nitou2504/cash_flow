@@ -1634,6 +1634,11 @@ Edit transaction properties like status, amount, category, etc.
 Use --all to apply changes to all transactions in a group (e.g., mark all installments as pending).
 Use -i for interactive guided mode (shows current values, prompts each field).
 
+INTERACTIVE AMOUNT EDITING (-i):
+  Bare number (e.g. 99): keeps the original sign (expense stays expense).
+  Prefix with + (e.g. +99): force positive (income/refund).
+  Prefix with - (e.g. -99): force negative (expense).
+
 Transaction statuses:
   - committed: Confirmed transaction (default)
   - pending: Awaiting confirmation (doesn't affect running balance)
