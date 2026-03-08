@@ -98,7 +98,8 @@ def should_auto_confirm(extra_user: dict | None) -> bool:
     return False
 
 
-def _describe_telegram_op(action: str, request_json: dict = None, tx: dict = None, extra_user: dict = None) -> str:
+def _describe_telegram_op(action: str, request_json: dict = None, tx: dict = None,
+                          extra_user: dict = None, changes: dict = None) -> str:
     """Build a descriptive operation string for backup logs."""
     parts = [f"telegram {action}"]
     if extra_user:
@@ -111,7 +112,10 @@ def _describe_telegram_op(action: str, request_json: dict = None, tx: dict = Non
             parts.append(desc)
         if amount:
             parts.append(f"${abs(amount):.2f}")
-    return " ".join(parts)[:80]
+    if changes:
+        edits = [f"{k}→{v}" for k, v in changes.items()]
+        parts.append(f"({', '.join(edits)})")
+    return " ".join(parts)[:120]
 
 
 def _get_budget_remaining(budget_id: str, payment_date: date) -> tuple[float | None, str | None, float | None]:
@@ -692,7 +696,10 @@ async def review_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             tx = repository.get_transaction_by_id(db_conn, tx_id)
             if tx:
                 if BACKUP_ENABLED:
-                    op = _describe_telegram_op("review edit", tx=tx)
+                    log_changes = dict(changes)
+                    if new_date:
+                        log_changes['date'] = str(new_date)
+                    op = _describe_telegram_op("review edit", tx=tx, changes=log_changes)
                     db_backup.auto_backup(DB_PATH, BACKUP_DIR, BACKUP_KEEP_TODAY,
                                          BACKUP_RECENT_DAYS, BACKUP_MAX_DAYS,
                                          operation=op,
