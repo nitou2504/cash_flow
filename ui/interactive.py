@@ -73,13 +73,16 @@ def prompt_text(label, default=None, required=True):
         return raw
 
 
-def prompt_amount(label="Amount"):
+def prompt_amount(label="Amount", default=None):
     """Validated positive float."""
+    suffix = f" [{default}]" if default is not None else ""
     while True:
         try:
-            raw = input(f"{label}: ").strip()
+            raw = input(f"{label}{suffix}: ").strip()
         except (KeyboardInterrupt, EOFError):
             return None
+        if not raw and default is not None:
+            return default
         try:
             val = float(raw)
             if val <= 0:
