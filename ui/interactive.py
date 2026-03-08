@@ -101,17 +101,34 @@ def prompt_amount(label="Amount", default=None):
             console.print("[red]Enter a valid number.[/red]")
 
 
-def prompt_date(label="Date", default=None):
-    """Date input. Accepts YYYY-MM-DD, MM/DD, 'yesterday', empty=default."""
+def _end_of_month(d):
+    """Return the last day of the month containing date d."""
+    return d.replace(day=1) + relativedelta(months=1) - timedelta(days=1)
+
+
+def prompt_date(label="Date", default=None, reference_date=None):
+    """Date input. Accepts YYYY-MM-DD, MM/DD, 'yesterday', '+N' (months from reference)."""
     if default is None:
         default = date.today()
+    hint = default.isoformat()
+    if reference_date is not None:
+        hint += ", +N months"
     while True:
         try:
-            raw = input(f"{label} [{default.isoformat()}]: ").strip()
+            raw = input(f"{label} [{hint}]: ").strip()
         except (KeyboardInterrupt, EOFError):
             return None
         if not raw:
             return default
+
+        # +N months from reference date (end of that month)
+        if reference_date is not None and raw.startswith('+'):
+            try:
+                n = int(raw[1:])
+                target = reference_date + relativedelta(months=n)
+                return _end_of_month(target)
+            except ValueError:
+                pass
 
         # Named shortcuts
         lower = raw.lower()
@@ -663,7 +680,8 @@ def interactive_add_subscription(conn):
         if has_end is None:
             return None
         if has_end:
-            end_date = prompt_date("End date")
+            eom = _end_of_month(start_date)
+            end_date = prompt_date("End date", default=eom, reference_date=start_date)
             if end_date is None:
                 return None
 
@@ -885,8 +903,9 @@ def interactive_edit_subscription(conn, subscription_id):
                 end_date = None
                 end_date_changed = True
             else:
-                current_end = date.fromisoformat(str(sub['end_date'])) if sub.get('end_date') else date.today()
-                end_date = prompt_date("End date", default=current_end)
+                sub_start = date.fromisoformat(str(sub['start_date']))
+                current_end = date.fromisoformat(str(sub['end_date'])) if sub.get('end_date') else _end_of_month(sub_start)
+                end_date = prompt_date("End date", default=current_end, reference_date=sub_start)
                 if end_date is None:
                     return None
                 end_date_changed = True

@@ -1230,7 +1230,7 @@ CSV import:
     )
     add_parser.add_argument("description", nargs="?", help="Natural language description (or use -i)")
     add_parser.add_argument("--interactive", "-i", action="store_true",
-                            help="Interactive guided entry (no LLM needed)")
+                            help="Interactive guided entry (no LLM needed). Accepts numbers, prefixes, $amounts, +N month shortcuts")
     add_parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt (auto-accept)")
     add_parser.add_argument("--import", dest="import_file", metavar="FILE",
                             help="Import transactions from a CSV file")
@@ -1508,7 +1508,7 @@ Examples:
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     subscriptions_add_llm_parser.add_argument("description", nargs="?", help="Natural language budget/subscription description")
-    subscriptions_add_llm_parser.add_argument("--interactive", "-i", action="store_true", help="Interactive guided mode (no LLM needed)")
+    subscriptions_add_llm_parser.add_argument("--interactive", "-i", action="store_true", help="Interactive guided mode (no LLM needed). End date accepts +N months shortcut")
 
     subscriptions_edit_parser = subscriptions_subparsers.add_parser(
         "edit",

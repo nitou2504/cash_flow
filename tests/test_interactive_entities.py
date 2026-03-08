@@ -19,6 +19,7 @@ from cashflow import repository, controller
 from ui.interactive import (
     prompt_amount,
     prompt_choice,
+    prompt_date,
     interactive_add_account,
     interactive_add_category,
     interactive_add_subscription,
@@ -1351,6 +1352,106 @@ class TestPromptAmountCleaning(unittest.TestCase):
     @patch('builtins.input', return_value='')
     def test_default_still_works(self, _):
         self.assertEqual(prompt_amount("Amount", default=25.0), 25.0)
+
+
+# ==================== PROMPT_DATE +N MONTHS ====================
+
+class TestPromptDatePlusMonths(unittest.TestCase):
+    """Tests for prompt_date +N shortcut and end-of-month default."""
+
+    @patch('builtins.input', return_value='+1')
+    def test_plus_one_month(self, _):
+        ref = date(2026, 3, 5)
+        result = prompt_date("End date", default=date(2026, 3, 31), reference_date=ref)
+        self.assertEqual(result, date(2026, 4, 30))
+
+    @patch('builtins.input', return_value='+2')
+    def test_plus_two_months(self, _):
+        ref = date(2026, 3, 5)
+        result = prompt_date("End date", default=date(2026, 3, 31), reference_date=ref)
+        self.assertEqual(result, date(2026, 5, 31))
+
+    @patch('builtins.input', return_value='+0')
+    def test_plus_zero_same_month(self, _):
+        ref = date(2026, 3, 5)
+        result = prompt_date("End date", default=date(2026, 3, 31), reference_date=ref)
+        self.assertEqual(result, date(2026, 3, 31))
+
+    @patch('builtins.input', return_value='+12')
+    def test_plus_twelve_months(self, _):
+        ref = date(2026, 3, 15)
+        result = prompt_date("End date", default=date(2026, 3, 31), reference_date=ref)
+        self.assertEqual(result, date(2027, 3, 31))
+
+    @patch('builtins.input', return_value='+1')
+    def test_plus_one_from_january(self, _):
+        """Jan 31 + 1 month → Feb 28."""
+        ref = date(2026, 1, 31)
+        result = prompt_date("End date", default=date(2026, 1, 31), reference_date=ref)
+        self.assertEqual(result, date(2026, 2, 28))
+
+    @patch('builtins.input', return_value='')
+    def test_default_is_end_of_month(self, _):
+        """Empty input returns the default (end of start month)."""
+        result = prompt_date("End date", default=date(2026, 3, 31), reference_date=date(2026, 3, 5))
+        self.assertEqual(result, date(2026, 3, 31))
+
+    @patch('builtins.input', return_value='2026-06-15')
+    def test_explicit_date_still_works(self, _):
+        """Explicit YYYY-MM-DD bypasses +N logic."""
+        ref = date(2026, 3, 5)
+        result = prompt_date("End date", default=date(2026, 3, 31), reference_date=ref)
+        self.assertEqual(result, date(2026, 6, 15))
+
+    @patch('builtins.input', side_effect=['+1', '2026-06-01'])
+    def test_plus_without_reference_retries(self, _):
+        """+N without reference_date is not recognized, retries."""
+        result = prompt_date("End date", default=date(2026, 3, 31))
+        self.assertEqual(result, date(2026, 6, 1))
+
+
+class TestEndDateDefaultInAddSubscription(unittest.TestCase):
+    """Test that add subscription defaults end date to end of start month."""
+
+    def setUp(self):
+        self.conn = create_test_db()
+
+    def tearDown(self):
+        self.conn.close()
+
+    @patch('builtins.input', side_effect=[
+        'budget',           # kind
+        'Test',             # name
+        '100',              # amount
+        CASH,               # account
+        CAT_PERSONAL,       # category
+        '2026-03-05',       # start date
+        YES,                # set end date: yes
+        DEFAULT,            # end date: accept default (should be 2026-03-31)
+        DEFAULT,            # underspend: keep
+        DEFAULT,            # confirm
+    ])
+    def test_default_end_date_is_end_of_start_month(self, _):
+        result = interactive_add_subscription(self.conn)
+        self.assertIsNotNone(result)
+        self.assertEqual(result['end_date'], date(2026, 3, 31))
+
+    @patch('builtins.input', side_effect=[
+        'budget',           # kind
+        'Test',             # name
+        '100',              # amount
+        CASH,               # account
+        CAT_PERSONAL,       # category
+        '2026-01-15',       # start date
+        YES,                # set end date: yes
+        '+2',               # end date: +2 months from start → end of March
+        DEFAULT,            # underspend: keep
+        DEFAULT,            # confirm
+    ])
+    def test_plus_n_end_date(self, _):
+        result = interactive_add_subscription(self.conn)
+        self.assertIsNotNone(result)
+        self.assertEqual(result['end_date'], date(2026, 3, 31))
 
 
 if __name__ == '__main__':

@@ -74,11 +74,20 @@ python3 cli.py subscriptions edit budget_food -i  # Edit budget/subscription
 
 Step-by-step guided entry with selection menus, defaults, and previews. Works offline when the LLM is unavailable (Gemini quota exhausted, Ollama down, etc.). Available on all entity commands — no flags or syntax to memorize.
 
+**Input shortcuts** — designed for speed:
+
+| Prompt type | Accepts | Examples |
+|---|---|---|
+| Choice (type, status, etc.) | Number, unique prefix, or full name | `1`, `cr` → credit_card, `sp` → split |
+| Amount | `$`, commas, locale decimals | `$9.99`, `1,234.50`, `9,99` |
+| Date | YYYY-MM-DD, MM/DD, shortcuts | `yesterday`, `today`, `+2` (months) |
+| Selection (account, category) | Number or substring | `2`, `visa` |
+
 ```
 Interactive Transaction Entry
 Press Ctrl+C to cancel at any time.
 
-Type [SIMPLE/installment/split]:
+Type [1.SIMPLE / 2.installment / 3.split]: 1
 Date [2026-03-07]:
 Description: Supermaxi groceries
 
@@ -88,7 +97,7 @@ Account:
   3. Visa Produbanco (credit_card, cut-off: 14, pay: 25)
 [number or name]> 2
 
-Amount: 45.50
+Amount: $45.50
 
 Category:
   1. Dining-Snacks - Eating out, takeout, coffee, and social food/drinks
@@ -101,7 +110,7 @@ Budget:
   2. budget_personal_mar ($0/$100 spent, $100 left)
 [number or name, empty to skip]> 1
 
-Status [NORMAL/pending/planning]:
+Status [1.NORMAL / 2.pending / 3.planning]:
 Is this income? [y/N]:
 
 Transaction Preview
@@ -579,7 +588,7 @@ python3 cli.py add "Split purchase: 30 on groceries, 15 on snacks"
 python3 cli.py add -i
 ```
 
-Prompts step-by-step for type, date, description, account, amount, category, and budget with numbered selection menus. Supports simple, installment, and split transactions.
+Prompts step-by-step for type, date, description, account, amount, category, and budget with numbered selection menus. Supports simple, installment, and split transactions. Choice prompts accept numbers (`1`), unique prefixes (`cr` → credit_card, `sp` → split), or full names. Amounts accept `$` signs and commas (`$9.99`, `1,234.50`, `9,99`).
 
 **What it does**: Shows you a preview table and asks for confirmation before creating the transaction.
 
@@ -834,7 +843,7 @@ python3 cli.py accounts add "MasterCard closing on 15th, due on 3rd"
 python3 cli.py accounts add -i
 ```
 
-Prompts for account name, type (cash/credit_card), and cut-off/payment days for credit cards. Shows a preview table before creating.
+Prompts for account name, type (cash/credit_card), and cut-off/payment days for credit cards. Type prompt accepts `1`/`2`, `ca`/`cr`, or full name. Shows a preview table before creating.
 
 ---
 
@@ -897,7 +906,7 @@ python3 cli.py subscriptions add "Vacation fund 200/month until December"
 python3 cli.py subscriptions add -i
 ```
 
-Prompts for kind (subscription/budget/income), name, amount, account, category, dates, and underspend behavior. Auto-generates the subscription ID. Shows a preview table before creating and generates forecast transactions.
+Prompts for kind (subscription/budget/income), name, amount, account, category, dates, and underspend behavior. Auto-generates the subscription ID. Shows a preview table before creating and generates forecast transactions. End date defaults to end of start month and supports `+N` shortcut (e.g., `+3` = 3 months after start date, snapped to end of month).
 
 **What it does**: Parses your description or walks you through step by step, shows preview, asks for confirmation, and generates forecast transactions.
 
