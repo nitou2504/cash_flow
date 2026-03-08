@@ -333,6 +333,93 @@ def format_summary_navigation_buttons_simple(
     return InlineKeyboardMarkup(keyboard)
 
 
+def format_review_card(
+    tx: Dict[str, Any],
+    index: int,
+    total: int,
+    lang: str = "en",
+) -> str:
+    """Format a single transaction for the review flow."""
+    counter = t("review_counter", lang, current=index + 1, total=total)
+    msg = f"📋 *{t('review_header', lang)}* ({counter})\n\n"
+    msg += f"📅 *{t('date_label', lang)}:* {tx.get('date_created', 'N/A')}\n"
+    msg += f"📝 *{t('description', lang)}:* {escape_markdown(str(tx.get('description', 'N/A')))}\n"
+    amount = tx.get('amount', 0)
+    amount_str = f"+${abs(amount):.2f}" if amount >= 0 else f"-${abs(amount):.2f}"
+    msg += f"💵 *{t('amount', lang)}:* `{amount_str}`\n"
+    msg += f"🏦 *{t('account', lang)}:* {escape_markdown(str(tx.get('account', 'N/A')))}\n"
+    if tx.get('category'):
+        msg += f"🏷️ *{t('category', lang)}:* {escape_markdown(tx['category'])}\n"
+    if tx.get('budget'):
+        msg += f"📊 *{t('budget_label', lang)}:* {display_name(tx['budget'])}\n"
+    if tx.get('source'):
+        msg += f"👤 *{t('review_source', lang)}:* {escape_markdown(tx['source'])}\n"
+    return msg
+
+
+def format_review_diff(
+    original_tx: Dict[str, Any],
+    changes: Dict[str, Any],
+    lang: str = "en",
+) -> str:
+    """Format a before/after diff for review edit confirmation."""
+    msg = f"✍️ *{t('review_edit_preview', lang)}*\n\n"
+
+    field_emoji = {
+        'description': '📝', 'amount': '💵', 'account': '🏦',
+        'category': '🏷️', 'budget': '📊', 'status': '📌',
+        'date_created': '📅',
+    }
+    field_labels = {
+        'description': 'description', 'amount': 'amount', 'account': 'account',
+        'category': 'category', 'budget': 'budget_label', 'status': 'status',
+        'date_created': 'date_label',
+    }
+
+    for field, new_val in changes.items():
+        emoji = field_emoji.get(field, '•')
+        label_key = field_labels.get(field, field)
+        label = t(label_key, lang) if label_key in (
+            'description', 'amount', 'account', 'category',
+            'budget_label', 'date_label',
+        ) else field.replace('_', ' ').title()
+        old_val = original_tx.get(field, 'N/A')
+
+        # Format values nicely
+        if field == 'amount':
+            old_str = f"${abs(old_val):.2f}" if isinstance(old_val, (int, float)) else str(old_val)
+            new_str = f"${abs(new_val):.2f}" if isinstance(new_val, (int, float)) else str(new_val)
+        elif field == 'budget':
+            old_str = display_name(str(old_val)) if old_val else t('none_label', lang)
+            new_str = display_name(str(new_val)) if new_val and new_val != 'none' else t('none_label', lang)
+        else:
+            old_str = escape_markdown(str(old_val))
+            new_str = escape_markdown(str(new_val))
+
+        msg += f"{emoji} *{label}:* {old_str} → {new_str}\n"
+
+    return msg
+
+
+def format_review_buttons(lang: str = "en") -> InlineKeyboardMarkup:
+    """Approve / Edit / Skip buttons for review flow."""
+    keyboard = [[
+        InlineKeyboardButton(f"✅ {t('btn_approve', lang)}", callback_data="rv:approve"),
+        InlineKeyboardButton(f"✍️ {t('btn_edit', lang)}", callback_data="rv:edit"),
+        InlineKeyboardButton(f"⏭️ {t('btn_skip', lang)}", callback_data="rv:skip"),
+    ]]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def format_review_confirm_buttons(lang: str = "en") -> InlineKeyboardMarkup:
+    """Confirm / Cancel buttons for review edit confirmation."""
+    keyboard = [[
+        InlineKeyboardButton(f"✅ {t('btn_confirm', lang)}", callback_data="rv:confirm"),
+        InlineKeyboardButton(f"🛑 {t('btn_cancel', lang)}", callback_data="rv:cancel_edit"),
+    ]]
+    return InlineKeyboardMarkup(keyboard)
+
+
 def parse_month_from_args(args: str) -> Optional[date]:
     """
     Parse month from command arguments.

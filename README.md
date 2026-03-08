@@ -462,6 +462,7 @@ python3 cli.py bot stop       # Stop the container
 | `/summary` | Budget envelope view for the current month |
 | `/summary October` | Budget view for a specific month |
 | `/cancel` | Cancel current transaction |
+| `/review` | Review flagged transactions (approve or edit with LLM) |
 | `/lang` | Switch bot language (English / Spanish) |
 
 ### Language
@@ -487,7 +488,7 @@ The `/summary` view shows per-month budget envelopes with spent/remaining amount
 
 ### Extra Users (Delegates)
 
-Allow family members to log transactions through the same bot. Their transactions are tagged with a source and flagged for review — you verify them later via the CLI `review` command.
+Allow family members to log transactions through the same bot. Their transactions are tagged with a source and flagged for review — you verify them later via `/review` in the bot or `cli.py review` from the CLI.
 
 **Setup**: Add one env var per extra user in `.env`:
 
@@ -507,7 +508,7 @@ Format: `TELEGRAM_EXTRA_USER_<NAME>=telegram_user_id,default_account,default_bud
 2. Bot appends her defaults to the message (e.g. `supermaxi 25.50, Visa Pichincha, Home Groceries budget`) and parses via the same LLM flow as the owner
 3. After parsing, the transaction is tagged with `source=mom` and `needs_review=1`
 4. Transaction is **auto-saved** — she sees a compact reply with date, description, amount, and remaining budget (no confirm/revise buttons)
-5. You run `cli.py review ls` to see her transactions, fix categories/budgets, and approve
+5. You run `/review` in the bot (or `cli.py review ls` from the CLI) to see her transactions, edit with natural language, and approve
 
 **Simplified `/summary` for extra users**: Shows only their configured budget (prefix-matched), no planning toggle. Defaults to the current payment month for their account.
 

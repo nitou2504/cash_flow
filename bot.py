@@ -26,6 +26,10 @@ from ui.telegram_format import (
     format_summary_navigation_buttons,
     format_summary_navigation_buttons_simple,
     format_auto_confirm_message,
+    format_review_card,
+    format_review_diff,
+    format_review_buttons,
+    format_review_confirm_buttons,
     parse_month_from_args,
     month_name,
 )
@@ -215,8 +219,11 @@ async def process_new_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_message = update.message.text
     chat_id = update.effective_chat.id
 
+    # Check if in review edit mode first
+    if context.user_data.get('review_state') == 'editing':
+        await handle_review_edit_input(update, context, user_message)
     # Check if awaiting correction
-    if context.user_data.get('awaiting_correction'):
+    elif context.user_data.get('awaiting_correction'):
         await handle_correction(update, context, user_message)
     else:
         await handle_new_expense(update, context, user_message)
@@ -500,6 +507,214 @@ async def handle_revise(update: Update, query, context: ContextTypes.DEFAULT_TYP
     context.user_data['awaiting_correction'] = True
 
 
+# ==================== REVIEW HANDLERS ====================
+
+def _clear_review_state(context: ContextTypes.DEFAULT_TYPE):
+    """Remove all review-related keys from user_data."""
+    for key in ('review_state', 'review_transactions', 'review_index',
+                'review_edit_changes', 'review_edit_new_date', 'review_count'):
+        context.user_data.pop(key, None)
+
+
+async def review_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /review command — show transactions needing review."""
+    if not is_authorized(update):
+        return await reject_unauthorized(update)
+
+    lang = get_user_lang(update)
+
+    # Clear any existing review/expense state
+    _clear_review_state(context)
+    context.user_data.pop('pending_transaction', None)
+    context.user_data.pop('awaiting_correction', None)
+
+    transactions = repository.get_transactions_needing_review(db_conn)
+    if not transactions:
+        await update.message.reply_text(
+            f"✅ {t('review_empty', lang)}", parse_mode='Markdown'
+        )
+        return
+
+    context.user_data['review_transactions'] = transactions
+    context.user_data['review_index'] = 0
+    context.user_data['review_state'] = 'viewing'
+    context.user_data['review_count'] = 0
+
+    await _send_review_card(update, context, from_callback=False)
+
+
+async def _send_review_card(update: Update, context: ContextTypes.DEFAULT_TYPE, from_callback: bool = False):
+    """Display the current review transaction or the 'all done' message."""
+    lang = get_user_lang(update)
+    transactions = context.user_data.get('review_transactions', [])
+    index = context.user_data.get('review_index', 0)
+
+    if index >= len(transactions):
+        # All done
+        count = context.user_data.get('review_count', 0)
+        done_msg = f"✅ {t('review_all_done', lang, count=count)}"
+        _clear_review_state(context)
+        if from_callback:
+            await update.callback_query.edit_message_text(done_msg, parse_mode='Markdown')
+        else:
+            await update.message.reply_text(done_msg, parse_mode='Markdown')
+        return
+
+    tx = transactions[index]
+    text = format_review_card(tx, index, len(transactions), lang)
+    buttons = format_review_buttons(lang)
+
+    context.user_data['review_state'] = 'viewing'
+
+    if from_callback:
+        await update.callback_query.edit_message_text(text, reply_markup=buttons, parse_mode='Markdown')
+    else:
+        await update.message.reply_text(text, reply_markup=buttons, parse_mode='Markdown')
+
+
+async def review_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle review inline button clicks."""
+    if not is_authorized(update):
+        return await reject_unauthorized(update)
+
+    query = update.callback_query
+    await query.answer()
+
+    lang = get_user_lang(update)
+    action = query.data.split(':')[1]
+
+    transactions = context.user_data.get('review_transactions', [])
+    index = context.user_data.get('review_index', 0)
+
+    if action == 'approve':
+        if index < len(transactions):
+            tx_id = transactions[index]['id']
+            tx = repository.get_transaction_by_id(db_conn, tx_id)
+            if tx:
+                if BACKUP_ENABLED:
+                    db_backup.auto_backup(DB_PATH, BACKUP_DIR, BACKUP_KEEP_TODAY,
+                                         BACKUP_RECENT_DAYS, BACKUP_MAX_DAYS,
+                                         operation="telegram review approve",
+                                         log_retention_days=BACKUP_LOG_RETENTION_DAYS)
+                repository.mark_reviewed(db_conn, tx_id)
+                context.user_data['review_count'] = context.user_data.get('review_count', 0) + 1
+            # else: tx gone, just advance
+        context.user_data['review_index'] = index + 1
+        await _send_review_card(update, context, from_callback=True)
+
+    elif action == 'skip':
+        context.user_data['review_index'] = index + 1
+        await _send_review_card(update, context, from_callback=True)
+
+    elif action == 'edit':
+        context.user_data['review_state'] = 'editing'
+        await query.edit_message_reply_markup(reply_markup=None)
+        await query.message.reply_text(
+            f"✍️ {t('review_edit_prompt', lang)}", parse_mode='Markdown'
+        )
+
+    elif action == 'confirm':
+        changes = context.user_data.get('review_edit_changes', {})
+        new_date = context.user_data.get('review_edit_new_date')
+        if index < len(transactions):
+            tx_id = transactions[index]['id']
+            tx = repository.get_transaction_by_id(db_conn, tx_id)
+            if tx:
+                if BACKUP_ENABLED:
+                    db_backup.auto_backup(DB_PATH, BACKUP_DIR, BACKUP_KEEP_TODAY,
+                                         BACKUP_RECENT_DAYS, BACKUP_MAX_DAYS,
+                                         operation="telegram review edit",
+                                         log_retention_days=BACKUP_LOG_RETENTION_DAYS)
+                controller.process_transaction_edit(db_conn, tx_id, changes, new_date)
+                repository.mark_reviewed(db_conn, tx_id)
+                context.user_data['review_count'] = context.user_data.get('review_count', 0) + 1
+        context.user_data.pop('review_edit_changes', None)
+        context.user_data.pop('review_edit_new_date', None)
+        context.user_data['review_index'] = index + 1
+        await _send_review_card(update, context, from_callback=True)
+
+    elif action == 'cancel_edit':
+        context.user_data.pop('review_edit_changes', None)
+        context.user_data.pop('review_edit_new_date', None)
+        context.user_data['review_state'] = 'viewing'
+        await _send_review_card(update, context, from_callback=True)
+
+
+async def handle_review_edit_input(update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
+    """Process natural language edit instruction during review flow."""
+    lang = get_user_lang(update)
+    processing_msg = await update.message.reply_text(
+        f"🔄 {t('processing', lang)}", parse_mode='Markdown'
+    )
+
+    try:
+        transactions = context.user_data.get('review_transactions', [])
+        index = context.user_data.get('review_index', 0)
+
+        if index >= len(transactions):
+            await processing_msg.edit_text(
+                format_error_message(t('review_tx_not_found', lang), lang),
+                parse_mode='Markdown'
+            )
+            _clear_review_state(context)
+            return
+
+        tx_id = transactions[index]['id']
+        tx = repository.get_transaction_by_id(db_conn, tx_id)
+        if not tx:
+            await processing_msg.edit_text(
+                f"⚠️ {t('review_tx_not_found', lang)}", parse_mode='Markdown'
+            )
+            context.user_data['review_index'] = index + 1
+            context.user_data['review_state'] = 'viewing'
+            return
+
+        accounts = repository.get_all_accounts(db_conn)
+        budgets = repository.get_all_budgets(db_conn)
+
+        changes = llm_parser.parse_edit_instruction(
+            db_conn, tx, user_message, accounts, budgets
+        )
+
+        if changes is None:
+            await processing_msg.edit_text(
+                f"❌ {t('review_edit_failed', lang)}", parse_mode='Markdown'
+            )
+            # Stay in editing state so user can retry
+            return
+
+        if not changes:
+            await processing_msg.edit_text(
+                f"⚠️ {t('review_edit_no_changes', lang)}", parse_mode='Markdown'
+            )
+            return
+
+        # Extract date_created into new_date
+        new_date = None
+        if 'date_created' in changes:
+            new_date = date.fromisoformat(changes.pop('date_created'))
+
+        context.user_data['review_edit_changes'] = changes
+        context.user_data['review_edit_new_date'] = new_date
+        context.user_data['review_state'] = 'confirming'
+
+        # Build diff message
+        diff_changes = dict(changes)
+        if new_date:
+            diff_changes['date_created'] = str(new_date)
+        diff_text = format_review_diff(tx, diff_changes, lang)
+        buttons = format_review_confirm_buttons(lang)
+
+        await processing_msg.edit_text(diff_text, reply_markup=buttons, parse_mode='Markdown')
+
+    except Exception as e:
+        logger.error(f"Error processing review edit: {e}", exc_info=True)
+        await processing_msg.edit_text(
+            format_error_message(t('error_unexpected', lang), lang),
+            parse_mode='Markdown'
+        )
+
+
 # ==================== SUMMARY VIEW HANDLERS ====================
 
 def get_balance_at_date(
@@ -749,11 +964,18 @@ def main():
     application.add_handler(CommandHandler("cancel", cancel_command))
     application.add_handler(CommandHandler("summary", summary_command))
     application.add_handler(CommandHandler("lang", lang_command))
+    application.add_handler(CommandHandler("review", review_command))
 
     # Language selection callback (must come BEFORE generic CallbackQueryHandler)
     application.add_handler(CallbackQueryHandler(
         lang_callback,
         pattern=r'^lang:(en|es)$'
+    ))
+
+    # Review callbacks (must come BEFORE generic CallbackQueryHandler)
+    application.add_handler(CallbackQueryHandler(
+        review_callback,
+        pattern=r'^rv:(approve|edit|skip|confirm|cancel_edit)$'
     ))
 
     # Summary navigation (must come BEFORE generic CallbackQueryHandler)

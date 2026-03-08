@@ -53,6 +53,7 @@ STRINGS = {
             "/help - Show this help message\n"
             "/summary - View monthly budget summary\n"
             "/summary [month] - View specific month (e.g., /summary October)\n"
+            "/review - Review flagged transactions\n"
             "/lang - Change language\n"
             "/cancel - Cancel current transaction"
         ),
@@ -129,6 +130,26 @@ STRINGS = {
             '• "Change category to entertainment"'
         ),
 
+        # Review
+        "review_header": "Review",
+        "review_empty": "No transactions need review.",
+        "review_counter": "{current} of {total}",
+        "review_all_done": "All done! {count} transaction(s) reviewed.",
+        "review_source": "Source",
+        "btn_approve": "Approve",
+        "btn_edit": "Edit",
+        "btn_skip": "Skip",
+        "review_edit_prompt": (
+            "What would you like to change?\n"
+            "Describe the edit in natural language:"
+        ),
+        "review_edit_preview": "Edit Preview",
+        "review_edit_no_changes": "No changes detected. Try again or press Cancel.",
+        "review_edit_failed": "Could not parse the edit instruction. Try rephrasing.",
+        "review_approved": "Approved.",
+        "review_edited": "Edited and approved.",
+        "review_tx_not_found": "Transaction no longer exists, skipping.",
+
         # Lang command
         "lang_current": "Current language: *{lang_name}*",
         "lang_switched": "Language changed to *{lang_name}*",
@@ -178,6 +199,7 @@ STRINGS = {
             "/help - Mostrar esta ayuda\n"
             "/summary - Ver resumen mensual de presupuestos\n"
             "/summary [mes] - Ver mes específico (ej., /summary octubre)\n"
+            "/review - Revisar transacciones marcadas\n"
             "/lang - Cambiar idioma\n"
             "/cancel - Cancelar transacción actual"
         ),
@@ -253,6 +275,26 @@ STRINGS = {
             '• "Usar tarjeta Visa en vez"\n'
             '• "Cambiar categoría a entretenimiento"'
         ),
+
+        # Review
+        "review_header": "Revisión",
+        "review_empty": "No hay transacciones por revisar.",
+        "review_counter": "{current} de {total}",
+        "review_all_done": "Listo! {count} transacción(es) revisada(s).",
+        "review_source": "Origen",
+        "btn_approve": "Aprobar",
+        "btn_edit": "Editar",
+        "btn_skip": "Omitir",
+        "review_edit_prompt": (
+            "Qué te gustaría cambiar?\n"
+            "Describe la edición en lenguaje natural:"
+        ),
+        "review_edit_preview": "Vista Previa de Edición",
+        "review_edit_no_changes": "No se detectaron cambios. Intenta de nuevo o presiona Cancelar.",
+        "review_edit_failed": "No pude interpretar la instrucción. Intenta reformularla.",
+        "review_approved": "Aprobada.",
+        "review_edited": "Editada y aprobada.",
+        "review_tx_not_found": "La transacción ya no existe, omitiendo.",
 
         # Lang command
         "lang_current": "Idioma actual: *{lang_name}*",
