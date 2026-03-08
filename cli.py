@@ -341,13 +341,20 @@ def handle_subscriptions_delete(conn: sqlite3.Connection, args: argparse.Namespa
         print(f"Error: {e}")
 
 
-def handle_add_interactive(conn: sqlite3.Connection):
+def handle_add_interactive(conn: sqlite3.Connection, args=None):
     """Interactive guided transaction entry (no LLM needed)."""
     from ui.interactive import interactive_add_transaction
     request = interactive_add_transaction(conn)
     if request:
+        if args:
+            desc = request.get('description', '')
+            amt = request.get('amount', request.get('total_amount', ''))
+            acc = request.get('account', '')
+            args._backup_context = f"-i {desc} ${amt} {acc}"
         transaction_date = request.pop("_transaction_date", None)
         controller.process_transaction_request(conn, request, transaction_date=transaction_date)
+    elif args:
+        args._backup_skip = True
 
 
 def handle_accounts_add_interactive(conn: sqlite3.Connection):
@@ -396,6 +403,13 @@ def handle_edit_interactive(conn: sqlite3.Connection, args: argparse.Namespace):
     """Interactive guided transaction edit."""
     from ui.interactive import interactive_edit_transaction
 
+    def _set_edit_context(updates, new_date):
+        parts = [f"#{args.transaction_id}"]
+        parts.extend(f"{k}: {v}" for k, v in updates.items())
+        if new_date:
+            parts.append(f"date: {new_date}")
+        args._backup_context = f"-i {', '.join(parts)}"
+
     if getattr(args, 'all', False):
         group_info = controller._get_transaction_group_info(conn, args.transaction_id)
         siblings = group_info.get("siblings", [])
@@ -404,25 +418,34 @@ def handle_edit_interactive(conn: sqlite3.Connection, args: argparse.Namespace):
             result = interactive_edit_transaction(conn, args.transaction_id)
             if result:
                 updates, new_date = result
+                _set_edit_context(updates, new_date)
                 controller.process_transaction_edit(conn, args.transaction_id, updates, new_date)
                 print(f"Successfully updated transaction {args.transaction_id}.")
+            else:
+                args._backup_skip = True
         else:
             # Edit first, then apply to all
             result = interactive_edit_transaction(conn, args.transaction_id)
             if result:
                 updates, new_date = result
+                _set_edit_context(updates, new_date)
                 for sibling in siblings:
                     controller.process_transaction_edit(conn, sibling['id'], updates, new_date)
                 print(f"Successfully updated {len(siblings)} transactions in group.")
+            else:
+                args._backup_skip = True
     else:
         result = interactive_edit_transaction(conn, args.transaction_id)
         if result:
             updates, new_date = result
+            _set_edit_context(updates, new_date)
             try:
                 controller.process_transaction_edit(conn, args.transaction_id, updates, new_date)
                 print(f"Successfully updated transaction {args.transaction_id}.")
             except (ValueError, sqlite3.Error) as e:
                 print(f"Error updating transaction: {e}")
+        else:
+            args._backup_skip = True
 
 
 def handle_subscriptions_edit_interactive(conn: sqlite3.Connection, args: argparse.Namespace):
@@ -481,6 +504,7 @@ def handle_create_transaction(conn: sqlite3.Connection, args: argparse.Namespace
             "is_planning": args.planning,
         }
 
+    args._backup_context = f"transaction {args.description} ${args.amount} {args.account}"
     controller.process_transaction_request(conn, request, transaction_date=transaction_date)
 
 
@@ -496,7 +520,7 @@ def handle_add(conn: sqlite3.Connection, args: argparse.Namespace):
         print("Error: --installments requires --import FILE.")
         return
     if args.interactive:
-        return handle_add_interactive(conn)
+        return handle_add_interactive(conn, args)
     if not args.description:
         print("Error: provide a description, use -i for interactive mode, or --import for CSV import.")
         return
@@ -629,8 +653,15 @@ def handle_edit(conn: sqlite3.Connection, args: argparse.Namespace):
         updates["status"] = args.status
 
     if not updates and not args.date:
+        args._backup_skip = True
         print("No changes specified. Use --description, --amount, etc. to edit.")
         return
+
+    parts = [f"#{args.transaction_id}"]
+    parts.extend(f"--{k} {v}" for k, v in updates.items())
+    if args.date:
+        parts.append(f"--date {args.date}")
+    args._backup_context = " ".join(parts)
 
     try:
         new_date = date.fromisoformat(args.date) if args.date else None
@@ -664,6 +695,7 @@ def handle_edit(conn: sqlite3.Connection, args: argparse.Namespace):
 
                 confirm = input(f"\nApply changes to all {len(siblings)} transactions? [y/N] ")
                 if confirm.lower() != 'y':
+                    args._backup_skip = True
                     print("Operation cancelled.")
                     return
 
@@ -692,9 +724,11 @@ def handle_delete(conn: sqlite3.Connection, args: argparse.Namespace):
             group_info = controller._get_transaction_group_info(conn, transaction_id)
             siblings = group_info.get("siblings", [])
             if not siblings:
+                args._backup_skip = True
                 print(f"Error: No transactions found for group associated with ID {transaction_id}.")
                 return
 
+            group_desc = f"#{transaction_id} +{len(siblings)} {siblings[0]['description']}"
             console.print("\n--- Transaction Group to Delete ---")
             table = Table(box=None)
             table.add_column("ID")
@@ -705,12 +739,14 @@ def handle_delete(conn: sqlite3.Connection, args: argparse.Namespace):
             for t in siblings:
                 table.add_row(str(t['id']), str(t['date_payed']), t['description'], t['account'], f"{t['amount']:.2f}")
             console.print(table)
-            
+
             confirm_msg = f"\nAre you sure you want to permanently delete these {len(siblings)} transactions? [y/N] "
+            tx_desc = group_desc
 
         else:
             transaction = repository.get_transaction_by_id(conn, transaction_id)
             if not transaction:
+                args._backup_skip = True
                 print(f"Error: Transaction with ID {transaction_id} not found.")
                 return
 
@@ -722,14 +758,17 @@ def handle_delete(conn: sqlite3.Connection, args: argparse.Namespace):
             table.add_row("Account:", transaction['account'])
             table.add_row("Amount:", f"{transaction['amount']:.2f}")
             console.print(table)
-            
+
             confirm_msg = f"\nAre you sure you want to permanently delete this transaction? [y/N] "
+            tx_desc = f"#{transaction_id} {transaction['description']}"
 
         confirm = input(confirm_msg)
         if confirm.lower() == 'y':
+            args._backup_context = tx_desc
             controller.process_transaction_deletion(conn, transaction_id, delete_group)
             print(f"Successfully deleted transaction(s).")
         else:
+            args._backup_skip = True
             print("Operation cancelled.")
 
     except ValueError as e:
@@ -746,10 +785,14 @@ def handle_clear(conn: sqlite3.Connection, args: argparse.Namespace):
             siblings = group_info.get("siblings", [])
 
             if len(siblings) <= 1:
+                tx = repository.get_transaction_by_id(conn, transaction_id)
+                if tx:
+                    args._backup_context = f"#{transaction_id} {tx['description']} (was {tx['status']})"
                 print(f"Transaction {transaction_id} is not part of a group. Clearing single transaction.")
                 controller.process_transaction_clearance(conn, transaction_id)
                 print(f"Successfully cleared transaction {transaction_id}.")
             else:
+                group_desc = f"#{transaction_id} +{len(siblings)} {siblings[0]['description']} (was {siblings[0]['status']})"
                 # Show what will be cleared
                 console = Console()
                 table = Table(title=f"Clearing {len(siblings)} transactions in group")
@@ -771,15 +814,20 @@ def handle_clear(conn: sqlite3.Connection, args: argparse.Namespace):
 
                 confirm = input(f"\nClear (commit) all {len(siblings)} transactions? [y/N] ")
                 if confirm.lower() != 'y':
+                    args._backup_skip = True
                     print("Operation cancelled.")
                     return
 
+                args._backup_context = group_desc
                 # Clear all siblings
                 for sibling in siblings:
                     controller.process_transaction_clearance(conn, sibling['id'])
 
                 print(f"Successfully cleared {len(siblings)} transactions in group.")
         else:
+            tx = repository.get_transaction_by_id(conn, transaction_id)
+            if tx:
+                args._backup_context = f"#{transaction_id} {tx['description']} (was {tx['status']})"
             controller.process_transaction_clearance(conn, transaction_id)
             print(f"Successfully cleared transaction {transaction_id}.")
     except ValueError as e:
@@ -1082,6 +1130,13 @@ def handle_backup(db_path: str, args: argparse.Namespace):
 def describe_operation(args: argparse.Namespace) -> str:
     """Build a one-line description of the CLI operation for backup logging."""
     cmd = getattr(args, "command", "")
+
+    # Rich context set by handlers (preferred)
+    ctx = getattr(args, "_backup_context", None)
+    if ctx:
+        return f"{cmd} {ctx}"[:80]
+
+    # Fallback to args-based description
     parts = [cmd]
 
     if cmd == "add":
@@ -1101,13 +1156,13 @@ def describe_operation(args: argparse.Namespace) -> str:
         if desc:
             parts.append(desc)
     elif cmd in ("delete", "del", "d"):
-        tid = getattr(args, "id", "")
+        tid = getattr(args, "transaction_id", "")
         parts.append(f"#{tid}")
     elif cmd in ("edit", "e"):
-        tid = getattr(args, "id", "")
+        tid = getattr(args, "transaction_id", "")
         parts.append(f"#{tid}")
     elif cmd in ("clear", "cl"):
-        tid = getattr(args, "id", "")
+        tid = getattr(args, "transaction_id", "")
         parts.append(f"#{tid}")
     elif cmd in ("fix", "f"):
         balance = getattr(args, "balance", None)
@@ -1123,7 +1178,7 @@ def describe_operation(args: argparse.Namespace) -> str:
         sub = getattr(args, "subcommand", "")
         if sub:
             parts.append(sub)
-        name = getattr(args, "id", None) or getattr(args, "name", None)
+        name = getattr(args, "subscription_id", None) or getattr(args, "name", None)
         if name:
             parts.append(str(name))
 
@@ -1774,11 +1829,11 @@ Configuration via environment variables (or .env):
         if hasattr(args, "subcommand") and args.subcommand in read_only_subcommands:
             is_read_only = True
 
+    backup_path = None
     if BACKUP_ENABLED and not is_read_only:
-        operation = describe_operation(args)
-        db_backup.auto_backup(db_path, BACKUP_DIR, BACKUP_KEEP_TODAY, BACKUP_RECENT_DAYS,
-                              BACKUP_MAX_DAYS, operation=operation,
-                              log_retention_days=BACKUP_LOG_RETENTION_DAYS)
+        backup_path = db_backup.create_backup(db_path, BACKUP_DIR)
+        db_backup.apply_retention(BACKUP_DIR, BACKUP_KEEP_TODAY, BACKUP_RECENT_DAYS, BACKUP_MAX_DAYS)
+        db_backup.apply_log_retention(BACKUP_DIR, BACKUP_LOG_RETENTION_DAYS)
 
     # --- Command Handling ---
     if args.command in ["backup", "bk"]:
@@ -1858,6 +1913,11 @@ Configuration via environment variables (or .env):
         handle_clear(conn, args)
     elif args.command in ["fix", "f"]:
         handle_fix(conn, args)
+
+    # Write backup log after handler (so _backup_context is available)
+    if backup_path and not getattr(args, '_backup_skip', False):
+        operation = describe_operation(args)
+        db_backup.write_backup_log(BACKUP_DIR, backup_path.name, operation)
 
     conn.close()
 
