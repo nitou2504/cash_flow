@@ -115,6 +115,33 @@ def initialize_categories(conn: Connection):
     cursor.executemany("INSERT OR IGNORE INTO categories VALUES (?, ?)", categories)
     conn.commit()
 
+def create_test_db() -> Connection:
+    """
+    Creates a fully initialized in-memory database for testing.
+
+    Available mock data:
+
+    Accounts:
+        - "Cash" (cash, no cut-off/payment days)
+        - "Visa Produbanco" (credit_card, cut-off=14, payment=25)
+        - "Amex Produbanco" (credit_card, cut-off=2, payment=15)
+
+    Categories:
+        Housing, Home Groceries, Personal Groceries, Dining-Snacks,
+        Transportation, Health, Personal, Income, Savings, Loans, Others
+
+    Settings:
+        - forecast_horizon_months = 6
+    """
+    conn = create_connection(":memory:")
+    create_tables(conn)
+    insert_mock_data(conn)
+    initialize_categories(conn)
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR IGNORE INTO settings VALUES ('forecast_horizon_months', '6')")
+    conn.commit()
+    return conn
+
 def initialize_database(db_path: str = "cash_flow.db"):
     """
     A master function that ensures the database and its tables exist.
