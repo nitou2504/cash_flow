@@ -605,12 +605,12 @@ Proceed with this request? [Y/n]
 
 ---
 
-#### `add-batch` - Import multiple transactions from CSV
+#### `add --import` - Import multiple transactions from CSV
 
 Bulk import transactions from a CSV file.
 
 ```bash
-python3 cli.py add-batch transactions.csv
+python3 cli.py add --import transactions.csv
 ```
 
 **CSV format**: `date,description,account,amount`
@@ -624,12 +624,12 @@ python3 cli.py add-batch transactions.csv
 
 ---
 
-#### `add-installments` - Import installment sequences from CSV
+#### `add --import --installments` - Import installment sequences from CSV
 
 Import pre-existing installment plans (e.g., from a credit card statement showing "3/12" installments).
 
 ```bash
-python3 cli.py add-installments installments.csv
+python3 cli.py add --import installments.csv --installments
 ```
 
 **CSV format**: `date,description,account,amount,current_installment,total_installments`
@@ -2060,8 +2060,6 @@ Most commands have short aliases for faster typing:
 | clear           | cl           |
 | fix             | f            |
 | backup          | bk           |
-| add-batch       | ab           |
-| add-installments| ai           |
 
 **Example**:
 

@@ -351,10 +351,19 @@ def handle_add_interactive(conn: sqlite3.Connection):
 
 def handle_add(conn: sqlite3.Connection, args: argparse.Namespace):
     """Parses a natural language string to add a transaction using LLM."""
+    if args.import_file:
+        if args.installments:
+            args.file_path = args.import_file
+            return handle_add_installments(conn, args)
+        args.file_path = args.import_file
+        return handle_add_batch(conn, args)
+    if args.installments and not args.import_file:
+        print("Error: --installments requires --import FILE.")
+        return
     if args.interactive:
         return handle_add_interactive(conn)
     if not args.description:
-        print("Error: provide a description or use -i for interactive mode.")
+        print("Error: provide a description, use -i for interactive mode, or --import for CSV import.")
         return
 
     from cashflow import transactions as tx_module
@@ -1049,7 +1058,7 @@ ALIASES:
   - accounts [acc, a]    - subscriptions [sub, s]    - view [v]
   - categories [cat, c]  - export [exp, x]           - edit [e]
   - delete [del, d]      - clear [cl]                - fix [f]
-  - add-batch [ab]       - add-installments [ai]     - backup [bk]
+  - backup [bk]
 
 For detailed help on any command: cli.py COMMAND -h
         """,
@@ -1067,7 +1076,7 @@ For detailed help on any command: cli.py COMMAND -h
     # Add command
     add_parser = subparsers.add_parser(
         "add",
-        help="Add a transaction (natural language or interactive)",
+        help="Add a transaction (natural language, interactive, or CSV import)",
         description="""
 Add a transaction using natural language or interactive guided entry.
 
@@ -1082,6 +1091,10 @@ Natural language (requires LLM):
 
 Interactive (no LLM needed):
   cli.py add -i
+
+CSV import:
+  cli.py add --import transactions.csv
+  cli.py add --import installments.csv --installments
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -1089,36 +1102,10 @@ Interactive (no LLM needed):
     add_parser.add_argument("--interactive", "-i", action="store_true",
                             help="Interactive guided entry (no LLM needed)")
     add_parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt (auto-accept)")
-
-    # Add batch command
-    add_batch_parser = subparsers.add_parser(
-        "add-batch",
-        aliases=["ab"],
-        help="Import multiple transactions from CSV",
-        description="""
-Import transactions from a CSV file.
-Format: date,description,account,amount
-Example:
-  cli.py add-batch transactions.csv
-        """,
-        formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-    add_batch_parser.add_argument("file_path", help="Path to the CSV file")
-
-    # Add installments command
-    add_installments_parser = subparsers.add_parser(
-        "add-installments",
-        aliases=["ai"],
-        help="Import installment transactions from CSV",
-        description="""
-Import pre-existing installment plans from CSV.
-Format: date,description,account,amount,current_installment,total_installments
-Example:
-  cli.py add-installments installments.csv
-        """,
-        formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-    add_installments_parser.add_argument("file_path", help="Path to the CSV file")
+    add_parser.add_argument("--import", dest="import_file", metavar="FILE",
+                            help="Import transactions from a CSV file")
+    add_parser.add_argument("--installments", action="store_true",
+                            help="Treat CSV as installment format (use with --import)")
 
     # ==================== ACCOUNT MANAGEMENT ====================
 
@@ -1559,10 +1546,6 @@ Configuration via environment variables (or .env):
         handle_backup(db_path, args)
     elif args.command == "add":
         handle_add(conn, args)
-    elif args.command in ["add-batch", "ab"]:
-        handle_add_batch(conn, args)
-    elif args.command in ["add-installments", "ai"]:
-        handle_add_installments(conn, args)
     elif args.command in ["accounts", "acc", "a"]:
         if args.subcommand in ["list", "ls", "l"]:
             handle_accounts_list(conn)
