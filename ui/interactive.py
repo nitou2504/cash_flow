@@ -512,3 +512,185 @@ def _flow_split(account_name, account, transaction_date, description,
         console.print("[yellow]Cancelled.[/yellow]")
         return None
     return request
+
+def interactive_add_account(conn):
+    """Interactive step-by-step account creation. Returns (account_id, account_type, cut_off_day, payment_day) or None."""
+    try:
+        console.print("[bold]Interactive Account Creation[/bold]")
+        console.print("Press Ctrl+C to cancel at any time.\n")
+
+        name = prompt_text("Account name")
+        if name is None:
+            return None
+
+        acc_type = prompt_choice("Type", ["cash", "credit_card"], default="cash")
+        if acc_type is None:
+            return None
+
+        cut_off_day = None
+        payment_day = None
+        if acc_type == "credit_card":
+            cut_off_day = prompt_int("Cut-off day", min_val=1, max_val=31)
+            if cut_off_day is None:
+                return None
+            payment_day = prompt_int("Payment day", min_val=1, max_val=31)
+            if payment_day is None:
+                return None
+
+        # Preview
+        table = Table(title="Account Preview", show_header=True, header_style="bold cyan")
+        table.add_column("Field", style="dim")
+        table.add_column("Value")
+        table.add_row("Name", name)
+        table.add_row("Type", acc_type)
+        if acc_type == "credit_card":
+            table.add_row("Cut-off Day", str(cut_off_day))
+            table.add_row("Payment Day", str(payment_day))
+        console.print(table)
+
+        confirm = prompt_yes_no("\nProceed?", default=True)
+        if not confirm:
+            console.print("[yellow]Cancelled.[/yellow]")
+            return None
+
+        return (name, acc_type, cut_off_day, payment_day)
+
+    except (KeyboardInterrupt, EOFError):
+        console.print("\n[yellow]Cancelled.[/yellow]")
+        return None
+
+
+def interactive_add_category(conn):
+    """Interactive step-by-step category creation. Returns (name, description) or None."""
+    try:
+        console.print("[bold]Interactive Category Creation[/bold]")
+        console.print("Press Ctrl+C to cancel at any time.\n")
+
+        name = prompt_text("Category name")
+        if name is None:
+            return None
+
+        description = prompt_text("Description (helps LLM auto-categorize)")
+        if description is None:
+            return None
+
+        confirm = prompt_yes_no(f"\nCreate category '{name}' ({description})?", default=True)
+        if not confirm:
+            console.print("[yellow]Cancelled.[/yellow]")
+            return None
+
+        return (name, description)
+
+    except (KeyboardInterrupt, EOFError):
+        console.print("\n[yellow]Cancelled.[/yellow]")
+        return None
+
+
+def interactive_add_subscription(conn):
+    """Interactive step-by-step subscription/budget creation. Returns subscription data dict or None."""
+    try:
+        accounts = repository.get_all_accounts(conn)
+        if not accounts:
+            console.print("[red]No accounts found. Add one first with 'accounts add'.[/red]")
+            return None
+
+        categories = repository.get_all_categories(conn)
+        if not categories:
+            console.print("[red]No categories found. Add one first with 'categories add'.[/red]")
+            return None
+
+        console.print("[bold]Interactive Subscription/Budget Creation[/bold]")
+        console.print("Press Ctrl+C to cancel at any time.\n")
+
+        # 1. Kind
+        kind = prompt_choice("Kind", ["subscription", "budget", "income"], default="subscription")
+        if kind is None:
+            return None
+
+        # 2. Name
+        name = prompt_text("Name")
+        if name is None:
+            return None
+
+        # 3. Monthly amount
+        amount = prompt_amount("Monthly amount")
+        if amount is None:
+            return None
+
+        # 4. Account
+        account = prompt_select("Account", accounts, _format_account)
+        if account is None:
+            return None
+
+        # 5. Category
+        category = prompt_select("Category", categories, _format_category)
+        if category is None:
+            return None
+
+        # 6. Start date
+        start_date = prompt_date("Start date", default=date.today().replace(day=1))
+        if start_date is None:
+            return None
+
+        # 7. End date
+        end_date = None
+        has_end = prompt_yes_no("Set an end date?", default=False)
+        if has_end is None:
+            return None
+        if has_end:
+            end_date = prompt_date("End date")
+            if end_date is None:
+                return None
+
+        # 8. Underspend behavior (budgets only)
+        underspend = "keep"
+        if kind == "budget":
+            underspend = prompt_choice("Underspend behavior", ["keep", "return"], default="keep")
+            if underspend is None:
+                return None
+
+        # Auto-generate ID
+        is_budget = kind in ("budget", "income")
+        prefix = "sub_" if kind == "subscription" else "budget_"
+        sub_id = prefix + name.lower().replace(" ", "_")
+
+        # Build data dict
+        sub_data = {
+            "id": sub_id,
+            "name": name,
+            "category": category['name'],
+            "monthly_amount": amount,
+            "payment_account_id": account['account_id'],
+            "start_date": start_date,
+            "end_date": end_date,
+            "is_budget": is_budget,
+            "underspend_behavior": underspend,
+            "is_income": kind == "income",
+        }
+
+        # Preview
+        table = Table(title="Subscription/Budget Preview", show_header=True, header_style="bold cyan")
+        table.add_column("Field", style="dim")
+        table.add_column("Value")
+        table.add_row("ID", sub_id)
+        table.add_row("Kind", kind)
+        table.add_row("Name", name)
+        table.add_row("Amount", f"${amount:.2f}/month")
+        table.add_row("Account", account['account_id'])
+        table.add_row("Category", category['name'])
+        table.add_row("Start", str(start_date))
+        table.add_row("End", str(end_date) if end_date else "Ongoing")
+        if kind == "budget":
+            table.add_row("Underspend", underspend)
+        console.print(table)
+
+        confirm = prompt_yes_no("\nProceed?", default=True)
+        if not confirm:
+            console.print("[yellow]Cancelled.[/yellow]")
+            return None
+
+        return sub_data
+
+    except (KeyboardInterrupt, EOFError):
+        console.print("\n[yellow]Cancelled.[/yellow]")
+        return None
