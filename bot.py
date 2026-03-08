@@ -265,13 +265,13 @@ async def handle_new_expense(update: Update, context: ContextTypes.DEFAULT_TYPE,
             )
             return
 
-        # For extra users, append their default account and budget to the
-        # message so the LLM uses the correct account for payment date
-        # calculation and budget resolution — same proven flow as the owner
+        # For extra users, append only their account so the LLM resolves
+        # the correct payment date. Budget is set in code after parsing
+        # to avoid the LLM conflating budget name with category.
         extra_user = get_extra_user_info(update)
         llm_message = user_message
         if extra_user:
-            llm_message = f"{user_message}, {extra_user['account']}, {extra_user['budget']} budget"
+            llm_message = f"{user_message}, {extra_user['account']}"
 
         # Calculate payment month for budget filtering
         payment_month = tx_module.calculate_payment_month(llm_message, accounts)
@@ -301,6 +301,23 @@ async def handle_new_expense(update: Update, context: ContextTypes.DEFAULT_TYPE,
             payment_date = tx_module.simulate_payment_date(account, trans_date)
         else:
             payment_date = trans_date
+
+        # Resolve budget for extra users by matching their configured
+        # budget prefix to the active budget for the payment month
+        if extra_user and extra_user.get('budget'):
+            prefix = extra_user['budget'].lower()
+            payment_month = payment_date.replace(day=1)
+            best_budget = None
+            for b in budgets:
+                if not b['name'].lower().startswith(prefix):
+                    continue
+                start = date.fromisoformat(str(b['start_date'])) if b.get('start_date') else date.min
+                end = date.fromisoformat(str(b['end_date'])) if b.get('end_date') else date.max
+                if start <= payment_month <= end:
+                    best_budget = b['id']
+                    break
+            if best_budget:
+                request_json['budget'] = best_budget
 
         # Auto-confirm for extra users (or all, depending on config)
         if should_auto_confirm(extra_user):
