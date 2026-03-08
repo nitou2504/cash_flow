@@ -61,6 +61,61 @@ python3 cli.py add "Alex will pay me 150 in 3 installments starting next month, 
 
 Creates 3 pending income transactions of +$50 each. Clear them as payments arrive.
 
+### Interactive mode (no LLM needed)
+
+```bash
+python3 cli.py add -i
+```
+
+Step-by-step guided entry with selection menus for accounts, categories, and budgets. Works offline when the LLM is unavailable (Gemini quota exhausted, Ollama down, etc.). Supports simple, installment, and split transactions.
+
+```
+Interactive Transaction Entry
+Press Ctrl+C to cancel at any time.
+
+Type [SIMPLE/installment/split]:
+Date [2026-03-07]:
+Description: Supermaxi groceries
+
+Account:
+  1. Cash (cash)
+  2. Visa Pichincha (credit_card, cut-off: 25, pay: 5)
+  3. Visa Produbanco (credit_card, cut-off: 14, pay: 25)
+[number or name]> 2
+
+Amount: 45.50
+
+Category:
+  1. Dining-Snacks - Eating out, takeout, coffee, and social food/drinks
+  2. Home Groceries - Food and household items for home
+  3. Personal - Discretionary spending, entertainment, hobbies
+[number or name]> 2
+
+Budget:
+  1. budget_groceries_feb_mar ($120/$400 spent, $280 left)
+  2. budget_personal_mar ($0/$100 spent, $100 left)
+[number or name, empty to skip]> 1
+
+Status [NORMAL/pending/planning]:
+Is this income? [y/N]:
+
+Transaction Preview
+┌────────────┬──────────────────────────┐
+│ Field      │ Value                    │
+├────────────┼──────────────────────────┤
+│ Date       │ 2026-03-07               │
+│ Date Payed │ 2026-04-05               │
+│ Desc       │ Supermaxi groceries      │
+│ Account    │ Visa Pichincha           │
+│ Amount     │ -45.50                   │
+│ Category   │ Home Groceries           │
+│ Budget     │ budget_groceries_feb_mar │
+└────────────┴──────────────────────────┘
+
+Proceed? [Y/n]:
+Successfully added 1 transaction(s).
+```
+
 ### Budget envelopes
 
 ```bash
@@ -500,9 +555,11 @@ For detailed help on any command: `python3 cli.py <command> -h`
 
 ### Transaction Management
 
-#### `add` - Add a transaction using natural language
+#### `add` - Add a transaction
 
-The easiest way to record expenses and income.
+The easiest way to record expenses and income. Two modes:
+
+**Natural language** (requires LLM):
 
 ```bash
 python3 cli.py add "Spent 45.50 on groceries at Walmart today"
@@ -511,11 +568,19 @@ python3 cli.py add "Income 3000 on Cash"
 python3 cli.py add "Split purchase: 30 on groceries, 15 on snacks"
 ```
 
-**What it does**: Parses your natural language description using an LLM, shows you a preview table, and asks for confirmation before creating the transaction.
+**Interactive guided entry** (no LLM needed — works offline):
+
+```bash
+python3 cli.py add -i
+```
+
+Prompts step-by-step for type, date, description, account, amount, category, and budget with numbered selection menus. Supports simple, installment, and split transactions.
+
+**What it does**: Shows you a preview table and asks for confirmation before creating the transaction.
 
 **Key features**:
 
-- Auto-detects transaction type (simple, installment, split)
+- Auto-detects transaction type (simple, installment, split) via LLM, or choose interactively with `-i`
 - Calculates payment dates for credit cards automatically
 - Shows preview before committing
 - Supports pending and planning statuses
