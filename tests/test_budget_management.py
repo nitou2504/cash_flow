@@ -1,10 +1,9 @@
 import unittest
-import sqlite3
 from datetime import date
 from unittest.mock import patch
 from dateutil.relativedelta import relativedelta
 
-from cashflow.database import create_connection, create_tables, insert_mock_data
+from cashflow.database import create_test_db
 from cashflow.repository import (
     add_subscription, get_all_transactions, get_subscription_by_id,
     get_budget_allocation_for_month, commit_past_and_current_forecasts
@@ -14,17 +13,15 @@ from cashflow.controller import generate_forecasts, process_transaction_request,
 class TestBudgetUpdate(unittest.TestCase):
     def setUp(self):
         """Set up a consistent scenario for testing budget updates."""
-        self.conn = create_connection(":memory:")
-        create_tables(self.conn)
-        insert_mock_data(self.conn)
+        self.conn = create_test_db()
         self.today = date(2025, 10, 10)
         self.current_month = self.today.replace(day=1)
         self.next_month = (self.today + relativedelta(months=1)).replace(day=1)
 
-        # 1. Create a "Shopping" budget subscription
+        # 1. Create a "Others" budget subscription
         self.budget_id = "budget_shopping"
         shopping_budget = {
-            "id": self.budget_id, "name": "Shopping Budget", "category": "Shopping",
+            "id": self.budget_id, "name": "Shopping Budget", "category": "Others",
             "monthly_amount": 200.00, "payment_account_id": "Visa Produbanco",
             "start_date": self.today - relativedelta(months=2), "is_budget": True
         }
@@ -56,7 +53,9 @@ class TestBudgetUpdate(unittest.TestCase):
         It should update the live balance and all future forecasts.
         """
         # Action: Increase budget from 200 to 300, effective this month
-        process_budget_update(self.conn, self.budget_id, 300.00, self.today)
+        with patch('cashflow.controller.date') as mock_date:
+            mock_date.today.return_value = self.today
+            process_budget_update(self.conn, self.budget_id, {"monthly_amount": 300.00})
 
         # Assertion 1: The subscription definition is updated
         sub = get_subscription_by_id(self.conn, self.budget_id)
@@ -78,16 +77,18 @@ class TestBudgetUpdate(unittest.TestCase):
         Tests changing a budget for a future month.
         It should NOT affect the current month's live balance.
         """
-        # Action: Increase budget from 200 to 250, effective NEXT month
-        process_budget_update(self.conn, self.budget_id, 250.00, self.next_month)
+        # Action: Increase budget from 200 to 250
+        with patch('cashflow.controller.date') as mock_date:
+            mock_date.today.return_value = self.today
+            process_budget_update(self.conn, self.budget_id, {"monthly_amount": 250.00})
 
         # Assertion 1: The subscription definition is updated
         sub = get_subscription_by_id(self.conn, self.budget_id)
         self.assertAlmostEqual(sub['monthly_amount'], 250.00)
 
-        # Assertion 2: The current month's live allocation is UNCHANGED
+        # Assertion 2: The current month's live allocation is recalculated
         current_allocation = get_budget_allocation_for_month(self.conn, self.budget_id, self.current_month)
-        self.assertAlmostEqual(current_allocation['amount'], -150.00) # -200 + 50
+        self.assertAlmostEqual(current_allocation['amount'], -200.00) # -250 + 50
 
         # Assertion 3: Future forecasts are regenerated with the new amount
         future_allocation = get_budget_allocation_for_month(self.conn, self.budget_id, self.next_month)
@@ -99,7 +100,9 @@ class TestBudgetUpdate(unittest.TestCase):
         Tests decreasing a budget for the current month, causing it to become overspent.
         """
         # Action: Decrease budget from 200 to 40 (less than the 50 already spent)
-        process_budget_update(self.conn, self.budget_id, 40.00, self.today)
+        with patch('cashflow.controller.date') as mock_date:
+            mock_date.today.return_value = self.today
+            process_budget_update(self.conn, self.budget_id, {"monthly_amount": 40.00})
 
         # Assertion 1: The subscription is updated
         sub = get_subscription_by_id(self.conn, self.budget_id)
@@ -132,7 +135,9 @@ class TestBudgetUpdate(unittest.TestCase):
         self.assertAlmostEqual(allocation_before['amount'], 0)
 
         # 2. Action: Decrease budget from 200 to 150
-        process_budget_update(self.conn, self.budget_id, 150.00, self.today)
+        with patch('cashflow.controller.date') as mock_date:
+            mock_date.today.return_value = self.today
+            process_budget_update(self.conn, self.budget_id, {"monthly_amount": 150.00})
 
         # 3. Assertions
         sub = get_subscription_by_id(self.conn, self.budget_id)
@@ -153,9 +158,7 @@ if __name__ == "__main__":
 class TestFutureDatedBudgetUpdate(unittest.TestCase):
     def setUp(self):
         """Set up a scenario where an expense is pushed to a future budget."""
-        self.conn = create_connection(":memory:")
-        create_tables(self.conn)
-        insert_mock_data(self.conn)
+        self.conn = create_test_db()
         # Transaction date is AFTER the Visa cut-off day (14th)
         self.today = date(2025, 10, 15)
         self.current_month = self.today.replace(day=1)
@@ -164,7 +167,7 @@ class TestFutureDatedBudgetUpdate(unittest.TestCase):
 
         self.budget_id = "budget_shopping"
         add_subscription(self.conn, {
-            "id": self.budget_id, "name": "Shopping Budget", "category": "Shopping",
+            "id": self.budget_id, "name": "Shopping Budget", "category": "Others",
             "monthly_amount": 200.00, "payment_account_id": "Visa Produbanco",
             "start_date": self.current_month, "is_budget": True
         })
@@ -209,16 +212,18 @@ class TestFutureDatedBudgetUpdate(unittest.TestCase):
         self.assertAlmostEqual(allocation_current['amount'], -200.00)
         self.assertAlmostEqual(allocation_next['amount'], -150.00)
 
-        # Action: Update the budget to 300, effective for the NEXT month
+        # Action: Update the budget to 300
         print("\nSTEP 2: Action")
-        print(f"  - Calling process_budget_update for November with new amount: 300.00")
-        process_budget_update(self.conn, self.budget_id, 300.00, self.next_month)
+        print(f"  - Calling process_budget_update with new amount: 300.00")
+        with patch('cashflow.controller.date') as mock_date:
+            mock_date.today.return_value = self.today
+            process_budget_update(self.conn, self.budget_id, {"monthly_amount": 300.00})
 
-        # Assertion 1: Current month's allocation remains untouched
+        # Assertion 1: Current month's allocation is recalculated (no spending in Oct)
         allocation_current_after = get_budget_allocation_for_month(self.conn, self.budget_id, self.current_month)
         print("\nSTEP 3: Post-Condition Verification")
-        print(f"  - October Budget: {allocation_current_after['amount']:.2f}. Expected: -200.00 (Correct, update was for the future).")
-        self.assertAlmostEqual(allocation_current_after['amount'], -200.00)
+        print(f"  - October Budget: {allocation_current_after['amount']:.2f}. Expected: -300.00 (Correct, recalculated with new amount).")
+        self.assertAlmostEqual(allocation_current_after['amount'], -300.00)
 
         # Assertion 2: Next month's allocation is correctly recalculated
         # New balance should be -300 + 50 = -250
