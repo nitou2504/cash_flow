@@ -2,15 +2,13 @@ import unittest
 from datetime import date
 from unittest.mock import patch
 
-from cashflow.database import create_connection, create_tables, insert_mock_data
+from cashflow.database import create_test_db
 from cashflow.repository import add_subscription, get_transactions_with_running_balance
 from cashflow.controller import process_transaction_request, run_monthly_rollover
 
 class TestRunningBalance(unittest.TestCase):
     def setUp(self):
-        self.conn = create_connection(":memory:")
-        create_tables(self.conn)
-        insert_mock_data(self.conn)
+        self.conn = create_test_db()
         self.today = date(2025, 10, 15)
 
     def tearDown(self):
@@ -37,7 +35,7 @@ class TestRunningBalance(unittest.TestCase):
         # 2. A regular expense (not on budget)
         process_transaction_request(self.conn, {
             "type": "simple", "description": "Movie ticket", "amount": 20,
-            "account": "Cash", "category": "Entertainment"
+            "account": "Cash", "category": "Personal"
         }, transaction_date=date(2025, 10, 10))
 
         # 3. An expense against the food budget

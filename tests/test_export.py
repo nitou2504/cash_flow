@@ -1,20 +1,17 @@
 import unittest
-import sqlite3
 import os
 import csv
 from datetime import date
 from unittest.mock import patch
 
-from cashflow.database import create_connection, create_tables, insert_mock_data
+from cashflow.database import create_test_db
 from ui.cli_display import export_transactions_to_csv
 from cashflow.controller import process_transaction_request, run_monthly_rollover
 from cashflow.repository import add_subscription
 
 class TestExport(unittest.TestCase):
     def setUp(self):
-        self.conn = create_connection(":memory:")
-        create_tables(self.conn)
-        insert_mock_data(self.conn)
+        self.conn = create_test_db()
         self.today = date(2025, 10, 15)
         self.test_csv_path = "test_transactions.csv"
 
@@ -43,7 +40,7 @@ class TestExport(unittest.TestCase):
 
         process_transaction_request(self.conn, {
             "type": "simple", "description": "Movie ticket", "amount": 20,
-            "account": "Cash", "category": "Entertainment"
+            "account": "Cash", "category": "Personal"
         }, transaction_date=date(2025, 10, 10))
 
         process_transaction_request(self.conn, {

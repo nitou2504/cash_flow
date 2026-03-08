@@ -1,9 +1,8 @@
 import unittest
-import sqlite3
 from datetime import date
 from dateutil.relativedelta import relativedelta
 
-from cashflow.database import create_connection, create_tables, insert_mock_data
+from cashflow.database import create_test_db
 from cashflow.repository import add_subscription, add_transactions, get_budget_allocation_for_month, get_all_transactions
 from cashflow.controller import _get_transaction_group_info, process_transaction_request, process_transaction_conversion
 
@@ -11,38 +10,36 @@ from cashflow.controller import _get_transaction_group_info, process_transaction
 class TestTransactionGroupIdentifier(unittest.TestCase):
     def setUp(self):
         """Set up a database with all types of transactions."""
-        self.conn = create_connection(":memory:")
-        create_tables(self.conn)
-        insert_mock_data(self.conn)
+        self.conn = create_test_db()
         self.today = date(2025, 10, 15)
 
         # 1. Simple Transaction (no origin_id)
         add_transactions(self.conn, [{
             "date_created": self.today, "date_payed": self.today, "description": "Simple Meal",
-            "account": "Cash", "amount": -20, "category": "Food", "budget": None,
+            "account": "Cash", "amount": -20, "category": "Home Groceries", "budget": None,
             "status": "committed", "origin_id": None
         }])
         self.simple_tx_id = 1
 
         # 2. Split Transaction (shared origin_id, same date_payed)
         add_transactions(self.conn, [
-            {"date_created": self.today, "date_payed": self.today, "description": "Groceries", "account": "Cash", "amount": -80, "category": "Food", "budget": None, "status": "committed", "origin_id": "SPLIT1"},
-            {"date_created": self.today, "date_payed": self.today, "description": "Groceries", "account": "Cash", "amount": -15, "category": "Home", "budget": None, "status": "committed", "origin_id": "SPLIT1"}
+            {"date_created": self.today, "date_payed": self.today, "description": "Groceries", "account": "Cash", "amount": -80, "category": "Home Groceries", "budget": None, "status": "committed", "origin_id": "SPLIT1"},
+            {"date_created": self.today, "date_payed": self.today, "description": "Groceries", "account": "Cash", "amount": -15, "category": "Housing", "budget": None, "status": "committed", "origin_id": "SPLIT1"}
         ])
         self.split_tx_id = 2
 
         # 3. Installment Transaction (shared origin_id, different date_payed)
         add_transactions(self.conn, [
-            {"date_created": self.today, "date_payed": self.today, "description": "Phone (1/3)", "account": "Visa Produbanco", "amount": -100, "category": "Electronics", "budget": None, "status": "committed", "origin_id": "INSTALL1"},
-            {"date_created": self.today, "date_payed": self.today + relativedelta(months=1), "description": "Phone (2/3)", "account": "Visa Produbanco", "amount": -100, "category": "Electronics", "budget": None, "status": "committed", "origin_id": "INSTALL1"}
+            {"date_created": self.today, "date_payed": self.today, "description": "Phone (1/3)", "account": "Visa Produbanco", "amount": -100, "category": "Others", "budget": None, "status": "committed", "origin_id": "INSTALL1"},
+            {"date_created": self.today, "date_payed": self.today + relativedelta(months=1), "description": "Phone (2/3)", "account": "Visa Produbanco", "amount": -100, "category": "Others", "budget": None, "status": "committed", "origin_id": "INSTALL1"}
         ])
         self.installment_tx_id = 4
 
         # 4. Subscription Transaction (origin_id matches a subscription)
-        add_subscription(self.conn, {"id": "sub_netflix", "name": "Netflix", "category": "Entertainment", "monthly_amount": 15.99, "payment_account_id": "Visa Produbanco", "start_date": self.today})
+        add_subscription(self.conn, {"id": "sub_netflix", "name": "Netflix", "category": "Personal", "monthly_amount": 15.99, "payment_account_id": "Visa Produbanco", "start_date": self.today})
         add_transactions(self.conn, [{
             "date_created": self.today, "date_payed": self.today, "description": "Netflix",
-            "account": "Visa Produbanco", "amount": -15.99, "category": "Entertainment", "budget": None,
+            "account": "Visa Produbanco", "amount": -15.99, "category": "Personal", "budget": None,
             "status": "committed", "origin_id": "sub_netflix"
         }])
         self.subscription_tx_id = 6
@@ -79,16 +76,14 @@ class TestTransactionGroupIdentifier(unittest.TestCase):
 class TestTransactionConversions(unittest.TestCase):
     def setUp(self):
         """Set up an in-memory database for conversion scenarios."""
-        self.conn = create_connection(":memory:")
-        create_tables(self.conn)
-        insert_mock_data(self.conn)
-        
+        self.conn = create_test_db()
+
         self.start_date = date(2025, 9, 15)
         self.budget_id = "budget_shopping"
 
         # 1. Create a Shopping budget
         add_subscription(self.conn, {
-            "id": self.budget_id, "name": "Shopping Budget", "category": "Shopping",
+            "id": self.budget_id, "name": "Shopping Budget", "category": "Others",
             "monthly_amount": 300.00, "payment_account_id": "Cash",
             "start_date": self.start_date.replace(day=1), "is_budget": True
         })
@@ -97,7 +92,7 @@ class TestTransactionConversions(unittest.TestCase):
         add_transactions(self.conn, [{
             "date_created": self.start_date.replace(day=1), "date_payed": self.start_date.replace(day=1),
             "description": "Shopping Budget", "account": "Cash", "amount": -300,
-            "category": "Shopping", "budget": self.budget_id, "status": "committed", "origin_id": self.budget_id
+            "category": "Others", "budget": self.budget_id, "status": "committed", "origin_id": self.budget_id
         }])
 
     def tearDown(self):
@@ -130,7 +125,7 @@ class TestTransactionConversions(unittest.TestCase):
             "total_amount": 120.00,
             "installments": 3,
             "account": "Cash", # Must provide all necessary details for creation
-            "category": "Shopping",
+            "category": "Others",
             "budget": self.budget_id
         }
         
@@ -193,7 +188,7 @@ class TestTransactionConversions(unittest.TestCase):
             "description": "Converted to Simple",
             "amount": 150.00,
             "account": "Cash",
-            "category": "Shopping",
+            "category": "Others",
             "budget": self.budget_id
         }
         process_transaction_conversion(self.conn, tx_to_convert['id'], conversion_details)
@@ -250,7 +245,7 @@ class TestTransactionConversions(unittest.TestCase):
         # Create a subscription-linked transaction
         add_transactions(self.conn, [{
             "date_created": self.start_date, "date_payed": self.start_date, "description": "Netflix",
-            "account": "Cash", "amount": -15.99, "category": "Entertainment", "budget": None,
+            "account": "Cash", "amount": -15.99, "category": "Personal", "budget": None,
             "status": "committed", "origin_id": self.budget_id # Link to the budget subscription
         }])
         

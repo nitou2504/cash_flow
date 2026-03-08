@@ -2,7 +2,7 @@ import unittest
 from datetime import date
 from dateutil.relativedelta import relativedelta
 
-from cashflow.database import create_connection, create_tables, insert_mock_data
+from cashflow.database import create_test_db
 from cashflow.repository import (
     add_subscription, add_transactions, get_budget_allocation_for_month,
     get_all_transactions
@@ -15,9 +15,7 @@ from cashflow.controller import (
 class TestBudgetCappingEdgeCases(unittest.TestCase):
     def setUp(self):
         """Set up a database with a budget for edge case testing."""
-        self.conn = create_connection(":memory:")
-        create_tables(self.conn)
-        insert_mock_data(self.conn)
+        self.conn = create_test_db()
         
         self.start_date = date(2025, 10, 10)
         self.budget_id = "budget_test"
@@ -25,7 +23,7 @@ class TestBudgetCappingEdgeCases(unittest.TestCase):
 
         # 1. Create a Test budget
         add_subscription(self.conn, {
-            "id": self.budget_id, "name": "Test Budget", "category": "Testing",
+            "id": self.budget_id, "name": "Test Budget", "category": "Others",
             "monthly_amount": self.budget_amount, "payment_account_id": "Cash",
             "start_date": self.start_date.replace(day=1), "is_budget": True
         })
@@ -35,7 +33,7 @@ class TestBudgetCappingEdgeCases(unittest.TestCase):
             "date_created": self.start_date.replace(day=1),
             "date_payed": self.start_date.replace(day=1),
             "description": "Test Budget", "account": "Cash", "amount": -self.budget_amount,
-            "category": "Testing", "budget": self.budget_id, "status": "committed",
+            "category": "Others", "budget": self.budget_id, "status": "committed",
             "origin_id": self.budget_id
         }])
 
@@ -72,7 +70,7 @@ class TestBudgetCappingEdgeCases(unittest.TestCase):
         tx_to_convert = next(t for t in get_all_transactions(self.conn) if "Gadget" in t['description'])
         conversion_details = {
             "target_type": "simple", "description": "Gadget (Simple)", "amount": 60.00,
-            "account": "Cash", "category": "Testing", "budget": self.budget_id
+            "account": "Cash", "category": "Others", "budget": self.budget_id
         }
         process_transaction_conversion(self.conn, tx_to_convert['id'], conversion_details)
 
@@ -107,7 +105,7 @@ class TestBudgetCappingEdgeCases(unittest.TestCase):
         conversion_details = {
             "target_type": "installment", "description": "Big Purchase (Installments)",
             "total_amount": 150.00, "installments": 3, "account": "Cash",
-            "category": "Testing", "budget": self.budget_id
+            "category": "Others", "budget": self.budget_id
         }
         process_transaction_conversion(self.conn, tx_to_convert['id'], conversion_details)
 

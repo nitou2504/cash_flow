@@ -1,15 +1,13 @@
 import unittest
 from datetime import date
 
-from cashflow.database import create_connection, create_tables, insert_mock_data
+from cashflow.database import create_test_db
 from cashflow.repository import get_all_transactions, get_account_by_name
 from cashflow.controller import process_transaction_request
 
 class TestPartialInstallments(unittest.TestCase):
     def setUp(self):
-        self.conn = create_connection(":memory:")
-        create_tables(self.conn)
-        insert_mock_data(self.conn)
+        self.conn = create_test_db()
         self.account = get_account_by_name(self.conn, "Visa Produbanco")
         self.today = date(2025, 10, 15)
 
@@ -31,7 +29,7 @@ class TestPartialInstallments(unittest.TestCase):
             "total_amount": 600.00, # The ORIGINAL total amount of the purchase
             "installments": 4,      # The number of installments to log now
             "account": self.account['account_id'],
-            "category": "electronics",
+            "category": "Others",
             "start_from_installment": 3,
             "total_installments": 6 # The total number of installments in the plan
         }

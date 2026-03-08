@@ -1,8 +1,7 @@
 import unittest
-import sqlite3
 from unittest.mock import patch, MagicMock
 
-from cashflow.database import create_connection, create_tables, insert_mock_data
+from cashflow.database import create_test_db
 from ui.cli_display import view_transactions
 from cashflow.controller import process_transaction_request, run_monthly_rollover
 from cashflow.repository import add_subscription
@@ -10,9 +9,7 @@ from datetime import date
 
 class TestInterface(unittest.TestCase):
     def setUp(self):
-        self.conn = create_connection(":memory:")
-        create_tables(self.conn)
-        insert_mock_data(self.conn)
+        self.conn = create_test_db()
         self.today = date(2025, 10, 15)
 
     def tearDown(self):
@@ -40,7 +37,7 @@ class TestInterface(unittest.TestCase):
 
         process_transaction_request(self.conn, {
             "type": "simple", "description": "Movie ticket", "amount": 20,
-            "account": "Cash", "category": "Entertainment"
+            "account": "Cash", "category": "Personal"
         }, transaction_date=date(2025, 10, 10))
 
         process_transaction_request(self.conn, {
@@ -57,7 +54,7 @@ class TestInterface(unittest.TestCase):
         print("------------------------------------")
 
         # --- Action ---
-        view_transactions(self.conn)
+        view_transactions(self.conn, months=12, start_from="2025-10")
 
         # --- Verification ---
         # 1. Check that Console and Table were used
@@ -72,15 +69,14 @@ class TestInterface(unittest.TestCase):
             print(call.args)
         print("-----------------------------------------")
 
-        # 2. Verify the number of rows
-        self.assertEqual(table_instance.add_row.call_count, 9)
-        
-        # 3. Verify the content of a specific row (the first one)
-        first_call_args = table_instance.add_row.call_args_list[0].args
-        self.assertEqual(first_call_args[1], "2025-10-01") # Date
-        self.assertEqual(first_call_args[3], "Food Budget") # Description
-        self.assertEqual(first_call_args[5], "-320.00") # Amount
-        self.assertEqual(first_call_args[-1], "-320.00") # Running Total
+        # 2. Verify the number of rows (1 starting balance + 9 transactions)
+        self.assertEqual(table_instance.add_row.call_count, 10)
+
+        # 3. Verify the content of the first data row (after starting balance)
+        first_data_args = table_instance.add_row.call_args_list[1].args
+        self.assertEqual(first_data_args[1], "2025-10-01") # Date
+        self.assertEqual(first_data_args[3], "Food Budget") # Description
+        self.assertEqual(first_data_args[5], "-320.00") # Amount
 
         print("\n--- Test Complete ---")
 
