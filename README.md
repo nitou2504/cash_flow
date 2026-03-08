@@ -276,6 +276,8 @@ Route simple tasks to a free local model and complex tasks to Gemini. Based on b
 | Transaction parsing | Gemini `2.5-flash` | — | ~1.2s | Complex JSON, needs accuracy |
 | Subscription parsing | Gemini `2.5-flash` | — | ~1.2s | Budget creation needs accuracy |
 | Account parsing | Gemini `2.5-flash` | — | ~1.2s | Local models generate code instead of JSON |
+| Edit instruction parsing | Gemini `2.5-flash` | — | ~1.2s | Context understanding for field changes |
+| No-budget phrase detection | Ollama `llama3.2:3b` | 100% | ~0.5s | Simple binary classification, free |
 
 #### Setup
 
@@ -327,6 +329,14 @@ function_models:
   parse_account_string:
     provider: "gemini"
     model: "gemini-2.5-flash"
+
+  parse_edit_instruction:
+    provider: "gemini"
+    model: "gemini-2.5-flash"
+
+  check_no_budget:
+    provider: "ollama"
+    model: "llama3.2:3b"
 ```
 
 #### Providers
@@ -374,6 +384,8 @@ LLM_OLLAMA_BASE_URL=http://localhost:11434
 # Per-function overrides (format: provider/model)
 LLM_PRE_PARSE_MODEL=ollama/llama3.2:3b
 LLM_TRANSACTION_PARSE_MODEL=gemini/gemini-2.5-flash
+LLM_EDIT_PARSE_MODEL=gemini/gemini-2.5-flash
+LLM_NO_BUDGET_MODEL=ollama/llama3.2:3b
 ```
 
 ---
@@ -469,6 +481,17 @@ python3 cli.py bot stop       # Stop the container
 
 The bot supports English and Spanish. Set a default with `TELEGRAM_DEFAULT_LANG=es` in `.env`, or let each user pick their language at runtime with `/lang`. The choice is persisted per user in the database.
 
+### Review Flow
+
+The `/review` command lets you review transactions flagged by [extra users](#extra-users-delegates). It shows one transaction at a time with inline buttons:
+
+- **Approve** — marks the transaction as reviewed (clears `needs_review` flag)
+- **Edit** — enter natural language editing mode (same LLM-powered flow as `cli.py edit <id> "..."`)
+- **Skip** — move to the next transaction without acting
+- **Done** — exit review
+
+In edit mode, type a correction like "change amount to 30" or "move to personal category". The bot parses the instruction, shows a before/after diff, and asks for confirmation before saving.
+
 ### Usage
 
 Just send messages like:
@@ -508,10 +531,11 @@ Format: `TELEGRAM_EXTRA_USER_<NAME>=telegram_user_id,default_account,default_bud
 **How it works**:
 
 1. Mom sends `supermaxi 25.50` to the bot
-2. Bot appends her defaults to the message (e.g. `supermaxi 25.50, Visa Pichincha, Home Groceries budget`) and parses via the same LLM flow as the owner
+2. Bot appends the account to the message (e.g. `supermaxi 25.50, Visa Pichincha`) and parses via the same LLM flow as the owner. The budget is resolved in code (not by the LLM) to prevent category pollution
 3. After parsing, the transaction is tagged with `source=mom` and `needs_review=1`
 4. Transaction is **auto-saved** — she sees a compact reply with date, description, amount, and remaining budget (no confirm/revise buttons)
-5. You run `/review` in the bot (or `cli.py review ls` from the CLI) to see her transactions, edit with natural language, and approve
+5. The owner receives a notification with the transaction details
+6. You run `/review` in the bot (or `cli.py review ls` from the CLI) to see her transactions, edit with natural language, and approve
 
 **Simplified `/summary` for extra users**: Shows only their configured budget (prefix-matched), no planning toggle. Defaults to the current payment month for their account.
 
