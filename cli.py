@@ -350,6 +350,93 @@ def handle_add_interactive(conn: sqlite3.Connection):
         controller.process_transaction_request(conn, request, transaction_date=transaction_date)
 
 
+def handle_accounts_add_interactive(conn: sqlite3.Connection):
+    """Interactive guided account creation."""
+    from ui.interactive import interactive_add_account
+    result = interactive_add_account(conn)
+    if result:
+        name, acc_type, cut_off_day, payment_day = result
+        try:
+            repository.add_account(conn, name, acc_type, cut_off_day, payment_day)
+            print(f"Successfully added account: {name}")
+        except Exception as e:
+            print(f"Error adding account: {e}")
+
+
+def handle_categories_add_interactive(conn: sqlite3.Connection):
+    """Interactive guided category creation."""
+    from ui.interactive import interactive_add_category
+    result = interactive_add_category(conn)
+    if result:
+        name, description = result
+        try:
+            repository.add_category(conn, name, description)
+            print(f"Successfully added category: {name}")
+        except ValueError as e:
+            print(f"Error: {e}")
+
+
+def handle_subscriptions_add_interactive(conn: sqlite3.Connection):
+    """Interactive guided subscription/budget creation."""
+    from ui.interactive import interactive_add_subscription
+    sub_data = interactive_add_subscription(conn)
+    if sub_data:
+        try:
+            repository.add_subscription(conn, sub_data)
+            kind = "budget" if sub_data.get('is_budget') else "subscription"
+            print(f"Successfully added {kind}: {sub_data['name']}")
+            controller.generate_forecasts(conn, horizon_months=6, from_date=sub_data['start_date'])
+            print(f"Generated forecast allocations for '{sub_data['name']}'.")
+            controller.run_monthly_rollover(conn, date.today())
+        except Exception as e:
+            print(f"Error adding subscription: {e}")
+
+
+def handle_edit_interactive(conn: sqlite3.Connection, args: argparse.Namespace):
+    """Interactive guided transaction edit."""
+    from ui.interactive import interactive_edit_transaction
+
+    if getattr(args, 'all', False):
+        group_info = controller._get_transaction_group_info(conn, args.transaction_id)
+        siblings = group_info.get("siblings", [])
+        if len(siblings) <= 1:
+            # Single transaction, just edit it
+            result = interactive_edit_transaction(conn, args.transaction_id)
+            if result:
+                updates, new_date = result
+                controller.process_transaction_edit(conn, args.transaction_id, updates, new_date)
+                print(f"Successfully updated transaction {args.transaction_id}.")
+        else:
+            # Edit first, then apply to all
+            result = interactive_edit_transaction(conn, args.transaction_id)
+            if result:
+                updates, new_date = result
+                for sibling in siblings:
+                    controller.process_transaction_edit(conn, sibling['id'], updates, new_date)
+                print(f"Successfully updated {len(siblings)} transactions in group.")
+    else:
+        result = interactive_edit_transaction(conn, args.transaction_id)
+        if result:
+            updates, new_date = result
+            try:
+                controller.process_transaction_edit(conn, args.transaction_id, updates, new_date)
+                print(f"Successfully updated transaction {args.transaction_id}.")
+            except (ValueError, sqlite3.Error) as e:
+                print(f"Error updating transaction: {e}")
+
+
+def handle_subscriptions_edit_interactive(conn: sqlite3.Connection, args: argparse.Namespace):
+    """Interactive guided subscription edit."""
+    from ui.interactive import interactive_edit_subscription
+    updates = interactive_edit_subscription(conn, args.subscription_id)
+    if updates:
+        try:
+            retroactive = getattr(args, 'retroactive', False)
+            controller.process_budget_update(conn, args.subscription_id, updates, retroactive=retroactive)
+        except Exception as e:
+            print(f"Error editing subscription: {e}")
+
+
 def handle_create_transaction(conn: sqlite3.Connection, args: argparse.Namespace):
     """Creates a transaction from explicit flags (no LLM, no confirmation)."""
     transaction_date = date.fromisoformat(args.date) if args.date else date.today()
@@ -812,96 +899,25 @@ def handle_statement_fix_interactive(
     month: date
 ):
     """Interactive payment fix - shows table, asks for amount, confirms."""
+    from ui.interactive import interactive_statement_fix
+
+    statement_amount = interactive_statement_fix(conn, account_id, month)
+    if statement_amount is None:
+        return
 
     try:
-        # Get account and determine payment date
-        account = repository.get_account_by_name(conn, account_id)
-        if not account:
-            print(f"Error: Account '{account_id}' not found")
-            return
-
-        if account['account_type'] == 'credit_card':
-            payment_date = date(month.year, month.month, account['payment_day'])
-        else:
-            # Cash account: use last day of month
-            next_month = month + relativedelta(months=1)
-            payment_date = next_month.replace(day=1) - relativedelta(days=1)
-
-        # Get transactions on payment date
-        all_trans = repository.get_all_transactions(conn)
-        payment_trans = [
-            t for t in all_trans
-            if t['account'] == account_id
-            and t['date_payed'] == payment_date
-            and t['status'] in ['committed', 'forecast']
-        ]
-
-        current_total = sum(t['amount'] for t in payment_trans)
-
-        # Display header
-        print(f"\nStatement Adjustment for {account_id} - {month.strftime('%B %Y')}")
-        print(f"Payment date: {payment_date}\n")
-
-        # Show table with transactions
-        if payment_trans:
-            table = Table(title=f"Transactions on {payment_date}")
-            table.add_column("ID", style="cyan", width=6)
-            table.add_column("Date", style="dim", width=12)
-            table.add_column("Description")
-            table.add_column("Amount", justify="right", width=10)
-
-            for t in payment_trans:
-                table.add_row(
-                    str(t['id']),
-                    str(t['date_created']),
-                    t['description'],
-                    f"{t['amount']:.2f}"
-                )
-
-            table.add_row("", "", "CURRENT TOTAL", f"{current_total:.2f}", style="bold")
-
-            console = Console()
-            console.print(table)
-        else:
-            print(f"⚠ No transactions found on {payment_date}")
-            print(f"Current total: $0.00")
-
-        print()
-
-        # Ask for statement amount
-        try:
-            statement_amount = float(input("Enter actual statement amount: "))
-        except (ValueError, EOFError):
-            print("Operation cancelled")
-            return
-
-        # Calculate difference
-        difference = statement_amount - current_total
-
-        if abs(difference) < 0.01:
-            print("\n✓ No adjustment needed - statement matches current total!")
-            return
-
-        # Show adjustment summary
-        adjustment_amount = -difference
-        adj_sign = "+" if adjustment_amount >= 0 else "-"
-        diff_sign = "+" if difference >= 0 else "-"
-        print(f"\nAdjustment: ${current_total:.2f} → ${statement_amount:.2f} (difference: {diff_sign}${abs(difference):.2f})")
-
-        # Confirm
-        confirm = input("Proceed? [Y/n]: ")
-        if confirm.lower() not in ['y', '']:
-            print("Operation cancelled")
-            return
-
-        # Process
         result = controller.process_statement_adjustment(
             conn, account_id, month, statement_amount
         )
 
         if result:
-            print(f"\n✓ Payment adjusted for {account_id} ({payment_date})")
+            diff = result['difference']
+            adjustment_amount = -diff
+            adj_sign = "+" if adjustment_amount >= 0 else "-"
+            print(f"\n✓ Payment adjusted for {account_id} ({result['payment_date']})")
             print(f"  Transaction created: Payment Adjustment - {account_id} ({adj_sign}${abs(adjustment_amount):.2f})")
+        else:
+            print(f"✓ No adjustment needed - statement matches current total")
 
     except ValueError as e:
         print(f"Error: {e}")
@@ -1370,7 +1386,8 @@ Examples:
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    acc_add_natural_parser.add_argument("description", help="Natural language account description")
+    acc_add_natural_parser.add_argument("description", nargs="?", help="Natural language account description")
+    acc_add_natural_parser.add_argument("--interactive", "-i", action="store_true", help="Interactive guided mode (no LLM needed)")
 
     acc_adjust_billing_parser = acc_subparsers.add_parser(
         "adjust-billing",
@@ -1415,8 +1432,9 @@ Example:
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    cat_add_parser.add_argument("name", help="Category name (lowercase, no spaces)")
-    cat_add_parser.add_argument("description", help="What this category covers")
+    cat_add_parser.add_argument("name", nargs="?", help="Category name (lowercase, no spaces)")
+    cat_add_parser.add_argument("description", nargs="?", help="What this category covers")
+    cat_add_parser.add_argument("--interactive", "-i", action="store_true", help="Interactive guided mode")
 
     cat_edit_parser = cat_subparsers.add_parser(
         "edit",
@@ -1486,7 +1504,8 @@ Examples:
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    subscriptions_add_llm_parser.add_argument("description", help="Natural language budget/subscription description")
+    subscriptions_add_llm_parser.add_argument("description", nargs="?", help="Natural language budget/subscription description")
+    subscriptions_add_llm_parser.add_argument("--interactive", "-i", action="store_true", help="Interactive guided mode (no LLM needed)")
 
     subscriptions_edit_parser = subscriptions_subparsers.add_parser(
         "edit",
@@ -1501,6 +1520,7 @@ Examples:
     subscriptions_edit_parser.add_argument("--end", "-e", help='End date (YYYY-MM-DD) or "none" to make ongoing')
     subscriptions_edit_parser.add_argument("--underspend", "-u", choices=["keep", "return"], help="Unused budget behavior: 'keep' leaves leftover in place for untracked purchases, 'return' releases it back to free balance")
     subscriptions_edit_parser.add_argument("--retroactive", "-r", action="store_true", help="Apply changes to past months (corrections only, not price changes)")
+    subscriptions_edit_parser.add_argument("--interactive", "-i", action="store_true", help="Interactive guided mode")
 
     subscriptions_delete_parser = subscriptions_subparsers.add_parser(
         "delete",
@@ -1630,6 +1650,7 @@ Examples:
     edit_parser.add_argument("--budget", "-b", type=str, help="New budget ID")
     edit_parser.add_argument("--status", "-s", type=str, choices=["committed", "pending", "planning", "forecast"], help="New status")
     edit_parser.add_argument("--all", action="store_true", help="Apply changes to all transactions in group (installments/splits)")
+    edit_parser.add_argument("--interactive", "-i", action="store_true", help="Interactive guided mode")
 
     # Clear command
     clear_parser = subparsers.add_parser(
@@ -1765,14 +1786,28 @@ Configuration via environment variables (or .env):
         if args.subcommand in ["list", "ls", "l"]:
             handle_accounts_list(conn)
         elif args.subcommand in ["add", "a", "an"]:
-            handle_accounts_add_natural(conn, args)
+            if getattr(args, 'interactive', False):
+                handle_accounts_add_interactive(conn)
+            else:
+                if not args.description:
+                    print("Error: description required (or use -i for interactive mode)")
+                    conn.close()
+                    return
+                handle_accounts_add_natural(conn, args)
         elif args.subcommand in ["adjust-billing", "ab"]:
             handle_accounts_adjust_billing(conn, args)
     elif args.command in ["categories", "cat", "c"]:
         if args.subcommand in ["list", "ls", "l"]:
             handle_categories_list(conn)
         elif args.subcommand in ["add", "a"]:
-            handle_categories_add(conn, args)
+            if getattr(args, 'interactive', False):
+                handle_categories_add_interactive(conn)
+            else:
+                if not args.name or not args.description:
+                    print("Error: name and description required (or use -i for interactive mode)")
+                    conn.close()
+                    return
+                handle_categories_add(conn, args)
         elif args.subcommand in ["edit", "e"]:
             handle_categories_edit(conn, args)
         elif args.subcommand in ["delete", "del", "d"]:
@@ -1781,9 +1816,19 @@ Configuration via environment variables (or .env):
         if args.subcommand in ["list", "ls", "l"]:
             handle_subscriptions_list(conn, args)
         elif args.subcommand in ["add", "a"]:
-            handle_subscriptions_add_llm(conn, args)
+            if getattr(args, 'interactive', False):
+                handle_subscriptions_add_interactive(conn)
+            else:
+                if not args.description:
+                    print("Error: description required (or use -i for interactive mode)")
+                    conn.close()
+                    return
+                handle_subscriptions_add_llm(conn, args)
         elif args.subcommand in ["edit", "e"]:
-            handle_subscriptions_edit(conn, args)
+            if getattr(args, 'interactive', False):
+                handle_subscriptions_edit_interactive(conn, args)
+            else:
+                handle_subscriptions_edit(conn, args)
         elif args.subcommand in ["delete", "del", "d"]:
             handle_subscriptions_delete(conn, args)
     elif args.command in ["view", "v"]:
@@ -1793,7 +1838,10 @@ Configuration via environment variables (or .env):
     elif args.command in ["delete", "del", "d"]:
         handle_delete(conn, args)
     elif args.command in ["edit", "e"]:
-        handle_edit(conn, args)
+        if getattr(args, 'interactive', False):
+            handle_edit_interactive(conn, args)
+        else:
+            handle_edit(conn, args)
     elif args.command in ["clear", "cl"]:
         handle_clear(conn, args)
     elif args.command in ["fix", "f"]:
