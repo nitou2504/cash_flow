@@ -486,6 +486,8 @@ def handle_create_transaction(conn: sqlite3.Connection, args: argparse.Namespace
             "is_income": args.income,
             "is_pending": args.pending,
             "is_planning": args.planning,
+            "source": getattr(args, 'source', None),
+            "needs_review": bool(getattr(args, 'needs_review', 0)),
         }
     else:
         if args.start_installment != 1:
@@ -502,6 +504,8 @@ def handle_create_transaction(conn: sqlite3.Connection, args: argparse.Namespace
             "is_income": args.income,
             "is_pending": args.pending,
             "is_planning": args.planning,
+            "source": getattr(args, 'source', None),
+            "needs_review": bool(getattr(args, 'needs_review', 0)),
         }
 
     args._backup_context = f"transaction {args.description} ${args.amount} {args.account}"
@@ -651,6 +655,11 @@ def handle_edit(conn: sqlite3.Connection, args: argparse.Namespace):
         updates["budget"] = args.budget
     if args.status is not None:
         updates["status"] = args.status
+    if getattr(args, 'source', None) is not None:
+        updates["source"] = args.source
+    needs_review_val = getattr(args, 'needs_review', None)
+    if needs_review_val is not None:
+        updates["needs_review"] = needs_review_val
 
     if not updates and not args.date:
         args._backup_skip = True
@@ -709,6 +718,125 @@ def handle_edit(conn: sqlite3.Connection, args: argparse.Namespace):
             print(f"Successfully updated transaction {args.transaction_id}.")
     except (ValueError, sqlite3.Error) as e:
         print(f"Error updating transaction: {e}")
+
+
+def handle_review(conn: sqlite3.Connection, args: argparse.Namespace):
+    """Router for the review command."""
+    action = args.action
+
+    if action == "ls" or action is None:
+        handle_review_list(conn, args)
+        return
+
+    # Try to parse action as a transaction ID
+    try:
+        transaction_id = int(action)
+    except ValueError:
+        print(f"Unknown review action: '{action}'. Use 'ls' or a transaction ID.")
+        return
+
+    # Route sub-actions
+    if args.sub_action == "clear":
+        repository.mark_reviewed(conn, transaction_id)
+        print(f"Transaction {transaction_id} marked as reviewed.")
+        args._backup_context = f"#{transaction_id} clear"
+        return
+
+    if getattr(args, 'interactive', False):
+        # Reuse interactive edit then mark reviewed
+        edit_args = argparse.Namespace(
+            transaction_id=transaction_id,
+            all=False,
+            interactive=True,
+            _backup_context=None,
+            _backup_skip=False,
+        )
+        handle_edit_interactive(conn, edit_args)
+        if not getattr(edit_args, '_backup_skip', False):
+            repository.mark_reviewed(conn, transaction_id)
+            print(f"Transaction {transaction_id} marked as reviewed.")
+        args._backup_context = f"#{transaction_id} -i"
+        args._backup_skip = getattr(edit_args, '_backup_skip', False)
+        return
+
+    # Check for edit flags
+    updates = {}
+    if args.description is not None:
+        updates["description"] = args.description
+    if args.amount is not None:
+        updates["amount"] = args.amount
+    if args.category is not None:
+        updates["category"] = args.category
+    if args.budget is not None:
+        updates["budget"] = args.budget
+    if args.status is not None:
+        updates["status"] = args.status
+
+    new_date = date.fromisoformat(args.date) if args.date else None
+
+    if updates or new_date:
+        try:
+            controller.process_transaction_edit(conn, transaction_id, updates, new_date)
+            repository.mark_reviewed(conn, transaction_id)
+            print(f"Transaction {transaction_id} updated and marked as reviewed.")
+        except (ValueError, sqlite3.Error) as e:
+            print(f"Error updating transaction: {e}")
+            return
+    else:
+        # No flags: show transaction details and mark reviewed
+        tx = repository.get_transaction_by_id(conn, transaction_id)
+        if not tx:
+            print(f"Transaction {transaction_id} not found.")
+            return
+        console = Console()
+        table = Table(title=f"Transaction #{transaction_id}", box=None)
+        table.add_column("Field", style="bold")
+        table.add_column("Value")
+        for key in ["id", "date_payed", "description", "account", "amount", "category", "budget", "status", "source"]:
+            table.add_row(key, str(tx.get(key, "")))
+        console.print(table)
+        repository.mark_reviewed(conn, transaction_id)
+        print(f"Transaction {transaction_id} marked as reviewed.")
+
+    args._backup_context = f"#{transaction_id}"
+
+
+def handle_review_list(conn: sqlite3.Connection, args: argparse.Namespace):
+    """Display unreviewed transactions."""
+    source_filter = getattr(args, 'source', None)
+    transactions = repository.get_transactions_needing_review(conn, source=source_filter)
+
+    if not transactions:
+        print("No transactions need review.")
+        args._backup_skip = True
+        return
+
+    console = Console()
+    title = "Transactions Needing Review"
+    if source_filter:
+        title += f" (source: {source_filter})"
+    table = Table(title=title)
+    table.add_column("ID", style="bold")
+    table.add_column("Date")
+    table.add_column("Description")
+    table.add_column("Amount", justify="right")
+    table.add_column("Account")
+    table.add_column("Budget")
+    table.add_column("Source")
+
+    for tx in transactions:
+        table.add_row(
+            str(tx["id"]),
+            str(tx["date_payed"]),
+            tx["description"],
+            f"{tx['amount']:.2f}",
+            tx.get("account", ""),
+            tx.get("budget", "") or "",
+            tx.get("source", "") or "",
+        )
+
+    console.print(table)
+    args._backup_skip = True
 
 
 def handle_delete(conn: sqlite3.Connection, args: argparse.Namespace):
@@ -1164,6 +1292,9 @@ def describe_operation(args: argparse.Namespace) -> str:
     elif cmd in ("clear", "cl"):
         tid = getattr(args, "transaction_id", "")
         parts.append(f"#{tid}")
+    elif cmd in ("review", "rv"):
+        action = getattr(args, "action", "ls")
+        parts.append(str(action))
     elif cmd in ("fix", "f"):
         balance = getattr(args, "balance", None)
         payment = getattr(args, "payment", None)
@@ -1233,6 +1364,13 @@ COMMON WORKFLOWS:
     cli.py clear 789                            # Commit a pending transaction
     cli.py clear 789 --all                      # Commit all in group
 
+  Review extra user transactions:
+    cli.py review ls                            # List unreviewed
+    cli.py review ls --source mom               # Filter by source
+    cli.py review 605                           # Show + mark reviewed
+    cli.py review 605 clear                     # Mark reviewed silently
+    cli.py review 605 -i                        # Interactive edit + review
+
   Pending & planning:
     cli.py add "Friend owes me 50, pending"
     cli.py add "What if I buy a TV for 800"        # Planning transaction
@@ -1243,7 +1381,7 @@ ALIASES:
   - create [cr]          - accounts [acc, a]         - view [v]
   - subscriptions [sub, s] - categories [cat, c]     - edit [e]
   - export [exp, x]      - delete [del, d]           - fix [f]
-  - clear [cl]           - backup [bk]
+  - clear [cl]           - backup [bk]           - review [rv]
 
 For detailed help on any command: cli.py COMMAND -h
         """,
@@ -1350,6 +1488,8 @@ Examples:
     create_tx_parser.add_argument("--income", action="store_true", default=False, help="Mark as income (positive amount)")
     create_tx_parser.add_argument("--pending", action="store_true", default=False, help="Mark as pending")
     create_tx_parser.add_argument("--planning", action="store_true", default=False, help="Mark as planning")
+    create_tx_parser.add_argument("--source", type=str, help="Transaction source (e.g. mom)")
+    create_tx_parser.add_argument("--needs-review", type=int, choices=[0, 1], default=0, help="Mark for review")
 
     # create account
     create_acc_parser = create_subparsers.add_parser(
@@ -1716,6 +1856,8 @@ Examples:
     edit_parser.add_argument("--category", "-c", type=str, help="New category")
     edit_parser.add_argument("--budget", "-b", type=str, help="New budget ID")
     edit_parser.add_argument("--status", "-s", type=str, choices=["committed", "pending", "planning", "forecast"], help="New status")
+    edit_parser.add_argument("--source", type=str, help="Set transaction source (e.g. mom)")
+    edit_parser.add_argument("--needs-review", type=int, choices=[0, 1], help="Set needs_review flag")
     edit_parser.add_argument("--all", action="store_true", help="Apply changes to all transactions in group (installments/splits)")
     edit_parser.add_argument("--interactive", "-i", action="store_true", help="Interactive guided mode")
 
@@ -1736,6 +1878,36 @@ Examples:
     )
     clear_parser.add_argument("transaction_id", type=int, help="Transaction ID to commit")
     clear_parser.add_argument("--all", action="store_true", help="Clear all transactions in the group (e.g., all installments)")
+
+    # ==================== REVIEW ====================
+
+    review_parser = subparsers.add_parser(
+        "review",
+        aliases=["rv"],
+        help="Review transactions from extra users",
+        description="""
+Review transactions created by extra users (e.g. family members).
+
+Commands:
+  cli.py review ls                            # list all unreviewed
+  cli.py review ls --source mom               # filter by source
+  cli.py review 605                           # show transaction, mark reviewed
+  cli.py review 605 --budget "personal food"  # edit fields + mark reviewed
+  cli.py review 605 -i                        # interactive edit + mark reviewed
+  cli.py review 605 clear                     # mark reviewed without showing
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    review_parser.add_argument("action", nargs="?", default="ls", help="'ls' to list, or transaction ID")
+    review_parser.add_argument("sub_action", nargs="?", default=None, help="'clear' to mark reviewed without editing")
+    review_parser.add_argument("--description", "-d", type=str, help="New description")
+    review_parser.add_argument("--amount", "-a", type=float, help="New amount")
+    review_parser.add_argument("--date", "-D", type=str, help="New date (YYYY-MM-DD)")
+    review_parser.add_argument("--category", "-c", type=str, help="New category")
+    review_parser.add_argument("--budget", "-b", type=str, help="New budget ID")
+    review_parser.add_argument("--status", "-s", type=str, choices=["committed", "pending", "planning", "forecast"], help="New status")
+    review_parser.add_argument("--source", type=str, help="Filter by source (for ls)")
+    review_parser.add_argument("--interactive", "-i", action="store_true", help="Interactive edit mode")
 
     # ==================== RECONCILIATION ====================
 
@@ -1828,6 +2000,10 @@ Configuration via environment variables (or .env):
     if args.command in ["accounts", "acc", "a", "categories", "cat", "c", "subscriptions", "sub", "s"]:
         if hasattr(args, "subcommand") and args.subcommand in read_only_subcommands:
             is_read_only = True
+    if args.command in ["review", "rv"]:
+        action = getattr(args, "action", "ls")
+        if action == "ls" or action is None:
+            is_read_only = True
 
     backup_path = None
     if BACKUP_ENABLED and not is_read_only:
@@ -1911,6 +2087,8 @@ Configuration via environment variables (or .env):
             handle_edit(conn, args)
     elif args.command in ["clear", "cl"]:
         handle_clear(conn, args)
+    elif args.command in ["review", "rv"]:
+        handle_review(conn, args)
     elif args.command in ["fix", "f"]:
         handle_fix(conn, args)
 
