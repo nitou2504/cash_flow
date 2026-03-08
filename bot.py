@@ -27,7 +27,7 @@ from ui.telegram_format import (
     parse_month_from_args,
 )
 from cashflow.config import (
-    TELEGRAM_BOT_TOKEN, DB_PATH, TELEGRAM_ALLOWED_USERS,
+    TELEGRAM_BOT_TOKEN, DB_PATH, TELEGRAM_ALLOWED_USERS, TELEGRAM_EXTRA_USERS,
     BACKUP_ENABLED, BACKUP_DIR, BACKUP_KEEP_TODAY, BACKUP_RECENT_DAYS, BACKUP_MAX_DAYS,
     BACKUP_LOG_RETENTION_DAYS,
 )
@@ -47,11 +47,17 @@ db_conn = None
 # ==================== AUTH ====================
 
 def is_authorized(update: Update) -> bool:
-    """Check if the user is in the allowlist. Empty allowlist = open access."""
+    """Check if the user is in the allowlist or extra users. Empty allowlist = open access."""
     if not TELEGRAM_ALLOWED_USERS:
         return True
     user_id = update.effective_user.id if update.effective_user else None
-    return user_id in TELEGRAM_ALLOWED_USERS
+    return user_id in TELEGRAM_ALLOWED_USERS or user_id in TELEGRAM_EXTRA_USERS
+
+
+def get_extra_user_info(update: Update) -> dict | None:
+    """Returns extra user config if the sender is an extra user, None otherwise."""
+    user_id = update.effective_user.id if update.effective_user else None
+    return TELEGRAM_EXTRA_USERS.get(user_id)
 
 
 async def reject_unauthorized(update: Update):
@@ -181,6 +187,23 @@ async def handle_new_expense(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 parse_mode='Markdown'
             )
             return
+
+        # Inject extra user defaults
+        extra_user = get_extra_user_info(update)
+        if extra_user:
+            request_json["source"] = extra_user["name"]
+            request_json["needs_review"] = True
+            # Set account if LLM didn't pick one or picked the default
+            if not request_json.get("account") or request_json["account"] == accounts[0]["account_id"]:
+                request_json["account"] = extra_user["account"]
+            # Resolve budget name to active budget period
+            budget_name = extra_user["budget"]
+            matched_budget = next(
+                (b["id"] for b in budgets if b["name"].lower() == budget_name.lower()),
+                None,
+            )
+            if matched_budget and not request_json.get("budget"):
+                request_json["budget"] = matched_budget
 
         # Calculate payment date for preview
         trans_date = date.fromisoformat(request_json.get('date_created', date.today().isoformat()))

@@ -20,3 +20,22 @@ _allowed_raw = os.getenv("TELEGRAM_ALLOWED_USERS", "")
 TELEGRAM_ALLOWED_USERS: set[int] = {
     int(uid.strip()) for uid in _allowed_raw.split(",") if uid.strip()
 }
+
+# Extra users: TELEGRAM_EXTRA_USER_<NAME>=user_id,account,budget_name
+# Example: TELEGRAM_EXTRA_USER_MOM=987654321,Visa Pichincha,Home Groceries
+TELEGRAM_EXTRA_USERS: dict[int, dict] = {}
+_extra_prefix = "TELEGRAM_EXTRA_USER_"
+for key, value in os.environ.items():
+    if key.startswith(_extra_prefix) and value.strip():
+        name = key[len(_extra_prefix):].lower()
+        parts = [p.strip() for p in value.split(",")]
+        if len(parts) >= 3:
+            try:
+                user_id = int(parts[0])
+                TELEGRAM_EXTRA_USERS[user_id] = {
+                    "name": name,
+                    "account": parts[1],
+                    "budget": parts[2],
+                }
+            except ValueError:
+                pass
