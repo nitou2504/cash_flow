@@ -1,5 +1,6 @@
 import logging
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from dateutil.relativedelta import relativedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -276,10 +277,24 @@ async def handle_new_expense(update: Update, context: ContextTypes.DEFAULT_TYPE,
         # Calculate payment month for budget filtering
         payment_month = tx_module.calculate_payment_month(llm_message, accounts)
 
-        # Full parse
-        request_json = llm_parser.parse_transaction_string(
-            db_conn, llm_message, accounts, budgets, payment_month
-        )
+        # Full parse — run no-budget check in parallel if configured
+        no_budget_phrase = extra_user.get('no_budget_phrase') if extra_user else None
+        if no_budget_phrase:
+            loop = asyncio.get_event_loop()
+            parse_future = loop.run_in_executor(
+                None, llm_parser.parse_transaction_string,
+                db_conn, llm_message, accounts, budgets, payment_month
+            )
+            no_budget_future = loop.run_in_executor(
+                None, llm_parser.check_no_budget,
+                user_message, no_budget_phrase
+            )
+            request_json, skip_budget = await asyncio.gather(parse_future, no_budget_future)
+        else:
+            request_json = llm_parser.parse_transaction_string(
+                db_conn, llm_message, accounts, budgets, payment_month
+            )
+            skip_budget = False
 
         if not request_json:
             await processing_msg.edit_text(
@@ -304,7 +319,7 @@ async def handle_new_expense(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
         # Resolve budget for extra users by matching their configured
         # budget prefix to the active budget for the payment month
-        if extra_user and extra_user.get('budget'):
+        if extra_user and extra_user.get('budget') and not skip_budget:
             prefix = extra_user['budget'].lower()
             payment_month = payment_date.replace(day=1)
             best_budget = None
