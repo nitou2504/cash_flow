@@ -28,7 +28,7 @@ class TestReviewI18nStrings(unittest.TestCase):
         "review_source", "btn_approve", "btn_edit", "btn_skip",
         "review_edit_prompt", "review_edit_preview", "review_edit_no_changes",
         "review_edit_failed", "review_approved", "review_edited",
-        "review_tx_not_found",
+        "review_tx_not_found", "extra_user_notify",
     ]
 
     def test_en_keys_exist(self):

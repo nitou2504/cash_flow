@@ -303,6 +303,26 @@ async def handle_new_expense(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 request_json, payment_date, budget_remaining, budget_name, budget_allocated, lang=lang
             )
             await processing_msg.edit_text(reply, parse_mode='Markdown')
+
+            # Notify the owner about extra user transactions
+            if extra_user and TELEGRAM_ALLOWED_USERS:
+                owner_id = next(iter(TELEGRAM_ALLOWED_USERS))
+                amount = request_json.get('amount', 0)
+                amount_str = f"+${abs(amount):.2f}" if request_json.get('is_income') else f"-${abs(amount):.2f}"
+                # Use owner's language preference
+                owner_lang = repository.get_setting(db_conn, f"lang:{owner_id}") or TELEGRAM_DEFAULT_LANG
+                notify_text = t("extra_user_notify", owner_lang,
+                    source=extra_user['name'].title(),
+                    description=request_json.get('description', 'N/A'),
+                    amount=amount_str,
+                )
+                try:
+                    await context.bot.send_message(
+                        chat_id=owner_id, text=notify_text, parse_mode='Markdown'
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to notify owner {owner_id}: {e}")
+
             return
 
         # Format preview message

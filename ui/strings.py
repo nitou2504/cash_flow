@@ -150,6 +150,13 @@ STRINGS = {
         "review_edited": "Edited and approved.",
         "review_tx_not_found": "Transaction no longer exists, skipping.",
 
+        # Extra user notification
+        "extra_user_notify": (
+            "📥 *{source}* added a transaction:\n"
+            "📝 {description} — `{amount}`\n"
+            "Use /review to check it."
+        ),
+
         # Lang command
         "lang_current": "Current language: *{lang_name}*",
         "lang_switched": "Language changed to *{lang_name}*",
@@ -295,6 +302,13 @@ STRINGS = {
         "review_approved": "Aprobada.",
         "review_edited": "Editada y aprobada.",
         "review_tx_not_found": "La transacción ya no existe, omitiendo.",
+
+        # Extra user notification
+        "extra_user_notify": (
+            "📥 *{source}* agregó una transacción:\n"
+            "📝 {description} — `{amount}`\n"
+            "Usa /review para revisarla."
+        ),
 
         # Lang command
         "lang_current": "Idioma actual: *{lang_name}*",
