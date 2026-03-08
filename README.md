@@ -108,34 +108,44 @@ python3 cli.py add "Friend will pay me 100 on March 15, pending"
 python3 cli.py add "Split: 30 groceries, 15 snacks at Supermaxi"
 ```
 
-### Budget envelopes
+### Budget envelopes and running balance
 
 ```bash
 python3 cli.py subscriptions add -i            # Interactive
 python3 cli.py subscriptions add "Monthly groceries budget of 400 on Cash"  # Natural language
 ```
 
-Creates a recurring envelope that reserves $400 each month. Spending against the budget reduces the envelope—not your running balance—so you always see how much is truly committed vs. free. All subscriptions and budgets run on a monthly cycle — one transaction per month, anchored to the start date's day-of-month (see [Monthly cycle](#subscriptions-add---add-budget-or-subscription) for details).
-
-### Viewing cash flow
-
-```bash
-python3 cli.py view
-```
+Creates a recurring envelope that reserves $400 each month. The envelope shows up as a line item in your cash flow — money is "set aside" the moment the budget activates. When you spend against it, the envelope shrinks and your running balance stays the same:
 
 ```
-Cash Flow View (Mar 2026 – Apr 2026)
-┌──────────┬──────────┬────────────────────────┬──────────┬────────┬────────────┐
-│ Date     │ Paid     │ Description            │ Account  │ Amount │ Balance    │
-├──────────┼──────────┼────────────────────────┼──────────┼────────┼────────────┤
-│ 03/01    │ 03/01    │ Salary                 │ Cash     │ +3000  │ 3000.00    │
-│ 03/01    │ 03/01    │ budget_groceries ✉     │ Cash     │ -400   │ 2600.00    │
-│ 03/07    │ 04/05    │ Supermaxi - groceries  │ VisaP    │ -45.50 │ 2554.50    │
-│ 04/05    │ 04/05    │ CC Payment: VisaP      │ Cash     │ -45.50 │ 2554.50    │
-└──────────┴──────────┴────────────────────────┴──────────┴────────┴────────────┘
+cli.py view
+┌──────────┬────────────────────────┬──────────┬────────┬────────────┐
+│ Paid     │ Description            │ Account  │ Amount │ Balance    │
+├──────────┼────────────────────────┼──────────┼────────┼────────────┤
+│ 03/01    │ Salary                 │ Cash     │ +3000  │ 3000.00    │
+│ 03/01    │ budget_groceries ✉     │ Cash     │  -400  │ 2600.00    │  ← $400 reserved
+│ ...      │                        │          │        │            │
+└──────────┴────────────────────────┴──────────┴────────┴────────────┘
 ```
 
-Budget envelopes appear as line items but don't reduce the running balance—they only reserve funds.
+Now you spend $80 on groceries. The budget envelope absorbs it — balance unchanged:
+
+```
+cli.py add -i   (or: cli.py add "Groceries 80 on Cash, home groceries budget")
+cli.py view
+┌──────────┬────────────────────────┬──────────┬────────┬────────────┐
+│ Paid     │ Description            │ Account  │ Amount │ Balance    │
+├──────────┼────────────────────────┼──────────┼────────┼────────────┤
+│ 03/01    │ Salary                 │ Cash     │ +3000  │ 3000.00    │
+│ 03/01    │ budget_groceries ✉     │ Cash     │  -320  │ 2680.00    │  ← was -400, absorbed $80
+│ 03/05    │ Groceries              │ Cash     │   -80  │ 2600.00    │  ← balance still 2600
+│ ...      │                        │          │        │            │
+└──────────┴────────────────────────┴──────────┴────────┴────────────┘
+```
+
+The budget went from -400 to -320 ($80 spent, $320 left). Your running balance didn't change — that money was already earmarked. This means the balance always shows your **real disposable cash**: money not committed to any budget.
+
+All subscriptions and budgets run on a monthly cycle — one transaction per month, anchored to the start date's day-of-month (see [Monthly cycle](#subscriptions-add---add-budget-or-subscription) for details).
 
 ### Companion Telegram bot
 
