@@ -265,6 +265,17 @@ def get_setting(conn: Connection, key: str) -> str:
         return setting[0]
     return None
 
+
+def set_setting(conn: Connection, key: str, value: str):
+    """Inserts or updates a setting in the settings table."""
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO settings (key, value) VALUES (?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, value),
+    )
+    conn.commit()
+
 def commit_past_and_current_forecasts(conn: Connection, month_date: date):
     """
     Changes the status of all 'forecast' transactions to 'committed' for a
