@@ -64,10 +64,15 @@ Creates 3 pending income transactions of +$50 each. Clear them as payments arriv
 ### Interactive mode (no LLM needed)
 
 ```bash
-python3 cli.py add -i
+python3 cli.py add -i                          # Add transaction
+python3 cli.py accounts add -i                 # Add account
+python3 cli.py categories add -i               # Add category
+python3 cli.py subscriptions add -i            # Add budget/subscription
+python3 cli.py edit 123 -i                     # Edit transaction
+python3 cli.py subscriptions edit budget_food -i  # Edit budget/subscription
 ```
 
-Step-by-step guided entry with selection menus for accounts, categories, and budgets. Works offline when the LLM is unavailable (Gemini quota exhausted, Ollama down, etc.). Supports simple, installment, and split transactions.
+Step-by-step guided entry with selection menus, defaults, and previews. Works offline when the LLM is unavailable (Gemini quota exhausted, Ollama down, etc.). Available on all entity commands — no flags or syntax to memorize.
 
 ```
 Interactive Transaction Entry
@@ -646,6 +651,8 @@ python3 cli.py add --import installments.csv --installments
 
 Edit a transaction's properties. Use `--all` to edit all installments in a group.
 
+**Flag-based** (change specific fields):
+
 ```bash
 python3 cli.py edit 123 --status pending
 python3 cli.py edit 456 --category groceries --budget budget_food
@@ -653,6 +660,15 @@ python3 cli.py edit 789 --amount 50.00
 python3 cli.py edit 100 --date 2026-01-15
 python3 cli.py edit 200 --status planning --all  # Edit all installments
 ```
+
+**Interactive guided edit** (no flags needed):
+
+```bash
+python3 cli.py edit 123 -i
+python3 cli.py edit 456 -i --all  # Interactive edit applied to all installments
+```
+
+Shows current values and prompts each field with the current value as default. Press Enter to keep, or type a new value to change. Only changed fields are applied.
 
 **Available options**:
 
@@ -663,6 +679,7 @@ python3 cli.py edit 200 --status planning --all  # Edit all installments
 - `--budget, -b`: Link to budget
 - `--status, -s`: Change status (committed/pending/planning/forecast)
 - `--all`: Apply changes to entire transaction group
+- `--interactive, -i`: Interactive guided mode
 
 ---
 
@@ -801,9 +818,9 @@ All Accounts
 
 ---
 
-#### `accounts add` - Natural language account creation (recommended)
+#### `accounts add` - Add a new account
 
-Add accounts using natural language—easier than manual mode.
+**Natural language** (requires LLM):
 
 ```bash
 python3 cli.py accounts add "Cash account"
@@ -811,7 +828,13 @@ python3 cli.py accounts add "Visa card with cut-off on 25 and payment on 5"
 python3 cli.py accounts add "MasterCard closing on 15th, due on 3rd"
 ```
 
-**What it does**: Parses your description, shows the generated account details, and asks for confirmation.
+**Interactive guided entry** (no LLM needed):
+
+```bash
+python3 cli.py accounts add -i
+```
+
+Prompts for account name, type (cash/credit_card), and cut-off/payment days for credit cards. Shows a preview table before creating.
 
 ---
 
@@ -858,9 +881,9 @@ Subscriptions
 
 ---
 
-#### `subscriptions add` - Natural language creation (recommended)
+#### `subscriptions add` - Add budget or subscription
 
-Add budgets and subscriptions using natural language.
+**Natural language** (requires LLM):
 
 ```bash
 python3 cli.py subscriptions add "Monthly groceries budget of 300 on Cash"
@@ -868,13 +891,23 @@ python3 cli.py subscriptions add "Netflix subscription 15.99 on Visa"
 python3 cli.py subscriptions add "Vacation fund 200/month until December"
 ```
 
-**What it does**: Parses your description, shows JSON preview, asks for confirmation, and generates forecast transactions.
+**Interactive guided entry** (no LLM needed):
+
+```bash
+python3 cli.py subscriptions add -i
+```
+
+Prompts for kind (subscription/budget/income), name, amount, account, category, dates, and underspend behavior. Auto-generates the subscription ID. Shows a preview table before creating and generates forecast transactions.
+
+**What it does**: Parses your description or walks you through step by step, shows preview, asks for confirmation, and generates forecast transactions.
 
 ---
 
 #### `subscriptions edit` - Modify existing budget/subscription
 
 Update budget parameters.
+
+**Flag-based** (change specific fields):
 
 ```bash
 python3 cli.py subscriptions edit budget_groceries --amount 350
@@ -884,6 +917,14 @@ python3 cli.py subscriptions edit budget_vacation --end 2026-12-31
 python3 cli.py subscriptions edit budget_vacation --end none  # Make ongoing
 ```
 
+**Interactive guided edit** (no flags needed):
+
+```bash
+python3 cli.py subscriptions edit budget_groceries -i
+```
+
+Shows current values and prompts each field with defaults. Press Enter to keep, type a new value to change. Only changed fields are applied.
+
 **Parameters**:
 
 - `--name, -n`: New name
@@ -892,6 +933,7 @@ python3 cli.py subscriptions edit budget_vacation --end none  # Make ongoing
 - `--end, -e`: End date (YYYY-MM-DD) or "none"
 - `--underspend, -u`: "keep" or "return"
 - `--retroactive, -r`: Apply changes to past months (corrections only)
+- `--interactive, -i`: Interactive guided mode
 
 **Important**: Amount changes are not retroactive by default—they only affect future months. Use `--retroactive` to correct past allocation errors.
 
@@ -927,6 +969,7 @@ python3 cli.py categories list
 ```bash
 python3 cli.py categories add groceries "Food and household items"
 python3 cli.py categories add utilities "Electricity, water, gas, internet"
+python3 cli.py categories add -i  # Interactive guided mode
 ```
 
 ---
@@ -2148,40 +2191,46 @@ python3 cli.py v -m 6      # Same as: view --months 6
 
 ```bash
 # === SETUP (categories are pre-loaded; add custom ones if needed) ===
-python3 cli.py accounts add "Cash account"
-python3 cli.py categories add utilities "Electricity, water, gas"  # optional
+python3 cli.py accounts add "Cash account"        # LLM parses description
+python3 cli.py accounts add -i                    # or: interactive guided mode
+python3 cli.py categories add utilities "Electricity, water, gas"
+python3 cli.py categories add -i                  # or: interactive guided mode
 python3 cli.py subscriptions add "Groceries budget 400 on Cash"
+python3 cli.py subscriptions add -i               # or: interactive guided mode
 
 # === DAILY USE ===
 python3 cli.py add "Spent 50 on groceries today"
+python3 cli.py add -i                             # Interactive (no LLM)
 python3 cli.py view
-python3 cli.py view -s                    # Summary mode
+python3 cli.py view -s                            # Summary mode
 
 # === MANAGING TRANSACTIONS ===
 python3 cli.py edit 123 --status pending
+python3 cli.py edit 123 -i                        # Interactive guided edit
 python3 cli.py delete 456
-python3 cli.py clear 789                  # Commit pending transaction
+python3 cli.py clear 789                          # Commit pending transaction
 
 # === RECONCILIATION ===
-python3 cli.py fix --payment VisaCard -i  # Interactive statement fix
-python3 cli.py fix --balance 1500         # Fix total balance
+python3 cli.py fix --payment VisaCard -i          # Interactive statement fix
+python3 cli.py fix --balance 1500                 # Fix total balance
 
 # === BUDGETS ===
 python3 cli.py subscriptions list
 python3 cli.py subscriptions edit budget_groceries --amount 450
+python3 cli.py subscriptions edit budget_groceries -i  # Interactive guided edit
 python3 cli.py subscriptions delete old_budget
 
 # === VIEWING ===
-python3 cli.py view -m 6                  # 6 months
-python3 cli.py view --from 2026-01        # Start from January
-python3 cli.py view --sort date_created   # Sort by purchase date
+python3 cli.py view -m 6                          # 6 months
+python3 cli.py view --from 2026-01                # Start from January
+python3 cli.py view --sort date_created           # Sort by purchase date
 python3 cli.py export report.csv --with-balance
 
 # === BACKUP ===
-python3 cli.py backup                     # Manual backup (unnamed)
-python3 cli.py backup "pre-migration"     # Manual backup (named)
-python3 cli.py backup list                # List backups (with type)
-python3 cli.py backup restore <file>      # Restore from backup
+python3 cli.py backup                             # Manual backup (unnamed)
+python3 cli.py backup "pre-migration"             # Manual backup (named)
+python3 cli.py backup list                        # List backups (with type)
+python3 cli.py backup restore <file>              # Restore from backup
 ```
 
 ---

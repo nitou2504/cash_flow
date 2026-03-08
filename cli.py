@@ -1377,12 +1377,13 @@ Examples:
     acc_add_natural_parser = acc_subparsers.add_parser(
         "add",
         aliases=["a", "an"],
-        help="Add account using natural language (recommended)",
+        help="Add account (natural language or interactive)",
         description="""
-Add a new account using natural language.
+Add a new account using natural language or interactive guided mode.
 Examples:
   cli.py accounts add "Cash account"
   cli.py accounts add "Visa card with cut-off on 25 and payment on 5"
+  cli.py accounts add -i    # Interactive guided mode (no LLM needed)
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -1427,8 +1428,9 @@ Examples:
         help="Create a new category",
         description="""
 Create a new category. The description helps the LLM auto-categorize transactions.
-Example:
+Examples:
   cli.py categories add dining "Eating out, takeout, coffee"
+  cli.py categories add -i    # Interactive guided mode
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -1494,13 +1496,14 @@ Budgets automatically allocate funds each month and track spending against limit
     subscriptions_add_llm_parser = subscriptions_subparsers.add_parser(
         "add",
         aliases=["a"],
-        help="Add budget/subscription using natural language (recommended)",
+        help="Add budget/subscription (natural language or interactive)",
         description="""
-Add a budget or subscription using natural language.
+Add a budget or subscription using natural language or interactive guided mode.
 Examples:
   cli.py subscriptions add "Monthly groceries budget of 300 on Cash"
   cli.py subscriptions add "Netflix subscription 15.99 on Visa"
   cli.py subscriptions add "Vacation fund 200/month until December"
+  cli.py subscriptions add -i    # Interactive guided mode (no LLM needed)
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -1511,7 +1514,7 @@ Examples:
         "edit",
         aliases=["e"],
         help="Modify an existing budget/subscription",
-        description="Update budget parameters (amount, dates, behavior, etc.)"
+        description="Update budget parameters (amount, dates, behavior, etc.). Use -i for interactive guided mode."
     )
     subscriptions_edit_parser.add_argument("subscription_id", help="Budget/subscription ID to edit")
     subscriptions_edit_parser.add_argument("--name", "-n", help="New name")
@@ -1628,6 +1631,7 @@ Examples:
         description="""
 Edit transaction properties like status, amount, category, etc.
 Use --all to apply changes to all transactions in a group (e.g., mark all installments as pending).
+Use -i for interactive guided mode (shows current values, prompts each field).
 
 Transaction statuses:
   - committed: Confirmed transaction (default)
@@ -1639,6 +1643,7 @@ Examples:
   cli.py edit 123 --status pending
   cli.py edit 456 --status planning --all    # Change all installments
   cli.py edit 789 --category groceries --budget budget_food
+  cli.py edit 123 -i                         # Interactive guided mode
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
