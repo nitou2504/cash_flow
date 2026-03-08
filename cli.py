@@ -1402,6 +1402,7 @@ ALIASES:
   - subscriptions [sub, s] - categories [cat, c]     - edit [e]
   - export [exp, x]      - delete [del, d]           - fix [f]
   - clear [cl]           - backup [bk]           - review [rv]
+  - bot
 
 For detailed help on any command: cli.py COMMAND -h
         """,

@@ -430,10 +430,25 @@ A companion chatbot for tracking expenses on-the-go. Requires an LLM provider (s
 Run the bot as a persistent background service:
 
 ```bash
+python3 cli.py bot restart
+```
+
+Or directly via Docker Compose:
+
+```bash
 docker compose -f docker-compose.bot.yml up -d --build
 ```
 
 The Docker setup mounts the project directory into the container, so the bot shares the same `cash_flow.db` as the CLI. If you use Ollama locally, the container routes to the host via `LLM_OLLAMA_BASE_URL=http://host.docker.internal:11434`.
+
+**CLI management commands**:
+
+```bash
+python3 cli.py bot restart    # Rebuild and restart the container
+python3 cli.py bot logs       # Show last 50 lines of logs
+python3 cli.py bot logs -f    # Follow live logs
+python3 cli.py bot stop       # Stop the container
+```
 
 ### Bot Commands
 
@@ -476,7 +491,7 @@ Format: `TELEGRAM_EXTRA_USER_<NAME>=telegram_user_id,default_account,default_bud
 
 - `<NAME>` becomes the `source` tag on transactions (lowercased: `MOM` → `mom`)
 - Extra users are automatically authorized — no need to add them to `TELEGRAM_ALLOWED_USERS`
-- The budget name (e.g. "Home Groceries") is resolved at runtime to the active budget period
+- The budget name is resolved at runtime to the active budget period using the payment date. Matching is exact first, then prefix — so `"Home Groceries"` matches `"Home Groceries Jan-Feb"`
 - Default account and budget are injected only when the LLM doesn't pick a specific one
 
 **How it works**:
