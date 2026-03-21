@@ -7,7 +7,7 @@ from rich.table import Table
 
 from cashflow import repository
 
-def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = False, include_planning: bool = False, start_from: str = None, sort_by: str = "date_payed"):
+def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = False, include_planning: bool = False, start_from: str = None, sort_by: str = "date_payed", by_category: bool = False):
     """
     Retrieves and displays transactions, with an optional summary mode for credit cards.
     """
@@ -54,10 +54,13 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
                     planning_transactions.append(t)
                     continue
 
+                category = t.get('category') or 'Uncategorized'
                 if sort_by == "date_created":
                     key = (t['account'], t['date_created'].strftime('%Y-%m'))
                 else:
                     key = (t['account'], t['date_payed'])
+                if by_category:
+                    key = key + (category,)
                 if key not in summarized_payments:
                     summarized_payments[key] = {'amount': 0.0, 'statuses': set(), 'running_balance': 0.0}
 
@@ -70,7 +73,11 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
 
         summary_transactions = []
         if sort_by == "date_created":
-            for (account, creation_month), data in summarized_payments.items():
+            for key, data in summarized_payments.items():
+                account = key[0]
+                creation_month = key[1]
+                category = key[2] if by_category else None
+
                 statuses = data['statuses']
                 status = 'forecast'
                 if 'committed' in statuses: status = 'committed'
@@ -79,25 +86,37 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
 
                 month_date = datetime.strptime(creation_month, '%Y-%m').date().replace(day=1)
                 month_label = month_date.strftime('%b')
+                if category:
+                    description = f"{account} - {category} ({month_label})"
+                else:
+                    description = f"{account} ({month_label})"
                 summary_trans = {
                     'id': '--', 'date_created': month_date, 'date_payed': '',
-                    'description': f"{account} ({month_label})", 'account': account,
-                    'amount': data['amount'], 'category': 'Credit Card', 'budget': '',
+                    'description': description, 'account': account,
+                    'amount': data['amount'], 'category': category or 'Credit Card', 'budget': '',
                     'status': status, 'origin_id': None, 'running_balance': 0.0,
                 }
                 summary_transactions.append(summary_trans)
         else:
-            for (account, date_payed), data in summarized_payments.items():
+            for key, data in summarized_payments.items():
+                account = key[0]
+                date_payed = key[1]
+                category = key[2] if by_category else None
+
                 statuses = data['statuses']
                 status = 'forecast'
                 if 'committed' in statuses: status = 'committed'
                 elif 'pending' in statuses: status = 'pending'
                 elif 'planning' in statuses: status = 'planning'
 
+                if category:
+                    description = f"{account} - {category}"
+                else:
+                    description = f"{account} Payment"
                 summary_trans = {
                     'id': '--', 'date_payed': date_payed, 'date_created': date_payed,
-                    'description': f"{account} Payment", 'account': account,
-                    'amount': data['amount'], 'category': 'Credit Card', 'budget': '',
+                    'description': description, 'account': account,
+                    'amount': data['amount'], 'category': category or 'Credit Card', 'budget': '',
                     'status': status, 'origin_id': None,
                     'running_balance': data['running_balance']
                 }
