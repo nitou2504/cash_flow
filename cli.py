@@ -1473,6 +1473,7 @@ COMMON WORKFLOWS:
     cli.py add -i                  # Interactive guided entry (no LLM needed)
     cli.py view                    # See upcoming transactions
     cli.py view -s                 # Summary view (aggregated credit card payments)
+    cli.py view -bc                # Category breakdown per card (who owes what)
 
   Managing budgets:
     cli.py subscriptions add "Monthly groceries budget of 300 on Cash"
@@ -1887,6 +1888,12 @@ SUMMARY MODE (-s):
   - Cash transactions and non-credit accounts shown normally
   - Planning transactions shown individually unless -p is used
 
+BY-CATEGORY MODE (-bc):
+  - Like summary, but breaks down each credit card payment by category
+  - Shows "Visa Pichincha - Home Groceries" instead of one lump payment
+  - Useful for tracking shared expenses (add person names as categories)
+  - Implies -s (summary mode). Combines with -c for purchase-date grouping.
+
 CREATED-DATE MODE (-c):
   Sort by purchase date instead of payment date.
   Hides Running Balance, MoM Change, and Starting Balance; shows Month Total instead.
@@ -1901,6 +1908,8 @@ Examples:
   cli.py view -s -p                   # Summary with planning included
   cli.py view -c                      # Sort by purchase date with month totals
   cli.py view -c -s                   # CC grouped by creation month
+  cli.py view -bc                     # Spending grouped by category per account
+  cli.py view -bc -m 1                # Category breakdown for current month only
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -1909,6 +1918,7 @@ Examples:
     view_parser.add_argument("--summary", "-s", action="store_true", help="Summary mode: aggregate credit card transactions into monthly payment entries")
     view_parser.add_argument("--include-planning", "-p", action="store_true", help="In summary mode, include planning transactions in aggregated totals (default: show separately)")
     view_parser.add_argument("--created", "-c", action="store_true", help="Sort by creation date (when you bought it, not when it's paid)")
+    view_parser.add_argument("--by-category", "-bc", action="store_true", help="Group spending by category per account (shows who owes what per card)")
 
     # Export command
     export_parser = subparsers.add_parser(
@@ -2230,7 +2240,8 @@ Configuration via environment variables (or .env):
         elif args.subcommand in ["delete", "del", "d"]:
             handle_subscriptions_delete(conn, args)
     elif args.command in ["view", "v"]:
-        interface.view_transactions(conn, args.months, args.summary, args.include_planning, args.start_from, "date_created" if args.created else "date_payed")
+        summary = args.summary or args.by_category  # -bc implies -s
+        interface.view_transactions(conn, args.months, summary, args.include_planning, args.start_from, "date_created" if args.created else "date_payed", by_category=args.by_category)
     elif args.command in ["export", "exp", "x"]:
         interface.export_transactions_to_csv(conn, args.file_path, args.with_balance)
     elif args.command in ["delete", "del", "d"]:

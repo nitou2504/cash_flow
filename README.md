@@ -1133,6 +1133,7 @@ python3 cli.py view -m 6                 # Show 6 months
 python3 cli.py view --from 2026-01       # Start from specific month
 python3 cli.py view -s                   # Summary mode (aggregate credit cards)
 python3 cli.py view -s -p                # Summary with planning included
+python3 cli.py view -bc                  # Category breakdown per card (implies -s)
 python3 cli.py view --sort date_created  # Sort by purchase date
 ```
 
@@ -1158,6 +1159,13 @@ python3 cli.py view --sort date_created  # Sort by purchase date
 - Shows "VisaCard Payment" instead of individual purchases
 - Cash transactions shown normally
 - Planning transactions shown individually (unless `-p` used)
+
+**By-category mode (`-bc`)**:
+
+- Like summary mode, but breaks down each credit card payment by category
+- Shows "Visa Pichincha - Home Groceries" instead of one lump "Payment" line
+- Useful for tracking who owes what per card (add person names as categories)
+- Can combine with `-c` to group by purchase month instead of payment date
 
 **Sorting**:
 
@@ -1670,10 +1678,18 @@ python3 cli.py accounts adjust-billing VisaCard 2026-02 27 --payment-day 7
 - Cash transactions shown normally
 - Best for: clean forecast view, seeing overall cash flow
 
+**By-category mode** (`-bc`):
+
+- Summary with category-level granularity per credit card
+- Shows "Visa Pichincha - Home Groceries" per payment date
+- Best for: tracking shared expenses, seeing who owes what per card
+
 ```bash
 python3 cli.py view          # Detailed
 python3 cli.py view -s       # Summary
 python3 cli.py view -s -p    # Summary with planning aggregated too
+python3 cli.py view -bc      # Category breakdown per card
+python3 cli.py view -bc -m 1 # Current month only
 ```
 
 ---
@@ -2337,6 +2353,7 @@ python3 cli.py add "Spent 50 on groceries today"
 python3 cli.py add -i                             # Interactive (no LLM)
 python3 cli.py view
 python3 cli.py view -s                            # Summary mode
+python3 cli.py view -bc                           # Category breakdown per card
 
 # === MANAGING TRANSACTIONS ===
 python3 cli.py edit 123 --status pending
@@ -2358,6 +2375,7 @@ python3 cli.py subscriptions delete old_budget
 python3 cli.py view -m 6                          # 6 months
 python3 cli.py view --from 2026-01                # Start from January
 python3 cli.py view --sort date_created           # Sort by purchase date
+python3 cli.py view -bc                           # Category breakdown per card
 python3 cli.py export report.csv --with-balance
 
 # === BACKUP ===
