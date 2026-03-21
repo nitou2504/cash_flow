@@ -323,7 +323,18 @@ User: "Grocery store amex produbanco 80 for groceries on the food budget and 15 
   "account": "Amex Produbanco",
   "splits": [
     {{ "amount": 80, "category": "Home Groceries", "budget": "budget_food" }},
-    {{ "amount": 15, "category": "Home Groceries", "budget": "budget_home" }}
+    {{ "amount": 15, "category": "Household", "budget": "budget_home" }}
+  ]
+}}
+
+User: "Supermaxi pichincha 60, 30 for richard and 30 mine personal groceries budget"
+{{
+  "type": "split",
+  "description": "Supermaxi",
+  "account": "Visa Pichincha",
+  "splits": [
+    {{ "amount": 30, "category": "Richard" }},
+    {{ "amount": 30, "category": "Personal Groceries", "budget": "budget_groceries" }}
   ]
 }}
 
