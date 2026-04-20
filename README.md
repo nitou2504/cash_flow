@@ -183,15 +183,16 @@ Track expenses on-the-go with the companion [Telegram bot](#telegram-bot). Send 
 2. [Quick Start](#quick-start)
 3. [LLM Configuration](#llm-configuration)
 4. [Telegram Bot](#telegram-bot)
-5. [Core Concepts](#core-concepts)
-6. [CLI Command Reference](#cli-command-reference)
-7. [Common Workflows](#common-workflows)
-8. [Advanced Features](#advanced-features)
-9. [Understanding Transaction Statuses](#understanding-transaction-statuses)
-10. [Understanding Credit Card Cycles](#understanding-credit-card-cycles)
-11. [Troubleshooting & FAQ](#troubleshooting--faq)
-12. [Technical Details](#technical-details)
-13. [Command Quick Reference](#command-quick-reference)
+5. [Gmail Invoice Ingest](#gmail-invoice-ingest)
+6. [Core Concepts](#core-concepts)
+7. [CLI Command Reference](#cli-command-reference)
+8. [Common Workflows](#common-workflows)
+9. [Advanced Features](#advanced-features)
+10. [Understanding Transaction Statuses](#understanding-transaction-statuses)
+11. [Understanding Credit Card Cycles](#understanding-credit-card-cycles)
+12. [Troubleshooting & FAQ](#troubleshooting--faq)
+13. [Technical Details](#technical-details)
+14. [Command Quick Reference](#command-quick-reference)
 
 ---
 
@@ -555,6 +556,111 @@ TELEGRAM_EXTRA_USER_DAD=222222,Cash,Personal
 ```
 
 See [review command](#review---review-extra-user-transactions) for the CLI review workflow.
+
+---
+
+## Gmail Invoice Ingest
+
+For Ecuadorian users: SRI electronic invoices (**facturas** and **notas de crédito**) that land in your Gmail under a `Facturas` label can be auto-imported into a separate `invoices.db`. This gives every card transaction a queryable line-item breakdown — "what exactly did I buy on that $45 Supermaxi run?" — and makes per-item price history possible.
+
+The invoice DB is kept **separate from `cash_flow.db`** on purpose: it's rarely read from the hot path of the CLI, it's bulky (thousands of line items), and it's optional. Transaction ↔ invoice linking is planned for a later release.
+
+### What gets captured
+
+For every invoice:
+- Vendor (`razón social`, `nombre comercial`), RUC, invoice number, emission date, **clave de acceso** (SRI access key)
+- Subtotal, total discount, tip, total
+- **Merchant/store** — `Lugar Venta` when present (Coral), plus `establishment_code` + `store_address` to distinguish stores (e.g. Favorita Av. República vs. Galo Plaza)
+- **Forma de pago** (SRI integer code, 19 = credit card, 20 = other, etc.)
+- **Deducible alimentación** (Ecuadorian IRS meal deduction subtotal)
+- Per-line: SKU (`codigoPrincipal`), description, quantity, unit price, discount, pre-tax subtotal, per-line tax, tax rate
+- Tax buckets by rate (IVA 0%, 15%, etc.)
+- Email subject + From header
+- For **notas de crédito**: `refund_of` (original invoice), `motivo` text, and a classifier label (`refund` / `loyalty` / `other`) — most Favorita NCs are loyalty rewards, not real refunds, so they're flagged but shouldn't be subtracted from your spending
+
+The original XML stays on disk (`extra/invoices/*.xml`) so any unparsed field is recoverable without re-hitting Gmail.
+
+### Setup
+
+1. **Install the extra dependencies** (already in `requirements.txt`):
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Enable the Gmail API** in a Google Cloud project, create an OAuth client (Desktop app), and download the credentials as `credentials.json` in the repo root. First run will open a browser to authorize read-only Gmail access and cache the token to `token.json`. Both files are already in `.gitignore`.
+
+3. **Create a Gmail label called `Facturas`** and either auto-file your SRI invoice emails into it (Gmail filter by sender) or do a bulk relabel once. The module queries that label exclusively — it won't scan your whole inbox.
+
+### Usage
+
+```bash
+# First-time bulk import (e.g. everything from mid-2024 onwards)
+python3 -m gmail_sync.ingest_invoices --after 2024-06-01
+
+# Recommended periodic run — resumes from the latest issue_date in DB
+# (minus a 7-day safety window for late-arriving invoices).
+python3 -m gmail_sync.ingest_invoices --since-last
+
+# Preview what would be imported; touch no DB
+python3 -m gmail_sync.ingest_invoices --since-last --dry-run
+
+# Review emails the parser couldn't handle
+python3 -m gmail_sync.ingest_invoices --show-unparsed
+python3 -m gmail_sync.ingest_invoices --show-unparsed --unparsed-reason no_attachment
+```
+
+The command is **idempotent**: it skips Gmail messages already present in `invoices.db` (whether stored as parsed invoices or flagged as unparsed), so it's safe to cron every hour. XML parsing handles three real-world schema wrappings (bare `<factura>`, `<autorizacion>`/`<comprobante>` CDATA, and SOAP envelopes with namespaced `RespuestaAutorizacion`) plus XMLs nested inside ZIP attachments (Seed Billing).
+
+### Unparsed emails — flagged for review
+
+When an email has the `Facturas` label but no parseable invoice, it's recorded in the `unparsed_facturas` table with a reason so you can handle it later instead of losing it:
+
+| Reason | Meaning |
+|---|---|
+| `no_attachment` | HTML-body invoice or notification (Esthetic Dent, SRI portal, promos mis-labeled) |
+| `no_xml` | PDF only, no XML (Payphone payment receipts, old manual uploads pre-2021) |
+| `zip_no_xml` | ZIP present but no XML inside |
+| `parse_failed` | XML present but couldn't be parsed (new vendor template the parser doesn't handle yet) |
+
+If a later run successfully parses an email that was previously flagged `parse_failed`, the flag is **auto-resolved**. You can also manually resolve one with `mark_unparsed_resolved()` from the repository API.
+
+### Querying the data
+
+Since it's plain SQLite, you can query directly:
+
+```bash
+sqlite3 invoices.db "
+  SELECT i.issue_date, COALESCE(i.merchant_name, i.vendor) AS seller,
+         l.description, l.quantity, l.unit_price, l.line_subtotal
+  FROM invoice_lines l JOIN invoices i ON i.id = l.invoice_id
+  WHERE LOWER(l.description) LIKE '%jabon%'
+  ORDER BY i.issue_date DESC;
+"
+```
+
+Or use the repository helpers programmatically:
+
+```python
+from cashflow.invoice_database import create_invoice_connection
+from cashflow.invoice_repository import (
+    list_invoices, get_lines, get_invoice_by_msg_id, find_invoices_near,
+)
+
+conn = create_invoice_connection("invoices.db")
+# All Favorita invoices in April 2026
+list_invoices(conn, vendor="FAVORITA", after=date(2026, 4, 1), before=date(2026, 5, 1))
+# Match an invoice to a given card purchase (±2 days, same total)
+find_invoices_near(conn, date(2026, 4, 18), amount=45.50)
+```
+
+### Scheduling
+
+Drop this in crontab for hourly sync:
+
+```
+0 * * * * cd /path/to/cash_flow && /usr/bin/python3 -m gmail_sync.ingest_invoices --since-last >> /var/log/invoices_ingest.log 2>&1
+```
 
 ---
 
@@ -2111,14 +2217,22 @@ cash_flow/
 │   ├── transactions.py         #   Transaction factory functions
 │   ├── repository.py           #   Data access layer (all SQL queries)
 │   ├── database.py             #   Schema definition and initialization
+│   ├── invoice_database.py     #   invoices.db schema + connection (separate store)
+│   ├── invoice_repository.py   #   Invoice CRUD helpers (upsert, lookups, unparsed tracking)
 │   └── config.py               #   Environment variable loading
 ├── llm/                        # LLM integration
 │   ├── backend.py              #   Provider abstraction (LiteLLM, key rotation, fallbacks)
 │   └── parser.py               #   NL→JSON parsing prompts and response handling
+├── gmail_sync/                 # Optional Gmail ingest (SRI facturas, bank notifications)
+│   ├── client.py               #   Gmail API wrapper (auth, message/attachment fetch)
+│   ├── invoice.py              #   SRI XML parser (factura + notaCredito, 3 wrappings)
+│   ├── ingest_invoices.py      #   CLI: sync Facturas label → invoices.db
+│   ├── parsers.py              #   Bank consumo email parsers (Diners/Pichincha/Produbanco)
+│   └── reconcile.py            #   Match consumo emails against DB transactions
 ├── ui/                         # Presentation layer
 │   ├── cli_display.py          #   Rich terminal tables and CSV export
 │   └── telegram_format.py      #   Telegram Markdown formatting and navigation
-├── tests/                      # Unit tests (385 tests, in-memory SQLite)
+├── tests/                      # Unit tests (550+ tests, in-memory SQLite)
 ├── specs/                      # Feature specifications
 ├── llm_config.yaml.example     # LLM routing configuration template
 ├── Dockerfile.bot              # Docker image for the Telegram bot
@@ -2212,6 +2326,96 @@ CREATE TABLE llm_examples (
 ```
 
 Captures the natural language input that produced each transaction, along with the full parsed JSON and the IDs of the resulting transactions. Only saved when a transaction is confirmed (not for batch imports or cancelled entries). Used for future fuzzy matching, few-shot example retrieval, and local model training.
+
+#### Invoices database (`invoices.db`)
+
+A **separate** SQLite file populated by `gmail_sync.ingest_invoices`. Independent from `cash_flow.db`; transaction ↔ invoice linkage is deferred to a later release.
+
+**`invoices`** — one row per SRI document (factura or nota de crédito)
+
+```sql
+CREATE TABLE invoices (
+    id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+    msg_id                    TEXT,                 -- Gmail message id (links email ↔ invoice)
+    doc_type                  TEXT NOT NULL,        -- 'factura' | 'nota_credito'
+    invoice_number            TEXT NOT NULL UNIQUE, -- estab-ptoEmi-secuencial
+    clave_acceso              TEXT,                 -- SRI access key
+    ruc                       TEXT NOT NULL,
+    vendor                    TEXT NOT NULL,        -- nombreComercial or razonSocial
+    vendor_trade_name         TEXT,
+    issue_date                DATE NOT NULL,
+    subtotal_sin_impuesto     REAL NOT NULL,
+    total_descuento           REAL DEFAULT 0,
+    propina                   REAL DEFAULT 0,
+    total                     REAL NOT NULL,        -- importeTotal | valorModificacion
+    currency                  TEXT DEFAULT 'USD',
+    refund_of_invoice_number  TEXT,                 -- NC only
+    refund_of_issue_date      DATE,
+    motivo                    TEXT,                 -- NC reason text
+    motivo_category           TEXT,                 -- 'refund' | 'loyalty' | 'other'
+    merchant_name             TEXT,                 -- e.g. "CORAL CARAPUNGO"
+    establishment_code        TEXT,                 -- first 3 digits of invoice_number
+    store_address             TEXT,                 -- dirEstablecimiento
+    forma_pago                INTEGER,              -- SRI code: 19=credit, 16=debit, 1=cash, 20=other...
+    deducible_alimentacion    REAL,                 -- IRS meal deduction subtotal
+    email_subject             TEXT,
+    email_from                TEXT,
+    xml_path                  TEXT,                 -- cached XML on disk
+    pdf_path                  TEXT,
+    ingested_at               TEXT DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+**`invoice_lines`** — one row per `<detalle>` on the invoice
+
+```sql
+CREATE TABLE invoice_lines (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    invoice_id     INTEGER REFERENCES invoices(id) ON DELETE CASCADE,
+    line_number    INTEGER NOT NULL,
+    sku            TEXT,                            -- codigoPrincipal
+    sku_aux        TEXT,
+    description    TEXT NOT NULL,
+    quantity       REAL NOT NULL,
+    unit_price     REAL NOT NULL,                   -- precioUnitario (pre-discount)
+    discount       REAL DEFAULT 0,
+    line_subtotal  REAL NOT NULL,                   -- post-discount, pre-tax
+    line_tax       REAL DEFAULT 0,
+    line_total     REAL NOT NULL,                   -- subtotal + tax
+    tax_rate       REAL                             -- dominant tarifa, e.g. 15.0
+);
+```
+
+**`invoice_taxes`** — invoice-level tax summary (`<totalConImpuestos>`)
+
+```sql
+CREATE TABLE invoice_taxes (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    invoice_id      INTEGER REFERENCES invoices(id) ON DELETE CASCADE,
+    tax_code        INTEGER,                        -- 2=IVA, 3=ICE, 5=IRBPNR
+    rate_code       INTEGER,                        -- SRI codigoPorcentaje
+    rate_pct        REAL,
+    base_imponible  REAL,
+    tax_value       REAL
+);
+```
+
+**`unparsed_facturas`** — emails the parser couldn't turn into invoices (flagged for manual review)
+
+```sql
+CREATE TABLE unparsed_facturas (
+    msg_id       TEXT PRIMARY KEY,
+    subject      TEXT,
+    from_addr    TEXT,
+    received_at  TEXT,
+    reason       TEXT NOT NULL,                     -- 'no_attachment' | 'no_xml' | 'zip_no_xml' | 'parse_failed' | 'other'
+    notes        TEXT,
+    has_pdf      INTEGER DEFAULT 0,
+    resolved     INTEGER DEFAULT 0,
+    resolved_at  TEXT,
+    ingested_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+```
 
 ---
 
