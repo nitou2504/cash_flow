@@ -111,3 +111,23 @@ def list_unparsed(
             "SELECT * FROM unparsed_consumos WHERE resolved = 0 ORDER BY received_at"
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def find_unregistered(conn: Connection) -> list[dict]:
+    rows = conn.execute("""
+        SELECT * FROM consumos
+        WHERE registered_txn_id IS NULL
+        ORDER BY purchased_at
+    """).fetchall()
+    return [dict(r) for r in rows]
+
+
+def mark_registered(
+    conn: Connection, consumo_id: int, transaction_id: int,
+) -> None:
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    conn.execute(
+        "UPDATE consumos SET registered_txn_id = ?, registered_at = ? WHERE id = ?",
+        (transaction_id, now, consumo_id),
+    )
+    conn.commit()

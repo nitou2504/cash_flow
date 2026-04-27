@@ -90,6 +90,25 @@ def create_tables(conn: Connection):
             timestamp DATE DEFAULT CURRENT_DATE
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS transaction_links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+            consumo_msg_id TEXT,
+            invoice_number TEXT,
+            link_source TEXT NOT NULL,
+            linked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(transaction_id)
+        )
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_links_consumo
+        ON transaction_links(consumo_msg_id)
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_links_invoice
+        ON transaction_links(invoice_number)
+    """)
     ensure_schema_upgrades(conn)
     conn.commit()
 
