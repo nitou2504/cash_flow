@@ -10,6 +10,7 @@ Rules config: register_rules.yaml (merchant patterns, transfer destinations, LLM
 """
 import argparse
 import json
+import os
 import re
 import sqlite3
 import sys
@@ -86,12 +87,13 @@ def _build_category_block(categories: list[dict]) -> str:
 
 def _build_llm_prompt(
     consumo: dict, items: list[dict], similar: list[dict], categories: list[dict],
+    hints: list[str] = None,
 ) -> str:
     cat_block = _build_category_block(categories)
 
     parts = [dedent("""\
         Given a credit card purchase, generate a short description and select a category.
-        Description style: "Merchant - 3-5 key items" (see examples below).
+        Description style: "Merchant - 3-5 key items in Spanish". ALWAYS start with merchant name, then dash, then pick the 3-5 most representative items only, NOT all items.
         Pick the category whose description best matches the items/purpose.
         Respond ONLY with JSON: {"description": "...", "category": "..."}
     """)]
@@ -101,12 +103,14 @@ def _build_llm_prompt(
     parts.append(f"Account: {consumo['account']}")
 
     if items:
-        parts.append("\n## Invoice items:")
-        for item in items[:30]:
+        sorted_items = sorted(items, key=lambda x: abs(x.get("line_total", 0)), reverse=True)
+        show = sorted_items[:15]
+        parts.append("\n## Invoice items (sorted by cost, highest first):")
+        for item in show:
             qty = f"{item['quantity']:g}x " if item.get("quantity", 1) != 1 else ""
             parts.append(f"- {qty}{item['description']} ${item.get('line_total', 0):.2f}")
-        if len(items) > 30:
-            parts.append(f"... and {len(items) - 30} more items")
+        if len(sorted_items) > 15:
+            parts.append(f"  ...and {len(sorted_items) - 15} more small items")
 
     if similar:
         parts.append("\n## Similar past transactions (follow this style):")
@@ -114,6 +118,12 @@ def _build_llm_prompt(
             parts.append(f'- "{s["description"]}" → {s["category"]} (${abs(s["amount"]):.2f})')
 
     parts.append(f"\n## Categories (pick exactly one):\n{cat_block}")
+
+    if hints:
+        parts.append("\n## IMPORTANT classification rules (these OVERRIDE similar transactions):")
+        for hint in hints:
+            parts.append(f"- {hint}")
+        parts.append("Apply these rules based on the INVOICE ITEMS, not the similar transaction history.")
 
     return "\n".join(parts)
 
@@ -137,7 +147,8 @@ def _parse_llm_response(text: str) -> dict:
     return {}
 
 
-def _call_llm(prompt: str, model: str) -> dict:
+def _call_llm(prompt: str, model: str) -> tuple[dict, str]:
+    """Returns (parsed_dict, raw_response_text)."""
     response = litellm.completion(
         model=f"ollama/{model}",
         messages=[
@@ -145,9 +156,11 @@ def _call_llm(prompt: str, model: str) -> dict:
             {"role": "user", "content": prompt},
         ],
         temperature=0.0,
-        api_base="http://localhost:11434",
+        api_base=os.getenv("LLM_OLLAMA_BASE_URL", "http://localhost:11434"),
+        extra_body={"think": False},
     )
-    return _parse_llm_response(response.choices[0].message.content)
+    raw = response.choices[0].message.content
+    return _parse_llm_response(raw), raw
 
 
 def _get_invoice_lines(invoices_conn, invoice_number: str) -> list[dict]:
@@ -164,6 +177,51 @@ def _get_invoice_lines(invoices_conn, invoice_number: str) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def _apply_item_overrides(items: list[dict], rules: dict) -> Optional[str]:
+    """Classify by invoice item keywords, dollar-weighted. Returns category or None."""
+    overrides = rules.get("item_overrides", [])
+    if not overrides or not items:
+        return None
+    totals: dict[str, float] = {}
+    for item in items:
+        desc_lower = item["description"].lower()
+        for rule in overrides:
+            if any(kw in desc_lower for kw in rule["keywords"]):
+                cat = rule["category"]
+                totals[cat] = totals.get(cat, 0) + abs(item.get("line_total", 0))
+                break
+    if not totals:
+        return None
+    return max(totals, key=totals.get)
+
+
+def _log_decision(consumos_conn, consumo_id: int, method: str, model: str,
+                   prompt: str, response_raw: str, parsed_json: dict,
+                   category: str, description: str) -> None:
+    consumos_conn.execute(
+        """INSERT INTO llm_decisions
+           (consumo_id, model, method, prompt, response_raw, parsed_json, category, description)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (consumo_id, model, method, prompt, response_raw,
+         json.dumps(parsed_json) if parsed_json else None, category, description),
+    )
+    consumos_conn.commit()
+
+
+def _resolve_budget(cf_conn, category: str, rules: dict, payment_date: date) -> Optional[str]:
+    budget_map = rules.get("category_budget_map", {})
+    prefix = budget_map.get(category)
+    if not prefix:
+        return None
+    row = cf_conn.execute(
+        """SELECT id FROM subscriptions
+           WHERE is_budget = 1 AND id LIKE ?
+             AND start_date <= ? AND (end_date IS NULL OR end_date >= ?)""",
+        (prefix + "%", payment_date.isoformat(), payment_date.isoformat()),
+    ).fetchone()
+    return row["id"] if row else None
+
+
 def prepare_one(
     consumo: dict,
     cf_conn,
@@ -173,23 +231,36 @@ def prepare_one(
     rules: dict = None,
     categories: list[dict] = None,
 ) -> dict:
-    """Prepare a transaction request for one consumo. Returns {description, category, method}."""
+    """Prepare a transaction request for one consumo. Returns {description, category, method, _debug}."""
     if rules is None:
         rules = load_rules()
     merchant_rules = rules.get("merchant_rules", {})
     transfer_rules = rules.get("transfer_rules", {})
     llm_model = rules.get("llm_model", "llama3.2:3b")
+    hints = rules.get("category_hints", [])
+
+    def _result(desc, cat, method, prompt="", response_raw="", parsed_json=None, model="rules"):
+        return {
+            "description": desc, "category": cat, "method": method,
+            "_debug": {"prompt": prompt, "response_raw": response_raw,
+                       "parsed_json": parsed_json, "model": model},
+        }
 
     # 1. Cash transfer rules
     transfer = _match_transfer_rule(consumo, transfer_rules)
     if transfer:
-        return {"description": transfer["desc"], "category": transfer["category"], "method": "transfer_rule"}
+        return _result(transfer["desc"], transfer["category"], "transfer_rule",
+                       prompt=f"Matched transfer rule: dest={consumo.get('destination_account')}",
+                       response_raw=json.dumps(transfer))
 
     # 2. Deterministic merchant rules
     rule = _match_rule(consumo["merchant"], merchant_rules)
     if rule:
         desc = rule.get("desc", consumo["merchant"])
-        return {"description": desc, "category": rule["category"], "method": "merchant_rule"}
+        matched_pattern = next((p for p in merchant_rules if p.upper() in consumo["merchant"].upper()), "?")
+        return _result(desc, rule["category"], "merchant_rule",
+                       prompt=f"Matched merchant rule: '{matched_pattern}'",
+                       response_raw=json.dumps(rule))
 
     # 3. Get context for LLM or fallback
     keywords = _extract_keywords(consumo["merchant"])
@@ -202,31 +273,28 @@ def prepare_one(
     # 4. If no LLM, use first similar or fallback
     if not use_llm:
         if similar:
-            return {
-                "description": consumo["merchant"],
-                "category": similar[0]["category"],
-                "method": "fuzzy_match",
-            }
-        return {
-            "description": consumo["merchant"],
-            "category": "Others",
-            "method": "fallback",
-        }
+            return _result(consumo["merchant"], similar[0]["category"], "fuzzy_match",
+                           prompt=f"No LLM; matched {len(similar)} similar txns",
+                           response_raw=json.dumps({"first_match": similar[0]["description"]}))
+        return _result(consumo["merchant"], "Others", "fallback",
+                       prompt="No LLM, no similar transactions found")
 
     # 5. LLM (for groceries/ambiguous merchants — summarize items + pick category)
     if similar or items:
         cats = categories or []
-        prompt = _build_llm_prompt(consumo, items, similar, cats)
-        result = _call_llm(prompt, llm_model)
+        prompt = _build_llm_prompt(consumo, items, similar, cats, hints=hints)
+        result, raw = _call_llm(prompt, llm_model)
         desc = result.get("description", consumo["merchant"])
         cat = result.get("category", "Others")
         valid_names = {c["name"] for c in cats} if cats else set()
         if valid_names and cat not in valid_names:
             cat = similar[0]["category"] if similar else "Others"
-        return {"description": desc, "category": cat, "method": "llm"}
+        return _result(desc, cat, "llm", prompt=prompt, response_raw=raw,
+                       parsed_json=result, model=llm_model)
 
     # 6. No context at all
-    return {"description": consumo["merchant"], "category": "Others", "method": "fallback"}
+    return _result(consumo["merchant"], "Others", "fallback",
+                   prompt="No similar transactions or invoice items found")
 
 
 def register_consumos(
@@ -316,6 +384,17 @@ def register_consumos(
         method = prep["method"]
         stats["by_method"][method] = stats["by_method"].get(method, 0) + 1
 
+        # Log decision
+        debug = prep.get("_debug", {})
+        try:
+            _log_decision(
+                consumos_conn, consumo["id"], method, debug.get("model", ""),
+                debug.get("prompt", ""), debug.get("response_raw", ""),
+                debug.get("parsed_json"), prep["category"], prep["description"],
+            )
+        except Exception:
+            pass
+
         account = get_account_by_name(cf_conn, consumo["account"])
         if not account:
             print(f"  SKIP {consumo['id']}: unknown account {consumo['account']}")
@@ -324,12 +403,7 @@ def register_consumos(
 
         txn_date = date.fromisoformat(purchased)
 
-        if dry_run:
-            print(f"  {purchased} {consumo['account']:18} ${consumo['amount']:>7.2f} "
-                  f"[{method:14}] {prep['category']:20} {prep['description'][:50]}")
-            stats["registered"] += 1
-            continue
-
+        # Create txn to compute date_payed, then resolve budget by payment month
         txn = create_single_transaction(
             description=prep["description"],
             amount=consumo["amount"],
@@ -340,6 +414,16 @@ def register_consumos(
             source="gmail",
             needs_review=True,
         )
+        budget_id = _resolve_budget(cf_conn, prep["category"], rules, txn["date_payed"])
+        txn["budget"] = budget_id
+
+        if dry_run:
+            budget_str = f" → {budget_id}" if budget_id else ""
+            print(f"  {purchased} {consumo['account']:18} ${consumo['amount']:>7.2f} "
+                  f"[{method:14}] {prep['category']:20} {prep['description'][:50]}{budget_str}")
+            stats["registered"] += 1
+            continue
+
         inserted_ids = add_transactions(cf_conn, [txn])
         tid = inserted_ids[0]
 

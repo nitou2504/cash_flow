@@ -11,7 +11,7 @@ from datetime import timedelta
 
 from telegram.ext import CallbackContext
 
-from cashflow.config import CONSUMOS_DB_PATH, INVOICES_DB_PATH, TELEGRAM_ALLOWED_USERS
+from cashflow.config import CONSUMOS_DB_PATH, DB_PATH, INVOICES_DB_PATH, TELEGRAM_ALLOWED_USERS
 from cashflow.consumo_database import (
     create_consumo_connection,
     initialize_consumos_database,
@@ -56,7 +56,7 @@ def _run_sync() -> dict:
     gc = GmailClient()
     consumos_conn = create_consumo_connection(CONSUMOS_DB_PATH)
     invoices_conn = create_invoice_connection(INVOICES_DB_PATH)
-    cf_conn = create_connection()
+    cf_conn = create_connection(DB_PATH)
 
     try:
         # 1. Ingest consumos (since last)

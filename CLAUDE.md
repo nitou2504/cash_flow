@@ -38,6 +38,8 @@ gmail_sync/             # Gmail integration
   invoice.py            # SRI XML parser (3 schema families)
   ingest_consumos.py    # Consumos/* labels → consumos.db
   ingest_invoices.py    # Facturas label → invoices.db
+  register_consumos.py  # Auto-register consumos → cash_flow.db transactions
+  scheduled.py          # Scheduled Gmail sync job (PTB JobQueue)
   inspect_label.py      # Debug: eyeball email format
   verify.py             # Setup: test auth + list labels
 
@@ -111,7 +113,7 @@ cli.py add --import installments.csv --installments
 
 ### Categories (12 active)
 
-Dining-Snacks, Family Support, Health, Home, Home Food, Income, Loans, Others, Personal, Personal Diet, Savings, Sister Education
+Dining-Snacks, Family Support, Health, Home, Home Food & Supplies, Income, Loans, Others, Personal, Personal Diet, Savings, Sister Education
 
 ## Budget Envelope System
 
@@ -234,10 +236,16 @@ Tests use `create_test_db()` (in-memory SQLite). Mock patches use full paths: `p
 
 ### Registering transactions from Gmail
 
-1. Run `python3 -m gmail_sync.ingest_consumos --since-last` to ingest new emails
-2. Use `python3 cli.py create tx` for each unregistered consumo (no LLM burn)
-3. For installments: add `-n COUNT` flag
-4. For budget-linked: add `-b BUDGET_ID` flag
+Auto-registration pipeline (`gmail_sync/register_consumos.py`):
+1. Scheduled sync runs at midnight+midday via `gmail_sync/scheduled.py` (PTB JobQueue)
+2. Consumos matched to subscriptions/existing txns are linked (no new txn created)
+3. Unmatched consumos: deterministic rules (`register_rules.yaml`) → LLM (gemma4:e2b, think=False)
+4. LLM decisions logged in `consumos.db:llm_decisions` table (prompt, response, category)
+5. Budget auto-assigned via `category_budget_map` in rules, resolved by payment month
+6. All auto-registered txns get `needs_review=1`, `source="gmail"`
+
+Manual registration: `python3 -m gmail_sync.register_consumos --after YYYY-MM-DD [--dry-run] [--no-llm] [--limit N]`
+Manual per-txn: `python3 cli.py create tx` with `-n` for installments, `-b` for budget
 
 ### Known account mappings
 

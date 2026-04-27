@@ -63,6 +63,22 @@ def create_consumo_tables(conn: Connection) -> None:
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_unparsed_consumos_reason   ON unparsed_consumos(reason)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_unparsed_consumos_resolved ON unparsed_consumos(resolved)")
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS llm_decisions (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            consumo_id   INTEGER NOT NULL REFERENCES consumos(id),
+            model        TEXT NOT NULL,
+            method       TEXT NOT NULL,
+            prompt       TEXT NOT NULL,
+            response_raw TEXT NOT NULL,
+            parsed_json  TEXT,
+            category     TEXT,
+            description  TEXT,
+            decided_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_llm_decisions_consumo ON llm_decisions(consumo_id)")
+
     conn.commit()
 
 
