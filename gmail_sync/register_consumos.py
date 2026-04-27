@@ -28,9 +28,11 @@ from cashflow.database import create_connection
 from cashflow.repository import (
     add_transactions,
     find_matching_forecast,
+    find_matching_transaction,
     find_similar_transactions,
     get_account_by_name,
     get_all_categories,
+    get_transaction_link,
     link_transaction,
 )
 from cashflow.transactions import create_single_transaction
@@ -280,6 +282,27 @@ def register_consumos(
             stats["registered"] += 1
             continue
 
+        # Step 0.5: existing transaction match — link to manually-created txn
+        existing = find_matching_transaction(
+            cf_conn, consumo["account"], consumo["amount"], purchased,
+        )
+        if existing:
+            method = "existing_txn_match"
+            stats["by_method"][method] = stats["by_method"].get(method, 0) + 1
+            if dry_run:
+                print(f"  {purchased} {consumo['account']:18} ${consumo['amount']:>7.2f} "
+                      f"[{method:14}] → txn #{existing['id']} {existing['description'][:30]}")
+            else:
+                link_transaction(
+                    cf_conn, existing["id"],
+                    consumo_msg_id=consumo["msg_id"],
+                    invoice_number=consumo.get("matched_invoice_number"),
+                    source="auto_register",
+                )
+                mark_registered(consumos_conn, consumo["id"], existing["id"])
+            stats["registered"] += 1
+            continue
+
         try:
             prep = prepare_one(
                 consumo, cf_conn, invoices_conn,
@@ -328,6 +351,61 @@ def register_consumos(
         )
         mark_registered(consumos_conn, consumo["id"], tid)
         stats["registered"] += 1
+
+    return stats
+
+
+def enrich_with_invoices(
+    cf_conn, consumos_conn, invoices_conn,
+    *,
+    use_llm: bool = True,
+    rules: dict = None,
+    dry_run: bool = False,
+) -> dict:
+    if rules is None:
+        rules = load_rules()
+    categories = get_all_categories(cf_conn)
+    stats = {"enriched": 0, "checked": 0}
+
+    rows = cf_conn.execute("""
+        SELECT t.id, t.description, t.account, t.amount, t.date_created,
+               tl.consumo_msg_id, tl.invoice_number
+        FROM transactions t
+        JOIN transaction_links tl ON t.id = tl.transaction_id
+        WHERE t.needs_review = 1
+          AND tl.consumo_msg_id IS NOT NULL
+          AND tl.invoice_number IS NULL
+          AND t.date_created >= date('now', '-3 days')
+    """).fetchall()
+
+    for row in rows:
+        stats["checked"] += 1
+        consumo = consumos_conn.execute(
+            "SELECT * FROM consumos WHERE msg_id = ?", (row["consumo_msg_id"],),
+        ).fetchone()
+        if not consumo or not consumo["matched_invoice_number"]:
+            continue
+
+        consumo = dict(consumo)
+        prep = prepare_one(
+            consumo, cf_conn, invoices_conn,
+            use_llm=use_llm, rules=rules, categories=categories,
+        )
+
+        if dry_run:
+            print(f"  ENRICH #{row['id']}: \"{row['description']}\" → \"{prep['description'][:50]}\" [{prep['category']}]")
+        else:
+            cf_conn.execute(
+                "UPDATE transactions SET description = ?, category = ? WHERE id = ?",
+                (prep["description"], prep["category"], row["id"]),
+            )
+            link_transaction(
+                cf_conn, row["id"],
+                invoice_number=consumo["matched_invoice_number"],
+                source="auto_register",
+            )
+            cf_conn.commit()
+        stats["enriched"] += 1
 
     return stats
 

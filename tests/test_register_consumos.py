@@ -19,6 +19,7 @@ from gmail_sync.register_consumos import (
     _extract_keywords,
     _match_rule,
     _match_transfer_rule,
+    enrich_with_invoices,
     prepare_one,
     register_consumos,
     load_rules,
@@ -258,6 +259,39 @@ class TestRegisterFlow(unittest.TestCase):
         )
         assert stats["by_method"].get("subscription_match") is None
 
+    def test_existing_txn_match_links_instead_of_creating(self):
+        """Consumo matching an existing committed transaction links to it."""
+        add_transactions(self.cf_conn, [{
+            "date_created": "2026-04-22", "date_payed": "2026-05-01",
+            "description": "Coral Carapungo - groceries", "account": "Visa Pichincha",
+            "amount": -25.0, "category": "Home Food", "budget": None,
+            "status": "committed", "origin_id": None,
+        }])
+        upsert_consumo(self.consumos_conn, _make_txn("m1", "CORAL CARAPUNGO", 25.0), "Consumos/Pichincha")
+        stats = register_consumos(
+            self.cf_conn, self.consumos_conn, None,
+            use_llm=False, rules=TEST_RULES,
+        )
+        assert stats["registered"] == 1
+        assert stats["by_method"].get("existing_txn_match") == 1
+        review = get_transactions_needing_review(self.cf_conn, source="gmail")
+        assert len(review) == 0
+
+    def test_existing_txn_no_match_different_date(self):
+        """Existing txn with date >1 day apart should NOT match."""
+        add_transactions(self.cf_conn, [{
+            "date_created": "2026-04-18", "date_payed": "2026-05-01",
+            "description": "Coral - stuff", "account": "Visa Pichincha",
+            "amount": -25.0, "category": "Home Food", "budget": None,
+            "status": "committed", "origin_id": None,
+        }])
+        upsert_consumo(self.consumos_conn, _make_txn("m1", "CORAL CARAPUNGO", 25.0), "Consumos/Pichincha")
+        stats = register_consumos(
+            self.cf_conn, self.consumos_conn, None,
+            use_llm=False, rules=TEST_RULES,
+        )
+        assert stats["by_method"].get("existing_txn_match") is None
+
     def test_after_filter(self):
         upsert_consumo(self.consumos_conn, _make_txn("m1", "A", 10.0), "Consumos/Pichincha")
         stats = register_consumos(
@@ -265,6 +299,62 @@ class TestRegisterFlow(unittest.TestCase):
             use_llm=False, after="2026-05-01", rules=TEST_RULES,
         )
         assert stats["registered"] == 0
+
+
+class TestEnrichWithInvoices(unittest.TestCase):
+    def setUp(self):
+        self.cf_conn = create_test_db()
+        self.consumos_conn = create_test_consumos_db()
+        self.cf_conn.execute(
+            "INSERT OR IGNORE INTO accounts VALUES (?, ?, ?, ?)",
+            ("Visa Pichincha", "credit_card", 13, 1),
+        )
+        self.cf_conn.commit()
+
+    def test_enrich_updates_description(self):
+        """Transaction with newly-matched invoice gets enriched description."""
+        upsert_consumo(self.consumos_conn, _make_txn("m1", "CORAL CARAPUNGO", 25.0), "Consumos/Pichincha")
+        register_consumos(self.cf_conn, self.consumos_conn, None, use_llm=False, rules=TEST_RULES)
+        review = get_transactions_needing_review(self.cf_conn, source="gmail")
+        assert len(review) == 1
+        # Simulate invoice arriving later: set matched_invoice_number on consumo
+        self.consumos_conn.execute(
+            "UPDATE consumos SET matched_invoice_number = ? WHERE msg_id = ?",
+            ("001-001-000012345", "m1"),
+        )
+        self.consumos_conn.commit()
+        # Force date_created to today so it's within 3-day window
+        self.cf_conn.execute(
+            "UPDATE transactions SET date_created = date('now') WHERE id = ?",
+            (review[0]["id"],),
+        )
+        self.cf_conn.commit()
+        stats = enrich_with_invoices(
+            self.cf_conn, self.consumos_conn, None,
+            use_llm=False, rules=TEST_RULES,
+        )
+        assert stats["enriched"] == 1
+        link = get_transaction_link(self.cf_conn, review[0]["id"])
+        assert link["invoice_number"] == "001-001-000012345"
+
+    def test_enrich_skips_approved_transactions(self):
+        """Approved (needs_review=0) transactions should not be enriched."""
+        upsert_consumo(self.consumos_conn, _make_txn("m1", "CORAL CARAPUNGO", 25.0), "Consumos/Pichincha")
+        register_consumos(self.cf_conn, self.consumos_conn, None, use_llm=False, rules=TEST_RULES)
+        review = get_transactions_needing_review(self.cf_conn, source="gmail")
+        # Approve it
+        self.cf_conn.execute("UPDATE transactions SET needs_review = 0 WHERE id = ?", (review[0]["id"],))
+        self.cf_conn.commit()
+        self.consumos_conn.execute(
+            "UPDATE consumos SET matched_invoice_number = ? WHERE msg_id = ?",
+            ("001-001-000012345", "m1"),
+        )
+        self.consumos_conn.commit()
+        stats = enrich_with_invoices(
+            self.cf_conn, self.consumos_conn, None,
+            use_llm=False, rules=TEST_RULES,
+        )
+        assert stats["enriched"] == 0
 
 
 if __name__ == "__main__":

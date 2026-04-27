@@ -686,3 +686,24 @@ def find_matching_forecast(
           purchase_date, date_window, purchase_date))
     row = cursor.fetchone()
     return dict(row) if row else None
+
+
+def find_matching_transaction(
+    conn: Connection, account: str, amount: float, purchase_date: str,
+    tolerance: float = 0.01, date_window: int = 1,
+) -> Optional[Dict[str, Any]]:
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT t.*
+        FROM transactions t
+        LEFT JOIN transaction_links tl ON t.id = tl.transaction_id
+        WHERE tl.id IS NULL
+          AND t.status = 'committed'
+          AND t.account = ?
+          AND ABS(t.amount + ?) < ?
+          AND ABS(JULIANDAY(t.date_created) - JULIANDAY(?)) <= ?
+        ORDER BY ABS(JULIANDAY(t.date_created) - JULIANDAY(?))
+        LIMIT 1
+    """, (account, amount, tolerance, purchase_date, date_window, purchase_date))
+    row = cursor.fetchone()
+    return dict(row) if row else None
