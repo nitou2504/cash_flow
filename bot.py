@@ -1,7 +1,7 @@
 import logging
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, timedelta
+from datetime import date, time as dt_time, timedelta, timezone
 from dateutil.relativedelta import relativedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -1068,6 +1068,16 @@ def main():
 
     # Register error handler
     application.add_error_handler(error_handler)
+
+    # Schedule Gmail sync (midnight + midday Ecuador time, UTC-5)
+    if application.job_queue is not None:
+        from gmail_sync.scheduled import run_gmail_sync
+        ec_tz = timezone(timedelta(hours=-5))
+        application.job_queue.run_daily(run_gmail_sync, time=dt_time(0, 0, tzinfo=ec_tz), name="gmail_sync_midnight")
+        application.job_queue.run_daily(run_gmail_sync, time=dt_time(12, 0, tzinfo=ec_tz), name="gmail_sync_midday")
+        logger.info("Gmail sync scheduled at 00:00 and 12:00 EC time")
+    else:
+        logger.warning("JobQueue not available — install python-telegram-bot[job-queue] for scheduled Gmail sync")
 
     # Start bot
     logger.info("Bot starting...")
