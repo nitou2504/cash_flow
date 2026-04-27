@@ -208,13 +208,6 @@ def parse_produbanco(msg_id: str, subject: str, text: str) -> EmailTxn | None:
     )
 
 
-BANK_PARSERS = {
-    "Pichincha": parse_pichincha,
-    "Diners": parse_diners,
-    "Produbanco": parse_produbanco,
-}
-
-
 # --- Cash transfer parser (Pichincha bank transfers from account 1057) ---
 
 _CASH_DEST_RE = re.compile(r"Cuenta acreditada:\s*(?:\*{6}|X{6})(\d{4})")

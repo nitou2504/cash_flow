@@ -2249,9 +2249,9 @@ cash_flow/
 ├── gmail_sync/                 # Optional Gmail ingest (SRI facturas, bank notifications)
 │   ├── client.py               #   Gmail API wrapper (auth, message/attachment fetch)
 │   ├── invoice.py              #   SRI XML parser (factura + notaCredito, 3 wrappings)
-│   ├── ingest_invoices.py      #   CLI: sync Facturas label → invoices.db
-│   ├── parsers.py              #   Bank consumo email parsers (Diners/Pichincha/Produbanco)
-│   └── reconcile.py            #   Match consumo emails against DB transactions
+│   ├── parsers.py              #   Bank consumo email parsers (Pichincha/Diners/Produbanco/Cash)
+│   ├── ingest_consumos.py      #   CLI: sync Consumos/* labels → consumos.db
+│   └── ingest_invoices.py      #   CLI: sync Facturas label → invoices.db
 ├── ui/                         # Presentation layer
 │   ├── cli_display.py          #   Rich terminal tables and CSV export
 │   └── telegram_format.py      #   Telegram Markdown formatting and navigation

@@ -34,11 +34,12 @@ ui/
 gmail_sync/             # Gmail integration
   auth.py               # OAuth2 (gmail.readonly scope)
   client.py             # GmailClient wrapper
-  parsers.py            # CC consumo email parsers (Pichincha/Diners/Produbanco)
-  reconcile.py          # Consumo email ↔ DB reconciliation
-  export_review.py      # CSV+PDF export of missing transactions
-  ingest_invoices.py    # Facturas label → invoices.db
+  parsers.py            # CC consumo email parsers (Pichincha/Diners/Produbanco/Cash)
   invoice.py            # SRI XML parser (3 schema families)
+  ingest_consumos.py    # Consumos/* labels → consumos.db
+  ingest_invoices.py    # Facturas label → invoices.db
+  inspect_label.py      # Debug: eyeball email format
+  verify.py             # Setup: test auth + list labels
 
 tests/                  # 37 pytest files, use in-memory SQLite via create_test_db()
 specs/                  # Design docs
@@ -171,16 +172,16 @@ Each returns `EmailTxn(msg_id, bank, account, purchased_at, amount, merchant, ca
 - Produbanco: regex-based, two date formats (Spanish month `4/Abril/2026` or MM/DD/YYYY), skips reversals
 - Cash (Consumos/Cash): Pichincha transfer notifications — parse Fecha, Cuenta acreditada, Beneficiario, Monto, Concepto
 
-### Reconciliation workflow
+### Ingest workflows
 
 ```bash
-# Compare consumo emails vs DB — find missing transactions
-python3 -m gmail_sync.reconcile --after 2026-04-20 --before 2026-04-27 --show-matched
+# Consumo emails → consumos.db
+python3 -m gmail_sync.ingest_consumos --since-last
+python3 -m gmail_sync.ingest_consumos --after 2025-01-01  # bulk
+python3 -m gmail_sync.ingest_consumos --show-unparsed
+python3 -m gmail_sync.ingest_consumos --rematch           # re-match invoices
 
-# Export missing with invoice matching + PDF download
-python3 -m gmail_sync.export_review --after 2026-04-20 --before 2026-04-27
-
-# Ingest Facturas XML into invoices.db
+# Facturas XML → invoices.db
 python3 -m gmail_sync.ingest_invoices --since-last
 python3 -m gmail_sync.ingest_invoices --after 2025-01-01  # bulk
 python3 -m gmail_sync.ingest_invoices --show-unparsed
@@ -233,8 +234,8 @@ Tests use `create_test_db()` (in-memory SQLite). Mock patches use full paths: `p
 
 ### Registering transactions from Gmail
 
-1. Run `python3 -m gmail_sync.reconcile --after DATE --before DATE` to find missing
-2. Use `python3 cli.py create tx` for each (no LLM burn)
+1. Run `python3 -m gmail_sync.ingest_consumos --since-last` to ingest new emails
+2. Use `python3 cli.py create tx` for each unregistered consumo (no LLM burn)
 3. For installments: add `-n COUNT` flag
 4. For budget-linked: add `-b BUDGET_ID` flag
 
