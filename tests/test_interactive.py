@@ -2,9 +2,9 @@
 
 Test DB ordering (alphabetical):
   Accounts:  1=Amex Produbanco, 2=Cash, 3=Visa Produbanco
-  Categories: 1=Dining-Snacks, 2=Health, 3=Home Groceries, 4=Housing,
-              5=Income, 6=Loans, 7=Others, 8=Personal, 9=Personal Groceries,
-              10=Savings, 11=Transportation
+  Categories: 1=Dining-Snacks, 2=Family Support, 3=Health, 4=Home,
+              5=Home Food & Supplies, 6=Income, 7=Loans, 8=Others,
+              9=Personal, 10=Personal Diet, 11=Savings, 12=Sister Education
   Budgets: none (unless added in setUp)
 
 When no budgets exist, the budget prompt is skipped entirely (no input consumed).
@@ -33,11 +33,11 @@ CASH = '2'
 VISA = '3'
 AMEX = '1'
 CAT_DINING = '1'
-CAT_HOME_GROC = '3'
-CAT_INCOME = '5'
-CAT_PERSONAL = '8'
-CAT_HOUSING = '4'
-CAT_HEALTH = '2'
+CAT_HOME_GROC = '5'
+CAT_INCOME = '6'
+CAT_PERSONAL = '9'
+CAT_HOME = '4'
+CAT_HEALTH = '3'
 NO = ''       # default No for yes/no prompts
 YES_FLAG = 'y'
 DEFAULT = ''  # press Enter for default
@@ -216,7 +216,7 @@ class TestInteractiveSimple(unittest.TestCase):
         self.assertEqual(request['description'], 'Test purchase')
         self.assertEqual(request['account'], 'Cash')
         self.assertEqual(request['amount'], 25.50)
-        self.assertEqual(request['category'], 'Home Groceries')
+        self.assertEqual(request['category'], 'Home Food & Supplies')
         self.assertIsNone(request['budget'])
         self.assertFalse(request['is_income'])
         self.assertFalse(request['is_pending'])
@@ -249,13 +249,13 @@ class TestInteractiveSimple(unittest.TestCase):
 
     @patch('builtins.input', side_effect=_simple_inputs(
         account=VISA, tx_date='2026-01-15', description='CC Buy',
-        amount='100', category='9'))  # 9=Personal Groceries
+        amount='100', category='10'))  # 10=Personal Diet
     def test_simple_credit_card_with_date(self, _):
         request = interactive_add_transaction(self.conn)
         self.assertIsNotNone(request)
         self.assertEqual(request['account'], 'Visa Produbanco')
         self.assertEqual(request['_transaction_date'], date(2026, 1, 15))
-        self.assertEqual(request['category'], 'Personal Groceries')
+        self.assertEqual(request['category'], 'Personal Diet')
 
     @patch('builtins.input', side_effect=_simple_inputs(
         description='No cat', amount='10', category=DEFAULT))
@@ -276,7 +276,7 @@ class TestInteractiveSimple(unittest.TestCase):
         'Substring test',   # description
         'cash',             # account by substring match
         '10',               # amount
-        'home groc',        # category by substring: "Home Groceries"
+        'home food',        # category by substring: "Home Food & Supplies"
         *FLAGS_NORMAL,       # flags
         DEFAULT,            # confirm
     ])
@@ -284,7 +284,7 @@ class TestInteractiveSimple(unittest.TestCase):
         request = interactive_add_transaction(self.conn)
         self.assertIsNotNone(request)
         self.assertEqual(request['account'], 'Cash')
-        self.assertEqual(request['category'], 'Home Groceries')
+        self.assertEqual(request['category'], 'Home Food & Supplies')
 
 
 class TestInteractiveInstallment(unittest.TestCase):
@@ -375,7 +375,7 @@ class TestInteractiveSplit(unittest.TestCase):
         CASH,           # account
         # Split 1
         '30',           # amount
-        CAT_HOME_GROC,  # category: Home Groceries
+        CAT_HOME_GROC,  # category: Home Food & Supplies
         # no budget
         # Split 2
         '15',           # amount
@@ -392,7 +392,7 @@ class TestInteractiveSplit(unittest.TestCase):
         self.assertEqual(request['type'], 'split')
         self.assertEqual(len(request['splits']), 2)
         self.assertEqual(request['splits'][0]['amount'], 30.0)
-        self.assertEqual(request['splits'][0]['category'], 'Home Groceries')
+        self.assertEqual(request['splits'][0]['category'], 'Home Food & Supplies')
         self.assertEqual(request['splits'][1]['amount'], 15.0)
         self.assertEqual(request['splits'][1]['category'], 'Dining-Snacks')
 
@@ -471,7 +471,7 @@ class TestInteractiveEndToEnd(unittest.TestCase):
         'Groceries',    # description
         CASH,           # account: Cash
         '45.99',        # amount
-        CAT_HOME_GROC,  # category: Home Groceries
+        CAT_HOME_GROC,  # category: Home Food & Supplies
         # no budget
         *FLAGS_NORMAL,   # flags
         DEFAULT,        # confirm
@@ -488,7 +488,7 @@ class TestInteractiveEndToEnd(unittest.TestCase):
         self.assertEqual(txns[0]['description'], 'Groceries')
         self.assertAlmostEqual(txns[0]['amount'], -45.99)
         self.assertEqual(txns[0]['account'], 'Cash')
-        self.assertEqual(txns[0]['category'], 'Home Groceries')
+        self.assertEqual(txns[0]['category'], 'Home Food & Supplies')
         self.assertEqual(txns[0]['status'], 'committed')
         self.assertEqual(str(txns[0]['date_created']), '2026-03-01')
         self.assertEqual(str(txns[0]['date_payed']), '2026-03-01')
@@ -692,7 +692,7 @@ class TestInteractiveEndToEnd(unittest.TestCase):
         txns = repository.get_all_transactions(self.conn)
         self.assertEqual(len(txns), 2)
         self.assertAlmostEqual(txns[0]['amount'], -30.0)
-        self.assertEqual(txns[0]['category'], 'Home Groceries')
+        self.assertEqual(txns[0]['category'], 'Home Food & Supplies')
         self.assertAlmostEqual(txns[1]['amount'], -15.0)
         self.assertEqual(txns[1]['category'], 'Dining-Snacks')
         origin_ids = {t['origin_id'] for t in txns}
@@ -731,7 +731,7 @@ class TestInteractiveWithBudget(unittest.TestCase):
         repository.add_subscription(self.conn, {
             "id": "budget_groceries_mar",
             "name": "Groceries Mar",
-            "category": "Home Groceries",
+            "category": "Home Food & Supplies",
             "monthly_amount": 300.0,
             "payment_account_id": "Cash",
             "start_date": date(2026, 3, 1),
@@ -750,7 +750,7 @@ class TestInteractiveWithBudget(unittest.TestCase):
         'Weekly shop',  # description
         CASH,           # account: Cash -> payment_date = 2026-03-05
         '80',           # amount
-        CAT_HOME_GROC,  # category: Home Groceries
+        CAT_HOME_GROC,  # category: Home Food & Supplies
         '1',            # budget: budget_groceries_mar (1st in list)
         *FLAGS_NORMAL,   # flags
         DEFAULT,        # confirm

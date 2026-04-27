@@ -66,7 +66,7 @@ class TestFormatReviewCard(unittest.TestCase):
             'description': 'Supermaxi Groceries',
             'amount': -25.00,
             'account': 'Visa Pichincha',
-            'category': 'Home Groceries',
+            'category': 'Home Food & Supplies',
             'budget': 'budget_groceries_mar_apr',
             'status': 'committed',
             'source': 'mom',
@@ -114,7 +114,7 @@ class TestFormatReviewDiff(unittest.TestCase):
             'description': 'Supermaxi Groceries',
             'amount': -25.00,
             'account': 'Visa Pichincha',
-            'category': 'Home Groceries',
+            'category': 'Home Food & Supplies',
             'budget': 'budget_food',
             'date_created': '2026-03-05',
         }

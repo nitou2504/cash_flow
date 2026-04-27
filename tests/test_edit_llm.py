@@ -26,8 +26,8 @@ class TestParseEditInstruction(unittest.TestCase):
             "start_date": date(2026, 3, 1), "is_budget": True
         })
         add_subscription(self.conn, {
-            "id": "budget_groceries_mar_apr", "name": "Home Groceries Mar-Apr",
-            "category": "Home Groceries", "monthly_amount": 300.00,
+            "id": "budget_groceries_mar_apr", "name": "Home Food & Supplies Mar-Apr",
+            "category": "Home Food & Supplies", "monthly_amount": 300.00,
             "payment_account_id": "Cash",
             "start_date": date(2026, 3, 1), "is_budget": True
         })
@@ -37,7 +37,7 @@ class TestParseEditInstruction(unittest.TestCase):
             mock_date.today.return_value = self.today
             process_transaction_request(self.conn, {
                 "type": "simple", "description": "Supermaxi Groceries",
-                "amount": 25.00, "account": "Cash", "category": "Home Groceries",
+                "amount": 25.00, "account": "Cash", "category": "Home Food & Supplies",
                 "budget": "budget_groceries_mar_apr"
             })
 
@@ -213,7 +213,7 @@ class TestHandleEditLlm(unittest.TestCase):
             mock_date.today.return_value = self.today
             process_transaction_request(self.conn, {
                 "type": "simple", "description": "Test Expense",
-                "amount": 30.00, "account": "Cash", "category": "Home Groceries",
+                "amount": 30.00, "account": "Cash", "category": "Home Food & Supplies",
             })
 
         from cashflow.repository import get_all_transactions

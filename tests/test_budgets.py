@@ -13,9 +13,9 @@ class TestBudgetLogic(unittest.TestCase):
         """Set up an in-memory database for each test."""
         self.conn = create_test_db()
 
-        # 1. Create a budget subscription for "Home Groceries"
+        # 1. Create a budget subscription for "Home Food & Supplies"
         self.food_budget_sub = {
-            "id": "budget_food", "name": "Food Budget", "category": "Home Groceries",
+            "id": "budget_food", "name": "Food Budget", "category": "Home Food & Supplies",
             "monthly_amount": 300.00, "payment_account_id": "Cash",
             "start_date": date(2025, 1, 1), "is_budget": True,
             "underspend_behavior": "return"
@@ -28,7 +28,7 @@ class TestBudgetLogic(unittest.TestCase):
             "date_created": self.current_month_start,
             "date_payed": self.current_month_start,
             "description": "Food Budget", "account": "Cash", "amount": -300.00,
-            "category": "Home Groceries", "budget": "budget_food", "status": "committed",
+            "category": "Home Food & Supplies", "budget": "budget_food", "status": "committed",
             "origin_id": "budget_food"
         }
         add_transactions(self.conn, [self.initial_allocation])
@@ -45,7 +45,7 @@ class TestBudgetLogic(unittest.TestCase):
         # A $50 grocery expense
         expense_request = {
             "type": "simple", "description": "Groceries", "amount": 50.00,
-            "account": "Cash", "category": "Home Groceries", "budget": "budget_food"
+            "account": "Cash", "category": "Home Food & Supplies", "budget": "budget_food"
         }
         process_transaction_request(self.conn, expense_request)
 
@@ -78,7 +78,7 @@ class TestBudgetLogic(unittest.TestCase):
         # Log a $100 expense, leaving $200 in the budget
         expense = {
             "type": "simple", "description": "Groceries", "amount": 100.00,
-            "account": "Cash", "category": "Home Groceries", "budget": "budget_food"
+            "account": "Cash", "category": "Home Food & Supplies", "budget": "budget_food"
         }
         process_transaction_request(self.conn, expense)
 
@@ -108,7 +108,7 @@ class TestBudgetLogic(unittest.TestCase):
         # Log a $100 expense, leaving $200
         expense = {
             "type": "simple", "description": "Groceries", "amount": 100.00,
-            "account": "Cash", "category": "Home Groceries", "budget": "budget_food"
+            "account": "Cash", "category": "Home Food & Supplies", "budget": "budget_food"
         }
         process_transaction_request(self.conn, expense)
 
@@ -135,7 +135,7 @@ class TestRolloverBudgetReconciliation(unittest.TestCase):
         self.current_month = date.today().replace(day=1)
 
         self.budget_sub = {
-            "id": "budget_food", "name": "Food Budget", "category": "Home Groceries",
+            "id": "budget_food", "name": "Food Budget", "category": "Home Food & Supplies",
             "monthly_amount": 300.00, "payment_account_id": "Cash",
             "start_date": self.last_month, "is_budget": True,
             "underspend_behavior": "return"
@@ -149,7 +149,7 @@ class TestRolloverBudgetReconciliation(unittest.TestCase):
         add_transactions(self.conn, [{
             "date_created": month, "date_payed": month,
             "description": "Food Budget", "account": "Cash",
-            "amount": amount, "category": "Home Groceries", "budget": "budget_food",
+            "amount": amount, "category": "Home Food & Supplies", "budget": "budget_food",
             "status": "committed", "origin_id": "budget_food"
         }])
 
@@ -157,7 +157,7 @@ class TestRolloverBudgetReconciliation(unittest.TestCase):
         process_transaction_request(self.conn, {
             "type": "simple", "description": "Groceries",
             "amount": amount, "account": "Cash",
-            "category": "Home Groceries", "budget": "budget_food",
+            "category": "Home Food & Supplies", "budget": "budget_food",
         }, transaction_date=month.replace(day=15))
 
     def test_rollover_triggers_return_for_past_month(self):

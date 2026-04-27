@@ -140,7 +140,7 @@ class TestProcessTransactionSavesLlmExample(unittest.TestCase):
             "description": "Supermaxi carnes",
             "amount": 9.99,
             "account": "Cash",
-            "category": "Home Groceries",
+            "category": "Home Food & Supplies",
             "budget": None,
         }
         user_input = "cash, supermaxi carnes, home groceries, 9.99"
@@ -208,8 +208,8 @@ class TestProcessTransactionSavesLlmExample(unittest.TestCase):
             "description": "Supermaxi mixed",
             "account": "Cash",
             "splits": [
-                {"amount": 30, "category": "Home Groceries", "budget": None},
-                {"amount": 15, "category": "Personal Groceries", "budget": None},
+                {"amount": 30, "category": "Home Food & Supplies", "budget": None},
+                {"amount": 15, "category": "Personal Diet", "budget": None},
             ],
         }
         user_input = "cash, supermaxi 30 home groceries + 15 personal groceries"
