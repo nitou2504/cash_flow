@@ -1298,6 +1298,29 @@ python3 cli.py export transactions.csv --with-balance
 
 ---
 
+#### `liabilities` - What you owe per credit card
+
+```bash
+python3 cli.py liabilities                     # Default 6-month horizon
+python3 cli.py liab -m 3                       # 3-month horizon
+python3 cli.py owe -d                          # Detail mode (per-tx breakdown)
+```
+
+Aliases: `liab`, `owe`. Read-only.
+
+**What it does**: Renders four tables:
+
+1. **Liabilities** — per CC payment cycle, columns: card, pay date, real spend, subs, budgets, total, owed (already happened).
+2. **Subscriptions (horizon)** — recurring forecasts grouped by `sub_*` id with month count and total.
+3. **Budget envelopes (horizon)** — `budget_*` allocations grouped by id, total reserved.
+4. **Summary** — split into `OWED — next CC bill` (current statements due first), `Owed — later cycles` (already-spent post-cutoff, billed later), `CC horizon total`, `Subs horizon`, `Budgets horizon`.
+
+**Owed semantics**: a transaction is "owed" when its `date_created <= today` and `date_payed > today` — money already spent, not yet pulled from your account. This includes installment cuotas of past purchases that fall in future cycles.
+
+**Use it to**: spot mismatches between app and bank statement, see locked-in vs speculative future cash needs, decide if `rb` is healthy after subtracting real liabilities.
+
+---
+
 ### Reconciliation
 
 #### `fix --balance` - Adjust total balance
