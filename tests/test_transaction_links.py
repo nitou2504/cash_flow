@@ -101,16 +101,16 @@ class TestFindSimilar(unittest.TestCase):
         self.conn = create_test_db()
 
     def test_keyword_match(self):
-        _insert_txn(self.conn, desc="Coral - arroz, leche", category="Home Food")
+        _insert_txn(self.conn, desc="Coral - arroz, leche", category="Home Food & Supplies")
         _insert_txn(self.conn, desc="Coral - kefir, quinua", category="Personal Diet")
-        _insert_txn(self.conn, desc="Titan - pollo", category="Home Food")
+        _insert_txn(self.conn, desc="Titan - pollo", category="Home Food & Supplies")
         results = find_similar_transactions(self.conn, ["Coral"])
         assert len(results) == 2
         assert all("Coral" in r["description"] for r in results)
 
     def test_multiple_keywords(self):
-        _insert_txn(self.conn, desc="Coral Carapungo - arroz", category="Home Food")
-        _insert_txn(self.conn, desc="Coral Norte - leche", category="Home Food")
+        _insert_txn(self.conn, desc="Coral Carapungo - arroz", category="Home Food & Supplies")
+        _insert_txn(self.conn, desc="Coral Norte - leche", category="Home Food & Supplies")
         results = find_similar_transactions(self.conn, ["Coral", "Carapungo"])
         assert len(results) == 1
 
@@ -119,7 +119,7 @@ class TestFindSimilar(unittest.TestCase):
 
     def test_limit(self):
         for i in range(5):
-            _insert_txn(self.conn, desc=f"Coral item {i}", category="Home Food")
+            _insert_txn(self.conn, desc=f"Coral item {i}", category="Home Food & Supplies")
         results = find_similar_transactions(self.conn, ["Coral"], limit=3)
         assert len(results) == 3
 

@@ -33,7 +33,7 @@ TEST_RULES = {
         "KFC": {"category": "Dining-Snacks"},
     },
     "transfer_rules": {
-        "6634": {"category": "Home Food", "desc_template": "Transfer to father (6634) - {concepto}"},
+        "6634": {"category": "Home Food & Supplies", "desc_template": "Transfer to father (6634) - {concepto}"},
         "2210": {"category": "Personal", "desc_template": "Transfer to Ana (2210) - {concepto}"},
     },
 }
@@ -81,7 +81,7 @@ class TestTransferRules(unittest.TestCase):
                     "concepto": "Mercado", "merchant": "Mercado"}
         r = _match_transfer_rule(consumo, TEST_RULES["transfer_rules"])
         assert r is not None
-        assert r["category"] == "Home Food"
+        assert r["category"] == "Home Food & Supplies"
         assert "6634" in r["desc"]
         assert "Mercado" in r["desc"]
 
@@ -109,7 +109,7 @@ class TestPrepareOne(unittest.TestCase):
         add_transactions(self.cf_conn, [{
             "date_created": "2026-04-01", "date_payed": "2026-04-01",
             "description": "Coral Carapungo - arroz, leche", "account": "Cash",
-            "amount": -30.0, "category": "Home Food", "budget": None,
+            "amount": -30.0, "category": "Home Food & Supplies", "budget": None,
             "status": "committed", "origin_id": None,
         }])
 
@@ -133,7 +133,7 @@ class TestPrepareOne(unittest.TestCase):
                     "account": "Visa Pichincha", "purchased_at": "2026-04-20"}
         result = prepare_one(consumo, self.cf_conn, None, use_llm=False, rules=TEST_RULES)
         assert result["method"] == "fuzzy_match"
-        assert result["category"] == "Home Food"
+        assert result["category"] == "Home Food & Supplies"
 
     def test_fallback(self):
         consumo = {"merchant": "UNKNOWN STORE XYZ", "amount": 10.0,
@@ -264,7 +264,7 @@ class TestRegisterFlow(unittest.TestCase):
         add_transactions(self.cf_conn, [{
             "date_created": "2026-04-22", "date_payed": "2026-05-01",
             "description": "Coral Carapungo - groceries", "account": "Visa Pichincha",
-            "amount": -25.0, "category": "Home Food", "budget": None,
+            "amount": -25.0, "category": "Home Food & Supplies", "budget": None,
             "status": "committed", "origin_id": None,
         }])
         upsert_consumo(self.consumos_conn, _make_txn("m1", "CORAL CARAPUNGO", 25.0), "Consumos/Pichincha")
@@ -282,7 +282,7 @@ class TestRegisterFlow(unittest.TestCase):
         add_transactions(self.cf_conn, [{
             "date_created": "2026-04-18", "date_payed": "2026-05-01",
             "description": "Coral - stuff", "account": "Visa Pichincha",
-            "amount": -25.0, "category": "Home Food", "budget": None,
+            "amount": -25.0, "category": "Home Food & Supplies", "budget": None,
             "status": "committed", "origin_id": None,
         }])
         upsert_consumo(self.consumos_conn, _make_txn("m1", "CORAL CARAPUNGO", 25.0), "Consumos/Pichincha")

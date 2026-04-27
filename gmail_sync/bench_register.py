@@ -16,7 +16,7 @@ import litellm
 
 
 CATEGORIES = [
-    "Dining-Snacks", "Family Support", "Health", "Home", "Home Food",
+    "Dining-Snacks", "Family Support", "Health", "Home", "Home Food & Supplies",
     "Income", "Loans", "Others", "Personal", "Personal Diet",
     "Savings", "Sister Education",
 ]
