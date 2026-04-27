@@ -4,8 +4,8 @@ Follows the same test DB and mocking patterns as test_interactive.py.
 
 Test DB ordering (alphabetical):
   Accounts:  1=Amex Produbanco, 2=Cash, 3=Visa Produbanco
-  Categories: 1=Dining-Snacks, 2=Health, 3=Home Groceries, 4=Housing,
-              5=Income, 6=Loans, 7=Others, 8=Personal, 9=Personal Groceries,
+  Categories: 1=Dining-Snacks, 2=Family Support, 3=Health, 4=Home,
+              5=Income, 6=Loans, 7=Others, 8=Personal, 9=Personal Diet,
               10=Savings, 11=Transportation
   Budgets: none (unless added in setUp)
 """
@@ -33,10 +33,10 @@ CASH = '2'
 VISA = '3'
 AMEX = '1'
 CAT_DINING = '1'
-CAT_HOME_GROC = '3'
-CAT_INCOME = '5'
-CAT_HOUSING = '4'
-CAT_PERSONAL = '8'
+CAT_HOME_GROC = '5'
+CAT_INCOME = '6'
+CAT_HOME = '4'
+CAT_PERSONAL = '9'
 DEFAULT = ''  # press Enter for default
 NO = ''
 YES = 'y'
@@ -296,7 +296,7 @@ class TestInteractiveAddSubscription(unittest.TestCase):
         'Food Budget',      # name
         '300',              # amount
         CASH,               # account: Cash
-        CAT_HOME_GROC,      # category: Home Groceries
+        CAT_HOME_GROC,      # category: Home Food & Supplies
         DEFAULT,            # start date
         DEFAULT,            # end date: no
         DEFAULT,            # underspend: keep (default)
@@ -315,7 +315,7 @@ class TestInteractiveAddSubscription(unittest.TestCase):
         'Rent',             # name
         '500',              # amount
         CASH,               # account
-        CAT_HOUSING,        # category: Housing
+        CAT_HOME,        # category: Home
         DEFAULT,            # start date
         DEFAULT,            # end date: no
         'return',           # underspend: return
@@ -402,7 +402,7 @@ class TestInteractiveAddSubscriptionE2E(unittest.TestCase):
         'Groceries',        # name
         '300',              # amount
         CASH,               # account: Cash
-        CAT_HOME_GROC,      # category: Home Groceries
+        CAT_HOME_GROC,      # category: Home Food & Supplies
         '2026-03-01',       # start date
         DEFAULT,            # end date: no
         DEFAULT,            # underspend: keep
@@ -561,7 +561,7 @@ class TestInteractiveEditTransaction(unittest.TestCase):
         DEFAULT,            # description
         DEFAULT,            # amount
         DEFAULT,            # date
-        CAT_HOME_GROC,      # category: select Home Groceries
+        CAT_HOME_GROC,      # category: select Home Food & Supplies
         # no budget prompt
         DEFAULT,            # status
         DEFAULT,            # confirm
@@ -570,7 +570,7 @@ class TestInteractiveEditTransaction(unittest.TestCase):
         result = interactive_edit_transaction(self.conn, self.tx_id)
         self.assertIsNotNone(result)
         updates, _ = result
-        self.assertEqual(updates['category'], 'Home Groceries')
+        self.assertEqual(updates['category'], 'Home Food & Supplies')
 
 
 class TestInteractiveEditTransactionE2E(unittest.TestCase):
@@ -663,7 +663,7 @@ class TestInteractiveEditTransactionWithBudget(unittest.TestCase):
         repository.add_subscription(self.conn, {
             "id": "budget_food",
             "name": "Food Budget",
-            "category": "Home Groceries",
+            "category": "Home Food & Supplies",
             "monthly_amount": 300.0,
             "payment_account_id": "Cash",
             "start_date": date(2026, 3, 1),
@@ -681,7 +681,7 @@ class TestInteractiveEditTransactionWithBudget(unittest.TestCase):
             'description': 'Groceries',
             'account': 'Cash',
             'amount': 50.0,
-            'category': 'Home Groceries',
+            'category': 'Home Food & Supplies',
             'budget': 'budget_food',
             'is_income': False,
             'is_pending': False,
@@ -719,7 +719,7 @@ class TestInteractiveEditSubscription(unittest.TestCase):
         repository.add_subscription(self.conn, {
             "id": "budget_food",
             "name": "Food Budget",
-            "category": "Home Groceries",
+            "category": "Home Food & Supplies",
             "monthly_amount": 300.0,
             "payment_account_id": "Cash",
             "start_date": date(2026, 3, 1),
@@ -878,7 +878,7 @@ class TestInteractiveEditSubscriptionE2E(unittest.TestCase):
         repository.add_subscription(self.conn, {
             "id": "budget_food",
             "name": "Food Budget",
-            "category": "Home Groceries",
+            "category": "Home Food & Supplies",
             "monthly_amount": 300.0,
             "payment_account_id": "Cash",
             "start_date": date(2026, 3, 1),

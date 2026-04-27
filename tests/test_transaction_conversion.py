@@ -16,15 +16,15 @@ class TestTransactionGroupIdentifier(unittest.TestCase):
         # 1. Simple Transaction (no origin_id)
         add_transactions(self.conn, [{
             "date_created": self.today, "date_payed": self.today, "description": "Simple Meal",
-            "account": "Cash", "amount": -20, "category": "Home Groceries", "budget": None,
+            "account": "Cash", "amount": -20, "category": "Home Food & Supplies", "budget": None,
             "status": "committed", "origin_id": None
         }])
         self.simple_tx_id = 1
 
         # 2. Split Transaction (shared origin_id, same date_payed)
         add_transactions(self.conn, [
-            {"date_created": self.today, "date_payed": self.today, "description": "Groceries", "account": "Cash", "amount": -80, "category": "Home Groceries", "budget": None, "status": "committed", "origin_id": "SPLIT1"},
-            {"date_created": self.today, "date_payed": self.today, "description": "Groceries", "account": "Cash", "amount": -15, "category": "Housing", "budget": None, "status": "committed", "origin_id": "SPLIT1"}
+            {"date_created": self.today, "date_payed": self.today, "description": "Groceries", "account": "Cash", "amount": -80, "category": "Home Food & Supplies", "budget": None, "status": "committed", "origin_id": "SPLIT1"},
+            {"date_created": self.today, "date_payed": self.today, "description": "Groceries", "account": "Cash", "amount": -15, "category": "Home", "budget": None, "status": "committed", "origin_id": "SPLIT1"}
         ])
         self.split_tx_id = 2
 

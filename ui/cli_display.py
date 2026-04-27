@@ -46,12 +46,18 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
         summarized_payments = {}
         other_transactions = []
         planning_transactions = []
+        pending_transactions = []
 
         for t in all_transactions:
             if t['account'] in credit_card_accounts:
-                # If not including planning in summary, separate them to be displayed individually
+                # Planning and pending show individually — they shouldn't inflate
+                # the aggregate payment amount (pending is excluded from running
+                # balance; showing it in the aggregate misleads reconciliation).
                 if not include_planning and t['status'] == 'planning':
                     planning_transactions.append(t)
+                    continue
+                if t['status'] == 'pending':
+                    pending_transactions.append(t)
                     continue
 
                 if sort_by == "date_created":
@@ -105,9 +111,9 @@ def view_transactions(conn: sqlite3.Connection, months: int, summary: bool = Fal
 
         # Combine and sort all transactions
         if sort_by == "date_created":
-            combined = sorted(other_transactions + summary_transactions + planning_transactions, key=lambda x: (x['date_created'], x.get('id', 0) if x.get('id') != '--' else 0))
+            combined = sorted(other_transactions + summary_transactions + planning_transactions + pending_transactions, key=lambda x: (x['date_created'], x.get('id', 0) if x.get('id') != '--' else 0))
         else:  # default to date_payed
-            combined = sorted(other_transactions + summary_transactions + planning_transactions, key=lambda x: (x['date_payed'], x.get('id', 0) if x.get('id') != '--' else 999999))
+            combined = sorted(other_transactions + summary_transactions + planning_transactions + pending_transactions, key=lambda x: (x['date_payed'], x.get('id', 0) if x.get('id') != '--' else 999999))
 
         # Don't recalculate running balance - use the ones from original transactions
         for t in combined:
@@ -321,3 +327,184 @@ def export_transactions_to_csv(conn: sqlite3.Connection, file_path: str, include
             writer.writerow(row_data)
     
     print(f"Successfully exported {len(transactions)} transactions to {file_path}")
+
+
+def _classify_origin(origin_id: str | None) -> str:
+    if not origin_id:
+        return "real"
+    if origin_id.startswith("sub_"):
+        return "sub"
+    if origin_id.startswith("budget_"):
+        return "budget"
+    return "real"
+
+
+def show_liabilities(conn: sqlite3.Connection, months: int = 6, detail: bool = False, summary: bool = False):
+    """
+    Per-card breakdown of what is owed and forecast.
+    Single table with columns: card, pay date, real, subs, budgets, total, owed-now.
+    """
+    console = Console()
+    today = date.today()
+    today_iso = today.isoformat()
+    horizon_end = today + relativedelta(months=months)
+
+    accounts = repository.get_all_accounts(conn)
+    cc_accounts = [a for a in accounts if a.get("account_type") == "credit_card"]
+    cur = conn.cursor()
+
+    grand_owed_current = 0.0
+    grand_owed_later = 0.0
+    grand_horizon = 0.0
+    sub_horizon_total = 0.0
+    budget_horizon_total = 0.0
+
+    # ---------- CC by cycle ----------
+    cc_table = Table(
+        title=f"Liabilities — as of {today}, horizon {months}mo",
+        show_header=True, header_style="bold magenta",
+    )
+    cc_table.add_column("Card")
+    cc_table.add_column("Pay date")
+    cc_table.add_column("Real",    justify="right")
+    cc_table.add_column("Subs",    justify="right")
+    cc_table.add_column("Budgets", justify="right")
+    cc_table.add_column("Total",   justify="right")
+    cc_table.add_column("Owed",    justify="right")
+
+    for acc in cc_accounts:
+        name = acc["account_id"]
+        cur.execute(
+            """
+            SELECT date_payed, date_created, amount, origin_id
+            FROM transactions
+            WHERE account = ?
+              AND date_payed >= ? AND date_payed <= ?
+              AND status IN ('committed', 'forecast')
+              AND amount < 0
+            ORDER BY date_payed
+            """,
+            (name, today_iso, horizon_end.isoformat()),
+        )
+        cycles: dict = {}
+        for date_payed, date_created, amount, origin_id in cur.fetchall():
+            cycles.setdefault(date_payed, []).append(
+                {"date_created": date_created, "amount": amount, "origin_id": origin_id}
+            )
+        if not cycles:
+            continue
+
+        sorted_cycles = sorted(cycles.keys())
+
+        def cycle_metrics(txs):
+            real = sum(t["amount"] for t in txs if _classify_origin(t["origin_id"]) == "real")
+            subs = sum(t["amount"] for t in txs if _classify_origin(t["origin_id"]) == "sub")
+            buds = sum(t["amount"] for t in txs if _classify_origin(t["origin_id"]) == "budget")
+            owed = sum(t["amount"] for t in txs if str(t["date_created"]) <= today_iso)
+            return real, subs, buds, real + subs + buds, owed
+
+        if summary:
+            # Current statement row (cycle 1)
+            first_cd = sorted_cycles[0]
+            real, subs, buds, tot, owed = cycle_metrics(cycles[first_cd])
+            cc_table.add_row(
+                name, f"{first_cd} (current)",
+                f"${abs(real):.2f}", f"${abs(subs):.2f}", f"${abs(buds):.2f}",
+                f"${abs(tot):.2f}",
+                f"${abs(owed):.2f}" if owed else "—",
+            )
+            grand_owed_current += owed
+            grand_horizon += tot
+            # Future aggregated row (cycles 2+)
+            future_txs = [t for cd in sorted_cycles[1:] for t in cycles[cd]]
+            if future_txs:
+                real, subs, buds, tot, owed = cycle_metrics(future_txs)
+                cc_table.add_row(
+                    name, f"future {len(sorted_cycles)-1} cycles",
+                    f"${abs(real):.2f}", f"${abs(subs):.2f}", f"${abs(buds):.2f}",
+                    f"${abs(tot):.2f}",
+                    f"${abs(owed):.2f}" if owed else "—",
+                )
+                grand_owed_later += owed
+                grand_horizon += tot
+        else:
+            for idx, cd in enumerate(sorted_cycles):
+                real, subs, buds, tot, owed = cycle_metrics(cycles[cd])
+                cc_table.add_row(
+                    name, str(cd),
+                    f"${abs(real):.2f}", f"${abs(subs):.2f}", f"${abs(buds):.2f}",
+                    f"${abs(tot):.2f}",
+                    f"${abs(owed):.2f}" if owed else "—",
+                )
+                if idx == 0:
+                    grand_owed_current += owed
+                else:
+                    grand_owed_later += owed
+                grand_horizon += tot
+
+    console.print(cc_table)
+
+    # ---------- Subs ----------
+    cur.execute(
+        """
+        SELECT origin_id, account, COUNT(*), SUM(amount)
+        FROM transactions
+        WHERE origin_id LIKE 'sub_%'
+          AND date_payed >= ? AND date_payed <= ?
+          AND amount < 0
+          AND status IN ('committed', 'forecast')
+        GROUP BY origin_id, account
+        ORDER BY SUM(amount)
+        """,
+        (today_iso, horizon_end.isoformat()),
+    )
+    sub_rows = cur.fetchall()
+    sub_horizon_total = sum(r[3] for r in sub_rows)
+
+    if not summary:
+        sub_table = Table(title="Subscriptions (horizon)", show_header=True, header_style="bold magenta")
+        sub_table.add_column("Subscription")
+        sub_table.add_column("Account")
+        sub_table.add_column("Months", justify="right")
+        sub_table.add_column("Total",  justify="right")
+        for origin_id, account, n, total in sub_rows:
+            sub_table.add_row(origin_id, account, str(n), f"${abs(total):.2f}")
+        console.print(sub_table)
+
+    # ---------- Budgets ----------
+    cur.execute(
+        """
+        SELECT origin_id, account, COUNT(*), SUM(amount)
+        FROM transactions
+        WHERE origin_id LIKE 'budget_%'
+          AND date_payed >= ? AND date_payed <= ?
+          AND amount < 0
+          AND status IN ('committed', 'forecast')
+        GROUP BY origin_id, account
+        ORDER BY SUM(amount)
+        """,
+        (today_iso, horizon_end.isoformat()),
+    )
+    bud_rows = cur.fetchall()
+    budget_horizon_total = sum(r[3] for r in bud_rows)
+
+    if not summary:
+        bud_table = Table(title="Budget envelopes (horizon)", show_header=True, header_style="bold magenta")
+        bud_table.add_column("Budget")
+        bud_table.add_column("Account")
+        bud_table.add_column("Months", justify="right")
+        bud_table.add_column("Total",  justify="right")
+        for origin_id, account, n, total in bud_rows:
+            bud_table.add_row(origin_id, account, str(n), f"${abs(total):.2f}")
+        console.print(bud_table)
+
+    # ---------- Summary ----------
+    summary = Table(title="Summary", show_header=True, header_style="bold magenta")
+    summary.add_column("Metric")
+    summary.add_column("Amount", justify="right")
+    summary.add_row("Owed — next CC bill (current statements)",    f"${abs(grand_owed_current):.2f}")
+    summary.add_row("Owed — later cycles (post-cutoff)",            f"${abs(grand_owed_later):.2f}")
+    summary.add_row(f"CC horizon total ({months}mo)",               f"${abs(grand_horizon):.2f}")
+    summary.add_row("Subs horizon",                                 f"${abs(sub_horizon_total):.2f}")
+    summary.add_row("Budgets horizon (speculative)",                f"${abs(budget_horizon_total):.2f}")
+    console.print(summary)

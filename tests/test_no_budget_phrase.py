@@ -77,7 +77,7 @@ class TestConfigParsing(unittest.TestCase):
     """Test that the 4th field is parsed from extra user config."""
 
     @patch.dict('os.environ', {
-        'TELEGRAM_EXTRA_USER_MOM': '123456,Visa Pichincha,Home Groceries,de mateo'
+        'TELEGRAM_EXTRA_USER_MOM': '123456,Visa Pichincha,Home Food & Supplies,de mateo'
     })
     def test_no_budget_phrase_parsed(self):
         # Re-import to pick up the patched env
@@ -89,10 +89,10 @@ class TestConfigParsing(unittest.TestCase):
         user = config_mod.TELEGRAM_EXTRA_USERS[123456]
         self.assertEqual(user['no_budget_phrase'], 'de mateo')
         self.assertEqual(user['account'], 'Visa Pichincha')
-        self.assertEqual(user['budget'], 'Home Groceries')
+        self.assertEqual(user['budget'], 'Home Food & Supplies')
 
     @patch.dict('os.environ', {
-        'TELEGRAM_EXTRA_USER_MOM': '123456,Visa Pichincha,Home Groceries'
+        'TELEGRAM_EXTRA_USER_MOM': '123456,Visa Pichincha,Home Food & Supplies'
     })
     def test_no_budget_phrase_absent(self):
         import importlib
@@ -109,8 +109,8 @@ class TestBotNoBudgetFlow(unittest.TestCase):
     def setUp(self):
         self.conn = create_test_db()
         add_subscription(self.conn, {
-            "id": "budget_groceries_mar_apr", "name": "Home Groceries Mar-Apr",
-            "category": "Home Groceries", "monthly_amount": 300.00,
+            "id": "budget_groceries_mar_apr", "name": "Home Food & Supplies Mar-Apr",
+            "category": "Home Food & Supplies", "monthly_amount": 300.00,
             "payment_account_id": "Cash",
             "start_date": date(2026, 3, 1), "end_date": date(2026, 5, 30),
             "is_budget": True
@@ -141,9 +141,9 @@ class TestBotNoBudgetFlow(unittest.TestCase):
         """Normal extra user flow — budget gets assigned."""
         extra_user = {
             'name': 'mom', 'account': 'Cash',
-            'budget': 'Home Groceries', 'no_budget_phrase': None,
+            'budget': 'Home Food & Supplies', 'no_budget_phrase': None,
         }
-        request_json = {'description': 'Supermaxi', 'amount': -25.0, 'category': 'Home Groceries'}
+        request_json = {'description': 'Supermaxi', 'amount': -25.0, 'category': 'Home Food & Supplies'}
 
         result = self._simulate_budget_resolution(extra_user, skip_budget=False, request_json=request_json)
         self.assertEqual(result.get('budget'), 'budget_groceries_mar_apr')
@@ -152,9 +152,9 @@ class TestBotNoBudgetFlow(unittest.TestCase):
         """Phrase configured but not found in message — budget still assigned."""
         extra_user = {
             'name': 'mom', 'account': 'Cash',
-            'budget': 'Home Groceries', 'no_budget_phrase': 'de mateo',
+            'budget': 'Home Food & Supplies', 'no_budget_phrase': 'de mateo',
         }
-        request_json = {'description': 'Supermaxi', 'amount': -25.0, 'category': 'Home Groceries'}
+        request_json = {'description': 'Supermaxi', 'amount': -25.0, 'category': 'Home Food & Supplies'}
 
         result = self._simulate_budget_resolution(extra_user, skip_budget=False, request_json=request_json)
         self.assertEqual(result.get('budget'), 'budget_groceries_mar_apr')
@@ -163,9 +163,9 @@ class TestBotNoBudgetFlow(unittest.TestCase):
         """Phrase detected — budget NOT assigned."""
         extra_user = {
             'name': 'mom', 'account': 'Cash',
-            'budget': 'Home Groceries', 'no_budget_phrase': 'de mateo',
+            'budget': 'Home Food & Supplies', 'no_budget_phrase': 'de mateo',
         }
-        request_json = {'description': 'Supermaxi de mateo', 'amount': -25.0, 'category': 'Home Groceries'}
+        request_json = {'description': 'Supermaxi de mateo', 'amount': -25.0, 'category': 'Home Food & Supplies'}
 
         result = self._simulate_budget_resolution(extra_user, skip_budget=True, request_json=request_json)
         self.assertNotIn('budget', result)

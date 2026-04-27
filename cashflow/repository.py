@@ -1,7 +1,7 @@
 import json
 import sqlite3
 from sqlite3 import Connection
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import date
 
 def get_account_by_name(conn: Connection, name: str) -> Dict[str, Any]:
@@ -575,3 +575,135 @@ def get_transactions_needing_review(conn: Connection, source: str = None) -> Lis
 def mark_reviewed(conn: Connection, transaction_id: int):
     """Marks a transaction as reviewed (needs_review = 0)."""
     update_transaction(conn, transaction_id, {"needs_review": 0})
+
+
+# --- Transaction links (consumo/invoice cross-DB references) ---
+
+def link_transaction(
+    conn: Connection,
+    transaction_id: int,
+    consumo_msg_id: str = None,
+    invoice_number: str = None,
+    source: str = "auto_match",
+) -> int:
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO transaction_links (transaction_id, consumo_msg_id, invoice_number, link_source)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(transaction_id) DO UPDATE SET
+            consumo_msg_id = COALESCE(excluded.consumo_msg_id, consumo_msg_id),
+            invoice_number = COALESCE(excluded.invoice_number, invoice_number),
+            link_source = excluded.link_source,
+            linked_at = CURRENT_TIMESTAMP
+    """, (transaction_id, consumo_msg_id, invoice_number, source))
+    conn.commit()
+    return cursor.lastrowid
+
+
+def get_transaction_link(conn: Connection, transaction_id: int) -> Optional[Dict[str, Any]]:
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM transaction_links WHERE transaction_id = ?",
+        (transaction_id,),
+    )
+    row = cursor.fetchone()
+    return dict(row) if row else None
+
+
+def find_linked_transaction(conn: Connection, consumo_msg_id: str) -> Optional[Dict[str, Any]]:
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT t.*, tl.consumo_msg_id, tl.invoice_number, tl.link_source, tl.linked_at
+        FROM transactions t
+        JOIN transaction_links tl ON t.id = tl.transaction_id
+        WHERE tl.consumo_msg_id = ?
+    """, (consumo_msg_id,))
+    row = cursor.fetchone()
+    return dict(row) if row else None
+
+
+def get_unlinked_transactions(
+    conn: Connection, accounts: List[str] = None
+) -> List[Dict[str, Any]]:
+    cursor = conn.cursor()
+    if accounts:
+        placeholders = ",".join("?" * len(accounts))
+        cursor.execute(f"""
+            SELECT t.* FROM transactions t
+            LEFT JOIN transaction_links tl ON t.id = tl.transaction_id
+            WHERE tl.id IS NULL
+              AND t.status = 'committed' AND t.amount < 0
+              AND t.account IN ({placeholders})
+            ORDER BY t.date_created
+        """, accounts)
+    else:
+        cursor.execute("""
+            SELECT t.* FROM transactions t
+            LEFT JOIN transaction_links tl ON t.id = tl.transaction_id
+            WHERE tl.id IS NULL
+              AND t.status = 'committed' AND t.amount < 0
+            ORDER BY t.date_created
+        """)
+    return [dict(row) for row in cursor.fetchall()]
+
+
+def find_similar_transactions(
+    conn: Connection, keywords: List[str], limit: int = 10
+) -> List[Dict[str, Any]]:
+    if not keywords:
+        return []
+    conditions = " AND ".join("description LIKE ?" for _ in keywords)
+    params = [f"%{kw}%" for kw in keywords]
+    params.append(limit)
+    cursor = conn.cursor()
+    cursor.execute(f"""
+        SELECT description, category, amount, account, date_created
+        FROM transactions
+        WHERE status = 'committed' AND amount < 0 AND {conditions}
+        ORDER BY date_created DESC
+        LIMIT ?
+    """, params)
+    return [dict(row) for row in cursor.fetchall()]
+
+
+def find_matching_forecast(
+    conn: Connection, account: str, amount: float, purchase_date: str,
+    tolerance: float = 0.01, date_window: int = 45,
+) -> Optional[Dict[str, Any]]:
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT t.*, s.name as sub_name
+        FROM transactions t
+        JOIN subscriptions s ON t.origin_id = s.id AND s.is_budget = 0
+        WHERE t.status = 'forecast'
+          AND t.account = ?
+          AND ABS(t.amount + ?) < ?
+          AND (ABS(JULIANDAY(t.date_created) - JULIANDAY(?)) < ?
+               OR ABS(JULIANDAY(t.date_payed) - JULIANDAY(?)) < ?)
+        ORDER BY ABS(JULIANDAY(t.date_created) - JULIANDAY(?))
+        LIMIT 1
+    """, (account, amount, tolerance, purchase_date, date_window,
+          purchase_date, date_window, purchase_date))
+    row = cursor.fetchone()
+    return dict(row) if row else None
+
+
+def find_matching_transaction(
+    conn: Connection, account: str, amount: float, purchase_date: str,
+    tolerance: float = 0.01, date_window: int = 1,
+) -> Optional[Dict[str, Any]]:
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT t.*
+        FROM transactions t
+        LEFT JOIN transaction_links tl ON t.id = tl.transaction_id
+        WHERE tl.id IS NULL
+          AND t.status = 'committed'
+          AND t.account = ?
+          AND ABS(t.amount + ?) < ?
+          AND ABS(JULIANDAY(t.date_created) - JULIANDAY(?)) <= ?
+        ORDER BY ABS(JULIANDAY(t.date_created) - JULIANDAY(?))
+        LIMIT 1
+    """, (account, amount, tolerance, purchase_date, date_window, purchase_date))
+    row = cursor.fetchone()
+    return dict(row) if row else None

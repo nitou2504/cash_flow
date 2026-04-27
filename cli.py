@@ -2096,6 +2096,32 @@ Statement Fix:
 
     # ==================== BOT ====================
 
+    liab_parser = subparsers.add_parser(
+        "liabilities",
+        aliases=["liab", "owe"],
+        help="Show what you owe per credit card, plus subs and budgets forecast",
+        description="""
+Per-card breakdown of liabilities and forecasts:
+  1. REAL OWED — per CC, grouped by payment cycle
+     (current statement = owed NOW; later cycles = forecast)
+  2. SUBS — recurring forecasts within horizon
+  3. BUDGETS — envelope reservations within horizon
+  4. GRAND SUMMARY — owed now vs total forecast
+
+Examples:
+  cli.py liabilities              # Default 6-month horizon, summary view
+  cli.py liab -m 3                # 3-month horizon
+  cli.py owe -d                   # Detail mode: list every transaction
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    liab_parser.add_argument("--months", "-m", type=int, default=6,
+                             help="Forecast horizon in months (default: 6)")
+    liab_parser.add_argument("--detail", "-d", action="store_true",
+                             help="List every transaction inside each cycle")
+    liab_parser.add_argument("--summary", "-s", action="store_true",
+                             help="Compact view: per card show only current + future-aggregated; hide per-sub/per-budget tables")
+
     bot_parser = subparsers.add_parser(
         "bot",
         help="Manage the Telegram bot Docker container",
@@ -2145,7 +2171,8 @@ Configuration via environment variables (or .env):
     args = parser.parse_args()
 
     # --- Auto-backup before mutating commands ---
-    read_only_commands = {"view", "v", "export", "exp", "x", "backup", "bk", "bot"}
+    read_only_commands = {"view", "v", "export", "exp", "x", "backup", "bk", "bot",
+                          "liabilities", "liab", "owe"}
     read_only_subcommands = {"list", "ls", "l"}
     is_read_only = args.command in read_only_commands
     if args.command in ["accounts", "acc", "a", "categories", "cat", "c", "subscriptions", "sub", "s"]:
@@ -2248,6 +2275,8 @@ Configuration via environment variables (or .env):
         handle_review(conn, args)
     elif args.command in ["fix", "f"]:
         handle_fix(conn, args)
+    elif args.command in ["liabilities", "liab", "owe"]:
+        interface.show_liabilities(conn, args.months, args.detail, args.summary)
 
     # Write backup log after handler (so _backup_context is available)
     if backup_path and not getattr(args, '_backup_skip', False):

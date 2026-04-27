@@ -1,6 +1,9 @@
 rich
 python-dateutil
 python-dotenv
-python-telegram-bot==21.0
+python-telegram-bot[job-queue]==21.0
 litellm>=1.0.0
 pyyaml>=6.0
+google-api-python-client>=2.0.0
+google-auth-httplib2>=0.2.0
+google-auth-oauthlib>=1.2.0

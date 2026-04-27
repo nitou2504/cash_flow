@@ -41,7 +41,7 @@ class TestCategoryDescriptionsInPrompt(unittest.TestCase):
             "description": "Supermaxi groceries",
             "amount": 25.0,
             "account": "Cash",
-            "category": "Home Groceries",
+            "category": "Home Food & Supplies",
         })
 
         from llm.parser import parse_transaction_string
@@ -51,7 +51,7 @@ class TestCategoryDescriptionsInPrompt(unittest.TestCase):
         system_prompt = mock_call_llm.call_args[1].get("system_prompt") or mock_call_llm.call_args[0][0]
 
         # Verify descriptions appear in parenthesized format
-        self.assertIn("Home Groceries (Food and household items for home)", system_prompt)
+        self.assertIn("Home Food & Supplies (Food and household items for home)", system_prompt)
         self.assertIn("Dining-Snacks (Eating out, takeout, coffee, and social food/drinks)", system_prompt)
         self.assertIn("Personal (Discretionary spending, entertainment, hobbies, self-care)", system_prompt)
         self.assertIn("Income (Money received from work or investments)", system_prompt)
@@ -104,7 +104,7 @@ class TestCategoryDescriptionsInPrompt(unittest.TestCase):
         # Look for the schema line that says "Must be one of {category_names}"
         self.assertIn("Must be one of [", system_prompt)
         self.assertIn("'Dining-Snacks'", system_prompt)
-        self.assertIn("'Home Groceries'", system_prompt)
+        self.assertIn("'Home Food & Supplies'", system_prompt)
 
     @patch("llm.parser._call_llm")
     def test_parsed_result_returns_correct_category(self, mock_call_llm):
@@ -114,7 +114,7 @@ class TestCategoryDescriptionsInPrompt(unittest.TestCase):
             "description": "Supermaxi - carnes",
             "amount": 9.99,
             "account": "Visa Pichincha",
-            "category": "Home Groceries",
+            "category": "Home Food & Supplies",
             "budget": "budget_food",
         })
 
@@ -124,7 +124,7 @@ class TestCategoryDescriptionsInPrompt(unittest.TestCase):
         )
 
         self.assertIsNotNone(result)
-        self.assertEqual(result["category"], "Home Groceries")
+        self.assertEqual(result["category"], "Home Food & Supplies")
         self.assertEqual(result["type"], "simple")
         self.assertEqual(result["amount"], 9.99)
 

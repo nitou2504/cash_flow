@@ -90,6 +90,25 @@ def create_tables(conn: Connection):
             timestamp DATE DEFAULT CURRENT_DATE
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS transaction_links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+            consumo_msg_id TEXT,
+            invoice_number TEXT,
+            link_source TEXT NOT NULL,
+            linked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(transaction_id)
+        )
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_links_consumo
+        ON transaction_links(consumo_msg_id)
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_links_invoice
+        ON transaction_links(invoice_number)
+    """)
     ensure_schema_upgrades(conn)
     conn.commit()
 
@@ -105,6 +124,23 @@ def ensure_schema_upgrades(conn: Connection):
             cursor.execute(sql)
         except sqlite3.OperationalError:
             pass  # column already exists
+
+    cleanup = [
+        "UPDATE subscriptions SET category = 'Home Food & Supplies' WHERE category = 'Home Groceries'",
+        "UPDATE subscriptions SET category = 'Personal Diet' WHERE category = 'Personal Groceries'",
+        "DELETE FROM categories WHERE name IN ('Housing', 'Transportation', 'Home Groceries', 'Personal Groceries')",
+        "UPDATE transactions SET category = 'Income' WHERE category = 'income'",
+        "UPDATE transactions SET category = 'Others' WHERE category = 'utilities'",
+        "UPDATE transactions SET category = 'Others' WHERE category = 'groceries'",
+        "UPDATE transactions SET category = 'Others' WHERE category = 'education'",
+        "DELETE FROM categories WHERE name IN ('Balance Adjustment', 'Payment Adjustment', 'Budget Release')",
+    ]
+    for sql in cleanup:
+        try:
+            cursor.execute(sql)
+        except sqlite3.OperationalError:
+            pass
+
     conn.commit()
 
 def insert_mock_data(conn: Connection):
@@ -127,17 +163,18 @@ def initialize_categories(conn: Connection):
     """
     cursor = conn.cursor()
     categories = [
-        ("Housing", "Rent, mortgage, utilities, and home maintenance"),
-        ("Home Groceries", "Food and household items for home"),
-        ("Personal Groceries", "Food for personal diet or specific needs"),
         ("Dining-Snacks", "Eating out, takeout, coffee, and social food/drinks"),
-        ("Transportation", "Costs for getting around"),
+        ("Family Support", "Financial support for family members"),
         ("Health", "Medical, insurance, and fitness expenses"),
-        ("Personal", "Discretionary spending, entertainment, hobbies, self-care"),
+        ("Home", "Rent, mortgage, utilities, and home maintenance"),
+        ("Home Food & Supplies", "Food and household items for home"),
         ("Income", "Money received from work or investments"),
-        ("Savings", "Funds for savings or investments"),
         ("Loans", "Money lent to others and repayments received"),
         ("Others", "Miscellaneous or infrequent expenses"),
+        ("Personal", "Discretionary spending, entertainment, hobbies, self-care"),
+        ("Personal Diet", "Food for personal diet or specific needs"),
+        ("Savings", "Funds for savings or investments"),
+        ("Sister Education", "Education expenses for sister"),
     ]
     cursor.executemany("INSERT OR IGNORE INTO categories VALUES (?, ?)", categories)
     conn.commit()

@@ -122,7 +122,7 @@ class TestRepositoryReviewFields(unittest.TestCase):
             "description": description,
             "account": "Cash",
             "amount": -25.00,
-            "category": "Home Groceries",
+            "category": "Home Food & Supplies",
             "budget": None,
             "status": "committed",
             "origin_id": None,
@@ -257,7 +257,7 @@ class TestTransactionsSourceNeedsReview(unittest.TestCase):
         tx = create_single_transaction(
             description="Supermaxi",
             amount=25.50,
-            category="Home Groceries",
+            category="Home Food & Supplies",
             budget=None,
             account=self.cash_account,
             transaction_date=date(2026, 3, 1),
@@ -313,8 +313,8 @@ class TestTransactionsSourceNeedsReview(unittest.TestCase):
 
     def test_create_split_transactions_with_source(self):
         splits = [
-            {"amount": 20, "category": "Home Groceries"},
-            {"amount": 10, "category": "Personal Groceries"},
+            {"amount": 20, "category": "Home Food & Supplies"},
+            {"amount": 10, "category": "Personal Diet"},
         ]
         txs = create_split_transactions(
             description="Mixed purchase",
@@ -331,7 +331,7 @@ class TestTransactionsSourceNeedsReview(unittest.TestCase):
 
     def test_create_split_transactions_defaults(self):
         splits = [
-            {"amount": 20, "category": "Home Groceries"},
+            {"amount": 20, "category": "Home Food & Supplies"},
         ]
         txs = create_split_transactions(
             description="Split",
@@ -361,7 +361,7 @@ class TestControllerSourceNeedsReview(unittest.TestCase):
             "description": "Supermaxi groceries",
             "amount": 25.50,
             "account": "Cash",
-            "category": "Home Groceries",
+            "category": "Home Food & Supplies",
             "source": "mom",
             "needs_review": True,
         }
@@ -409,8 +409,8 @@ class TestControllerSourceNeedsReview(unittest.TestCase):
             "description": "Mixed shopping",
             "account": "Cash",
             "splits": [
-                {"amount": 20, "category": "Home Groceries"},
-                {"amount": 10, "category": "Personal Groceries"},
+                {"amount": 20, "category": "Home Food & Supplies"},
+                {"amount": 10, "category": "Personal Diet"},
             ],
             "source": "mom",
             "needs_review": True,
@@ -426,7 +426,7 @@ class TestControllerSourceNeedsReview(unittest.TestCase):
         repository.add_subscription(self.conn, {
             "id": "budget_groceries_test",
             "name": "Test Groceries Budget",
-            "category": "Home Groceries",
+            "category": "Home Food & Supplies",
             "monthly_amount": 200,
             "payment_account_id": "Cash",
             "start_date": date(2026, 1, 1),
@@ -439,7 +439,7 @@ class TestControllerSourceNeedsReview(unittest.TestCase):
             "description": "Test Groceries Budget",
             "account": "Cash",
             "amount": -200,
-            "category": "Home Groceries",
+            "category": "Home Food & Supplies",
             "budget": "budget_groceries_test",
             "status": "committed",
             "origin_id": "budget_groceries_test",
@@ -451,7 +451,7 @@ class TestControllerSourceNeedsReview(unittest.TestCase):
             "description": "Supermaxi",
             "amount": 30,
             "account": "Cash",
-            "category": "Home Groceries",
+            "category": "Home Food & Supplies",
             "budget": "budget_groceries_test",
             "source": "mom",
             "needs_review": True,
@@ -470,7 +470,7 @@ class TestExtraUserConfig(unittest.TestCase):
     """Tests for TELEGRAM_EXTRA_USERS env var parsing."""
 
     def test_parse_extra_user_env_var(self):
-        env = {"TELEGRAM_EXTRA_USER_MOM": "987654321,Visa Pichincha,Home Groceries"}
+        env = {"TELEGRAM_EXTRA_USER_MOM": "987654321,Visa Pichincha,Home Food & Supplies"}
         with patch.dict(os.environ, env, clear=False):
             import importlib
             from cashflow import config
@@ -480,11 +480,11 @@ class TestExtraUserConfig(unittest.TestCase):
             info = config.TELEGRAM_EXTRA_USERS[987654321]
             self.assertEqual(info["name"], "mom")
             self.assertEqual(info["account"], "Visa Pichincha")
-            self.assertEqual(info["budget"], "Home Groceries")
+            self.assertEqual(info["budget"], "Home Food & Supplies")
 
     def test_parse_multiple_extra_users(self):
         env = {
-            "TELEGRAM_EXTRA_USER_MOM": "111,Visa Pichincha,Home Groceries",
+            "TELEGRAM_EXTRA_USER_MOM": "111,Visa Pichincha,Home Food & Supplies",
             "TELEGRAM_EXTRA_USER_DAD": "222,Cash,Personal",
         }
         with patch.dict(os.environ, env, clear=False):
@@ -559,7 +559,7 @@ class TestCLIReviewList(unittest.TestCase):
             "description": description,
             "account": "Cash",
             "amount": -25.00,
-            "category": "Home Groceries",
+            "category": "Home Food & Supplies",
             "budget": None,
             "status": "committed",
             "origin_id": None,
@@ -611,7 +611,7 @@ class TestCLIReviewRouter(unittest.TestCase):
             "description": description,
             "account": "Cash",
             "amount": -25.00,
-            "category": "Home Groceries",
+            "category": "Home Food & Supplies",
             "budget": None,
             "status": "committed",
             "origin_id": None,
@@ -680,7 +680,7 @@ class TestCLIReviewRouter(unittest.TestCase):
         args = argparse.Namespace(
             action=str(tx_id), sub_action=None,
             description=None, amount=None, date=None,
-            category="Personal Groceries", budget=None, status=None,
+            category="Personal Diet", budget=None, status=None,
             source=None, interactive=False,
             _backup_skip=False, _backup_context=None,
         )
@@ -688,7 +688,7 @@ class TestCLIReviewRouter(unittest.TestCase):
 
         tx = repository.get_transaction_by_id(self.conn, tx_id)
         self.assertEqual(tx["needs_review"], 0)
-        self.assertEqual(tx["category"], "Personal Groceries")
+        self.assertEqual(tx["category"], "Personal Diet")
 
     @patch('builtins.print')
     def test_review_edit_budget_and_amount(self, mock_print):
@@ -879,7 +879,7 @@ class TestCLICreateSourceNeedsReview(unittest.TestCase):
             description="Mom purchase",
             amount=15.0,
             account="Cash",
-            category="Home Groceries",
+            category="Home Food & Supplies",
             budget=None,
             date=None,
             installments=None,
@@ -935,7 +935,7 @@ class TestBotExtraUser(unittest.TestCase):
         update.effective_user.id = user_id
         return update
 
-    @patch('bot.TELEGRAM_EXTRA_USERS', {987654321: {"name": "mom", "account": "Visa Pichincha", "budget": "Home Groceries"}})
+    @patch('bot.TELEGRAM_EXTRA_USERS', {987654321: {"name": "mom", "account": "Visa Pichincha", "budget": "Home Food & Supplies"}})
     def test_get_extra_user_info_found(self):
         from bot import get_extra_user_info
         update = self._make_update(987654321)
@@ -943,28 +943,28 @@ class TestBotExtraUser(unittest.TestCase):
         self.assertIsNotNone(info)
         self.assertEqual(info["name"], "mom")
 
-    @patch('bot.TELEGRAM_EXTRA_USERS', {987654321: {"name": "mom", "account": "Visa Pichincha", "budget": "Home Groceries"}})
+    @patch('bot.TELEGRAM_EXTRA_USERS', {987654321: {"name": "mom", "account": "Visa Pichincha", "budget": "Home Food & Supplies"}})
     def test_get_extra_user_info_not_found(self):
         from bot import get_extra_user_info
         update = self._make_update(111111)
         info = get_extra_user_info(update)
         self.assertIsNone(info)
 
-    @patch('bot.TELEGRAM_EXTRA_USERS', {987654321: {"name": "mom", "account": "Visa Pichincha", "budget": "Home Groceries"}})
+    @patch('bot.TELEGRAM_EXTRA_USERS', {987654321: {"name": "mom", "account": "Visa Pichincha", "budget": "Home Food & Supplies"}})
     @patch('bot.TELEGRAM_ALLOWED_USERS', {123456})
     def test_is_authorized_allows_extra_user(self):
         from bot import is_authorized
         update = self._make_update(987654321)
         self.assertTrue(is_authorized(update))
 
-    @patch('bot.TELEGRAM_EXTRA_USERS', {987654321: {"name": "mom", "account": "Visa Pichincha", "budget": "Home Groceries"}})
+    @patch('bot.TELEGRAM_EXTRA_USERS', {987654321: {"name": "mom", "account": "Visa Pichincha", "budget": "Home Food & Supplies"}})
     @patch('bot.TELEGRAM_ALLOWED_USERS', {123456})
     def test_is_authorized_allows_owner(self):
         from bot import is_authorized
         update = self._make_update(123456)
         self.assertTrue(is_authorized(update))
 
-    @patch('bot.TELEGRAM_EXTRA_USERS', {987654321: {"name": "mom", "account": "Visa Pichincha", "budget": "Home Groceries"}})
+    @patch('bot.TELEGRAM_EXTRA_USERS', {987654321: {"name": "mom", "account": "Visa Pichincha", "budget": "Home Food & Supplies"}})
     @patch('bot.TELEGRAM_ALLOWED_USERS', {123456})
     def test_is_authorized_rejects_stranger(self):
         from bot import is_authorized
@@ -985,12 +985,12 @@ class TestBotExtraUserInjection(unittest.TestCase):
 
     def test_message_augmented_for_extra_user(self):
         """Extra user message should be appended with account and budget before LLM parsing."""
-        extra_user = {"name": "mom", "account": "Visa Pichincha", "budget": "Home Groceries"}
+        extra_user = {"name": "mom", "account": "Visa Pichincha", "budget": "Home Food & Supplies"}
         user_message = "supermaxi 25.50"
 
         llm_message = f"{user_message}, {extra_user['account']}, {extra_user['budget']} budget"
 
-        self.assertEqual(llm_message, "supermaxi 25.50, Visa Pichincha, Home Groceries budget")
+        self.assertEqual(llm_message, "supermaxi 25.50, Visa Pichincha, Home Food & Supplies budget")
 
     def test_owner_message_not_augmented(self):
         """Owner (non-extra-user) messages should pass through unmodified."""
@@ -1005,7 +1005,7 @@ class TestBotExtraUserInjection(unittest.TestCase):
 
     def test_source_and_review_tagged_after_parse(self):
         """After LLM parse, extra user transactions get source and needs_review tags."""
-        extra_user = {"name": "mom", "account": "Visa Pichincha", "budget": "Home Groceries"}
+        extra_user = {"name": "mom", "account": "Visa Pichincha", "budget": "Home Food & Supplies"}
 
         # Simulate a parsed request from LLM (LLM already resolved account/budget from message)
         request_json = {
@@ -1013,7 +1013,7 @@ class TestBotExtraUserInjection(unittest.TestCase):
             "description": "Supermaxi groceries",
             "amount": 25.50,
             "account": "Visa Pichincha",
-            "category": "Home Groceries",
+            "category": "Home Food & Supplies",
             "budget": "budget_home_groceries_feb_mar",
         }
 
@@ -1037,7 +1037,7 @@ class TestBotExtraUserInjection(unittest.TestCase):
                 "description": "Supermaxi groceries",
                 "amount": 30.0,
                 "account": "Visa Produbanco",
-                "category": "Home Groceries",
+                "category": "Home Food & Supplies",
                 "source": "mom",
                 "needs_review": True,
             }
@@ -1086,7 +1086,7 @@ class TestFullReviewWorkflow(unittest.TestCase):
             "description": "Supermaxi chicken",
             "amount": 8.50,
             "account": "Cash",
-            "category": "Home Groceries",
+            "category": "Home Food & Supplies",
             "source": "mom",
             "needs_review": True,
         }
@@ -1119,7 +1119,7 @@ class TestFullReviewWorkflow(unittest.TestCase):
             "description": "Personal items",
             "amount": 15.0,
             "account": "Cash",
-            "category": "Home Groceries",
+            "category": "Home Food & Supplies",
             "source": "mom",
             "needs_review": True,
         }
@@ -1133,12 +1133,12 @@ class TestFullReviewWorkflow(unittest.TestCase):
         # Edit: change category from Home to Personal
         controller.process_transaction_edit(
             self.conn, tx_id,
-            {"category": "Personal Groceries"}, None
+            {"category": "Personal Diet"}, None
         )
         repository.mark_reviewed(self.conn, tx_id)
 
         tx = repository.get_transaction_by_id(self.conn, tx_id)
-        self.assertEqual(tx["category"], "Personal Groceries")
+        self.assertEqual(tx["category"], "Personal Diet")
         self.assertEqual(tx["needs_review"], 0)
         self.assertEqual(tx["source"], "mom")
 
@@ -1150,7 +1150,7 @@ class TestFullReviewWorkflow(unittest.TestCase):
                 "description": f"{source} purchase",
                 "amount": 10.0,
                 "account": "Cash",
-                "category": "Home Groceries",
+                "category": "Home Food & Supplies",
                 "source": source,
                 "needs_review": True,
             }
