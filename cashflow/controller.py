@@ -6,6 +6,16 @@ from dateutil.relativedelta import relativedelta
 from cashflow import repository
 from cashflow import transactions
 
+SYSTEM_CATEGORIES = frozenset({"Balance Adjustment", "Payment Adjustment", "Budget Release"})
+
+
+def validate_category(conn: sqlite3.Connection, category: str):
+    if category is None or category in SYSTEM_CATEGORIES:
+        return
+    if not repository.category_exists(conn, category):
+        raise ValueError(f"Invalid category '{category}'. Run 'categories list' to see valid options.")
+
+
 def _recalculate_and_update_budget(conn: sqlite3.Connection, budget_id: str, month_date: date):
     """
     Recalculates a budget's live balance for a given month and updates it.
@@ -234,6 +244,7 @@ def process_subscription_request(conn: sqlite3.Connection, subscription_data: Di
     else:
         subscription_data["start_date"] = date.today()
 
+    validate_category(conn, subscription_data.get("category"))
     repository.add_subscription(conn, subscription_data)
     print(f"Successfully added subscription: {subscription_data['name']}")
 
@@ -248,6 +259,7 @@ def process_transaction_edit(conn: sqlite3.Connection, transaction_id: int, upda
     Orchestrates the editing of a transaction, deciding whether a simple update
     or a full date change (delete and re-create) is necessary.
     """
+    validate_category(conn, updates.get("category"))
     if new_date:
         # If the date is changing, we must use the robust process that
         # correctly recalculates budgets and payment dates across months.

@@ -241,8 +241,8 @@ You are an expert financial assistant. Your task is to parse a user's natural la
 3.  The `category` field is MANDATORY and MUST EXACTLY MATCH one of the following valid categories (descriptions in parentheses to help you choose): {category_info}. Do not invent new categories. Always select the most appropriate category from this list based on the description.
 4.  **Budget Selection:** The `budget` field must be the budget **ID** (not the name). Available budgets: {json.dumps(budget_info, indent=2)}
     - Match the user's words to the budget **name** field, then return that budget's **id**.
-    - Be precise: "Mercado" budget is different from "Home Groceries" budget. Only select "Mercado" if user explicitly says "mercado".
-    - If user says "Home Groceries budget", look for a budget with "Home Groceries" or "Groceries" in the name (not "Mercado").
+    - Be precise: "Mercado" budget is different from "Home Food & Supplies" budget. Only select "Mercado" if user explicitly says "mercado".
+    - If user says "Home Groceries budget", look for a budget with "Home Food & Supplies" or "Groceries" in the name (not "Mercado").
     - Prefer budgets whose active period includes the payment month.
     - If no exact match, select the closest match by name that is active in the payment month.
 5.  **Installment Logic:** The `installments` field (the number of payments to create) is **mandatory** for this type.
@@ -290,7 +290,7 @@ User: "Mercado groceries 20 cash last friday"
   "description": "Mercado groceries",
   "amount": 20,
   "account": "Cash",
-  "category": "Home Groceries",
+  "category": "Home Food & Supplies",
   "budget": "budget_mercado",
   "date_created": "2025-11-07"
 }}
@@ -322,8 +322,8 @@ User: "Grocery store amex produbanco 80 for groceries on the food budget and 15 
   "description": "Grocery Store",
   "account": "Amex Produbanco",
   "splits": [
-    {{ "amount": 80, "category": "Home Groceries", "budget": "budget_food" }},
-    {{ "amount": 15, "category": "Home Groceries", "budget": "budget_home" }}
+    {{ "amount": 80, "category": "Home Food & Supplies", "budget": "budget_food" }},
+    {{ "amount": 15, "category": "Home Food & Supplies", "budget": "budget_home" }}
   ]
 }}
 
@@ -389,6 +389,13 @@ def parse_subscription_string(conn: Connection, user_input: str, accounts: List[
     # Prepare the list of valid account names
     account_names = [acc['account_id'] for acc in accounts]
 
+    categories = repository.get_all_categories(conn)
+    category_names = [cat['name'] for cat in categories]
+    category_info = ", ".join(
+        f"{cat['name']} ({cat.get('description', '')})" if cat.get('description') else cat['name']
+        for cat in categories
+    )
+
     today = date.today()
     system_prompt = f"""
 You are an expert financial assistant. Your task is to parse a user's natural language input into a structured JSON object for creating a recurring subscription or budget.
@@ -411,7 +418,7 @@ You are an expert financial assistant. Your task is to parse a user's natural la
 **Schema:**
 - `id`: (string) A unique, readable ID you generate (e.g., "sub_spotify").
 - `name`: (string) The name of the subscription (e.g., "Spotify Premium").
-- `category`: (string) The category of the subscription.
+- `category`: (string, REQUIRED) MUST EXACTLY MATCH one of: {category_info}. Do not invent new categories.
 - `monthly_amount`: (float) The recurring monthly amount.
 - `payment_account_id`: (string) The account name. Must be one of {account_names}.
 - `start_date`: (string, optional) The start date in "YYYY-MM-DD" format.
@@ -439,7 +446,7 @@ User: "create a 400 food budget on my cash account starting next month"
 {{
   "id": "budget_food",
   "name": "Food Budget",
-  "category": "Home Groceries",
+  "category": "Home Food & Supplies",
   "monthly_amount": 400,
   "payment_account_id": "Cash",
   "start_date": "2025-12-01",
@@ -489,6 +496,11 @@ User: "Create a Christmas shopping budget of 500 for December only on my Visa Pr
         return None
 
     result['payment_account_id'] = resolve_account(result.get('payment_account_id', ''), accounts)
+
+    if 'category' in result and result['category'] not in category_names:
+        logger.warning(f"LLM returned invalid subscription category '{result['category']}', falling back to 'Others'")
+        result['category'] = 'Others'
+
     return result
 
 
