@@ -9,6 +9,7 @@ DB_PATH = "cash_flow.db"
 # Invoices (separate SQLite store — kept independent from cash_flow.db for now,
 # to be linked later when transaction↔invoice reconciliation is added).
 INVOICES_DB_PATH = os.getenv("INVOICES_DB_PATH", "invoices.db")
+CONSUMOS_DB_PATH = os.getenv("CONSUMOS_DB_PATH", "consumos.db")
 
 # Backup
 BACKUP_ENABLED = os.getenv("BACKUP_ENABLED", "true").lower() in ("true", "1", "yes")
