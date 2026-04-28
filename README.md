@@ -184,15 +184,16 @@ Track expenses on-the-go with the companion [Telegram bot](#telegram-bot). Send 
 3. [LLM Configuration](#llm-configuration)
 4. [Telegram Bot](#telegram-bot)
 5. [Gmail Invoice Ingest](#gmail-invoice-ingest)
-6. [Core Concepts](#core-concepts)
-7. [CLI Command Reference](#cli-command-reference)
-8. [Common Workflows](#common-workflows)
-9. [Advanced Features](#advanced-features)
-10. [Understanding Transaction Statuses](#understanding-transaction-statuses)
-11. [Understanding Credit Card Cycles](#understanding-credit-card-cycles)
-12. [Troubleshooting & FAQ](#troubleshooting--faq)
-13. [Technical Details](#technical-details)
-14. [Command Quick Reference](#command-quick-reference)
+6. [Gmail Consumo Sync](#gmail-consumo-sync)
+7. [Core Concepts](#core-concepts)
+8. [CLI Command Reference](#cli-command-reference)
+9. [Common Workflows](#common-workflows)
+10. [Advanced Features](#advanced-features)
+11. [Understanding Transaction Statuses](#understanding-transaction-statuses)
+12. [Understanding Credit Card Cycles](#understanding-credit-card-cycles)
+13. [Troubleshooting & FAQ](#troubleshooting--faq)
+14. [Technical Details](#technical-details)
+15. [Command Quick Reference](#command-quick-reference)
 
 ---
 
@@ -223,7 +224,7 @@ Track expenses on-the-go with the companion [Telegram bot](#telegram-bot). Send 
    python3 cli.py accounts add -i
    ```
 
-   The database ships with 11 default categories (Housing, Home Groceries, Personal Groceries, Dining-Snacks, Transportation, Health, Personal, Income, Savings, Loans, Others). You can add custom ones with `python3 cli.py categories add -i`.
+   The database ships with 12 default categories (Dining-Snacks, Family Support, Health, Home, Home Food & Supplies, Income, Loans, Others, Personal, Personal Diet, Savings, Sister Education). You can add custom ones with `python3 cli.py categories add -i`.
 
 4. **Add your first transaction**
 
@@ -661,6 +662,65 @@ Drop this in crontab for hourly sync:
 ```
 0 * * * * cd /path/to/cash_flow && /usr/bin/python3 -m gmail_sync.ingest_invoices --since-last >> /var/log/invoices_ingest.log 2>&1
 ```
+
+---
+
+## Gmail Consumo Sync
+
+Credit card purchase notification emails (consumos) can be automatically ingested and registered as transactions. The pipeline reads from Gmail labels, parses bank-specific email formats, and uses a combination of deterministic rules and LLM classification to create transactions.
+
+### Pipeline Overview
+
+1. **Ingest** — `ingest_consumos.py` reads emails from `Consumos/*` Gmail labels, parses them with bank-specific parsers, and stores raw consumo records in `consumos.db`
+2. **Register** — `register_consumos.py` converts unregistered consumos into `cash_flow.db` transactions using merchant rules (`register_rules.yaml`), classification hints (`classification_hints.yaml`), and LLM fallback (gemma4:e2b via Ollama)
+3. **Link** — existing transactions and subscriptions are matched to consumos to avoid duplicates
+
+### Supported Banks
+
+| Gmail Label | Bank | What's Parsed |
+|-------------|------|--------------|
+| `Consumos/Pichincha` | Pichincha | CC purchase notifications |
+| `Consumos/Diners` | Diners | CC purchase notifications |
+| `Consumos/Produbanco` | Produbanco | CC purchase notifications |
+| `Consumos/Cash` | Pichincha | Bank transfer notifications |
+
+### Usage
+
+```bash
+# Ingest emails into consumos.db
+python3 -m gmail_sync.ingest_consumos --since-last
+python3 -m gmail_sync.ingest_consumos --after 2025-01-01  # bulk
+
+# Register consumos as transactions in cash_flow.db
+python3 -m gmail_sync.register_consumos --after 2025-01-01 --dry-run  # preview
+python3 -m gmail_sync.register_consumos --after 2025-01-01            # register
+python3 -m gmail_sync.register_consumos --after 2025-01-01 --no-llm   # rules only
+
+# Review auto-registered transactions
+python3 cli.py review ls --source gmail
+```
+
+All auto-registered transactions are flagged with `source="gmail"` and `needs_review=1`.
+
+### Classification Pipeline
+
+Registration follows a priority chain:
+
+1. **Merchant rules** (`register_rules.yaml`) — substring match on merchant name (e.g., UBER → Family Support). Skips LLM entirely.
+2. **Transfer rules** — match by destination account for cash transfers.
+3. **Invoice enrichment** — if a matching SRI invoice exists in `invoices.db`, line items are used for item-based classification overrides.
+4. **LLM fallback** — gemma4:e2b classifies unmatched merchants using category hints from `classification_hints.yaml`.
+
+Budget assignment uses `category_budget_map` from `classification_hints.yaml`, resolved to the active budget period based on payment month.
+
+### Configuration
+
+- **`register_rules.yaml`** — merchant rules, transfer rules, item overrides. Edit to add new merchant → category mappings without code changes.
+- **`classification_hints.yaml`** — shared between `register_consumos.py` and `llm/parser.py`. Contains category classification hints (general + user-specific) and category → budget prefix mapping.
+
+### Scheduled Sync
+
+The Telegram bot includes a scheduled sync job (`gmail_sync/scheduled.py`) that runs at midnight and midday, ingesting new consumos and registering them automatically.
 
 ---
 
@@ -2251,13 +2311,19 @@ cash_flow/
 │   ├── invoice.py              #   SRI XML parser (factura + notaCredito, 3 wrappings)
 │   ├── parsers.py              #   Bank consumo email parsers (Pichincha/Diners/Produbanco/Cash)
 │   ├── ingest_consumos.py      #   CLI: sync Consumos/* labels → consumos.db
-│   └── ingest_invoices.py      #   CLI: sync Facturas label → invoices.db
+│   ├── ingest_invoices.py      #   CLI: sync Facturas label → invoices.db
+│   ├── register_consumos.py    #   Auto-register consumos as transactions (rules + LLM)
+│   ├── link_consumos.py        #   Retroactive linking: existing txns ↔ consumos
+│   ├── scheduled.py            #   Scheduled Gmail sync via PTB JobQueue
+│   └── verify.py               #   Setup helper: test auth + list Gmail labels
 ├── ui/                         # Presentation layer
 │   ├── cli_display.py          #   Rich terminal tables and CSV export
 │   └── telegram_format.py      #   Telegram Markdown formatting and navigation
 ├── tests/                      # Unit tests (550+ tests, in-memory SQLite)
 ├── specs/                      # Feature specifications
 ├── llm_config.yaml.example     # LLM routing configuration template
+├── classification_hints.yaml   # Shared classification rules (categories, flags, budget map)
+├── register_rules.yaml         # Gmail auto-registration rules (merchants, transfers)
 ├── Dockerfile.bot              # Docker image for the Telegram bot
 ├── docker-compose.bot.yml      # Docker Compose for bot deployment
 └── requirements.txt
@@ -2481,8 +2547,9 @@ The project uses **Test-Driven Development (TDD)**:
 **Running tests**:
 
 ```bash
-python3 -m unittest discover -s tests      # Run all tests
-python3 -m unittest tests.test_budgets     # Run a specific test module
+pytest tests/                           # Run all tests
+pytest tests/test_budgets.py            # Run a specific test module
+pytest tests/test_budgets.py -k "test_capping"  # Run matching tests
 ```
 
 Tests use in-memory databases (`:memory:`) for speed and isolation. Use `create_test_db()` from `cashflow.database` for test setup — it initializes all tables, mock data, categories, and settings in one call:
@@ -2503,16 +2570,15 @@ class TestMyFeature(unittest.TestCase):
 | Type | Values |
 |------|--------|
 | **Accounts** | `Cash` (cash), `Visa Produbanco` (credit_card, cut-off=14, payment=25), `Amex Produbanco` (credit_card, cut-off=2, payment=15) |
-| **Categories** | Housing, Home Groceries, Personal Groceries, Dining-Snacks, Transportation, Health, Personal, Income, Savings, Loans, Others |
+| **Categories** | Dining-Snacks, Family Support, Health, Home, Home Food & Supplies, Income, Loans, Others, Personal, Personal Diet, Savings, Sister Education |
 | **Settings** | `forecast_horizon_months` = 6 |
 
-When writing tests, use only the categories listed above — the app validates categories against the database. For budgets, use the category that best fits your test scenario (e.g. `"Others"` for generic tests, `"Home Groceries"` for food-related tests).
+When writing tests, use only the categories listed above — the app validates categories against the database. For budgets, use the category that best fits your test scenario (e.g. `"Others"` for generic tests, `"Home Food & Supplies"` for food-related tests).
 
 ---
 
 ### Future Vision
 
-- Email/SMS integration - Recording transactions automatically from purchase notifications.
 - Financial advice ("You're on track to overspend on entertainment by $50 this month")
 - Receipt/statement OCR via multimodal models
 
