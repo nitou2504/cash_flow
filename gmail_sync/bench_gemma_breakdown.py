@@ -255,7 +255,10 @@ def _call(model: str, system: str, user: str, think: bool) -> tuple[float, str, 
 
 def _load_hints() -> list[str]:
     """Load hints from classification_hints.yaml, fallback to hardcoded."""
-    hints_path = Path(__file__).resolve().parent.parent / "classification_hints.yaml"
+    base = Path(__file__).resolve().parent.parent
+    hints_path = base / "classification_hints.yaml"
+    if not hints_path.exists():
+        hints_path = base / "classification_hints.yaml.example"
     if hints_path.exists():
         import yaml
         with open(hints_path) as f:

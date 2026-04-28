@@ -1,0 +1,43 @@
+# Shared classification rules for LLM prompts.
+# Used by: llm/parser.py (transaction parsing) and gmail_sync/register_consumos.py (auto-registration)
+# Edit these to customize category/flag classification without code changes.
+
+# General category hints: injected into LLM prompts as natural language rules.
+# These are portable across users — no user-specific merchants or people.
+category_hints:
+  # Food classification
+  - "Proteins/diet items (pechugas, muslos, atún, carne, lomo, beyond meat) → Personal Diet"
+  - "Mixed household groceries (leche, queso, huevos, pan, arroz, limpieza) → Home Food & Supplies"
+  - "Cooking ingredients bought alongside proteins (aceite, sal, condimentos) → Personal Diet"
+  - "Cleaning/hygiene items (cloro, esponja, pasta dental, desodorante, jabón, papel higiénico) → Home Food & Supplies"
+  - "If a purchase mixes proteins AND household items, classify by which has higher dollar total"
+  # Health & Dining
+  - "Pharmacy/medicine → Health"
+  - "Fast food / restaurants / delivery → Dining-Snacks"
+  # Personal & Education
+  - "Clothing, shoes, electronics, entertainment, subscriptions → Personal"
+  - "Gym supplements, protein powder, diet-specific food → Personal Diet"
+  - "School tuition, education fees → Sister Education"
+  - "Laptop, TV, appliances (unless specified otherwise) → Personal"
+  # Income detection
+  - "'paid me', 'paid me back', 'refund', 'reimbursement' → Income (set is_income: true)"
+  - "Salary, freelance income → Income (set is_income: true)"
+  # Loans
+  - "'lent to', 'loan to', 'borrowed from' → Loans"
+  # Planning flag
+  - "'what if', 'planning', 'tentative', 'hypothetical' → set is_planning: true"
+
+# User-specific hints: merchants/people unique to this user's spending patterns.
+# Other users should replace these with their own.
+user_hints:
+  - "Uber rides for family members → Family Support"
+  - "Transfers to father → Home Food & Supplies"
+  - "Pollo Pintado / food bought for family → Family Support"
+  - "Titan is a supermarket (Home Food & Supplies), not a gas station"
+
+# Budget auto-assignment: maps category → subscription ID prefix.
+# Resolved at runtime by finding the active budget for the payment month.
+category_budget_map:
+  "Personal Diet": "budget_personal_diet"
+  "Home Food & Supplies": "budget_home_food_supplies"
+  "Home": "budget_home_mortgage"

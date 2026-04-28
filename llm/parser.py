@@ -79,7 +79,10 @@ def _load_classification_hints() -> dict:
     global _classification_hints_cache
     if _classification_hints_cache is not None:
         return _classification_hints_cache
-    hints_path = Path(__file__).resolve().parent.parent / "classification_hints.yaml"
+    base = Path(__file__).resolve().parent.parent
+    hints_path = base / "classification_hints.yaml"
+    if not hints_path.exists():
+        hints_path = base / "classification_hints.yaml.example"
     if hints_path.exists():
         with open(hints_path) as f:
             _classification_hints_cache = yaml.safe_load(f) or {}

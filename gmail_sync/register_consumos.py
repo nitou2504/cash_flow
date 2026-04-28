@@ -38,15 +38,20 @@ from cashflow.repository import (
 )
 from cashflow.transactions import create_single_transaction
 
-RULES_PATH = Path(__file__).resolve().parent.parent / "register_rules.yaml"
-CLASSIFICATION_HINTS_PATH = Path(__file__).resolve().parent.parent / "classification_hints.yaml"
+_BASE_DIR = Path(__file__).resolve().parent.parent
+RULES_PATH = _BASE_DIR / "register_rules.yaml"
+RULES_EXAMPLE_PATH = _BASE_DIR / "register_rules.yaml.example"
+CLASSIFICATION_HINTS_PATH = _BASE_DIR / "classification_hints.yaml"
+CLASSIFICATION_HINTS_EXAMPLE_PATH = _BASE_DIR / "classification_hints.yaml.example"
 
 
 def load_rules(path: Path = RULES_PATH) -> dict:
-    with open(path) as f:
+    rules_file = path if path.exists() else RULES_EXAMPLE_PATH
+    with open(rules_file) as f:
         rules = yaml.safe_load(f)
-    if CLASSIFICATION_HINTS_PATH.exists():
-        with open(CLASSIFICATION_HINTS_PATH) as f:
+    hints_file = CLASSIFICATION_HINTS_PATH if CLASSIFICATION_HINTS_PATH.exists() else CLASSIFICATION_HINTS_EXAMPLE_PATH
+    if hints_file.exists():
+        with open(hints_file) as f:
             shared = yaml.safe_load(f) or {}
         hints = rules.get("category_hints", [])
         hints.extend(shared.get("category_hints", []))

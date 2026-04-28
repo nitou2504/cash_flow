@@ -5,6 +5,8 @@ __pycache__/
 *.csv*
 *.bk*
 llm_config.yaml
+register_rules.yaml
+classification_hints.yaml
 extra/
 backups/
 credentials.json

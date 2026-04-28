@@ -1,0 +1,67 @@
+# Rules for auto-registering consumos as transactions.
+# Edit this file to add/change/remove rules — no code changes needed.
+
+# LLM model for grocery/ambiguous merchants (only called when rules don't match)
+llm_model: "gemma4:e2b"
+
+# Merchant rules: substring match (case-insensitive) on merchant name.
+# If matched, LLM is skipped entirely.
+# desc is optional — if omitted, raw merchant name from email is used.
+merchant_rules:
+  UBER:
+    category: "Family Support"
+    desc: "Uber for mom"
+  GOOGLE:
+    category: "Personal"
+  SPOTIFY:
+    category: "Personal"
+    desc: "Spotify subscription"
+  MOVISTAR:
+    category: "Personal"
+    desc: "Movistar combo"
+  KFC:
+    category: "Dining-Snacks"
+  PAPA JOHNS:
+    category: "Dining-Snacks"
+  PROMART:
+    category: "Home"
+  PEDIDOSYA:
+    category: "Dining-Snacks"
+  FYBECA:
+    category: "Health"
+  SANA SANA:
+    category: "Health"
+  DIFARE:
+    category: "Health"
+  METRORED:
+    category: "Health"
+  MEDICITY:
+    category: "Health"
+
+# Cash transfer rules: match by destination_account last 4 digits.
+# {concepto} is replaced with the transfer's concepto field.
+transfer_rules:
+  "6634":
+    category: "Home Food & Supplies"
+    desc_template: "Transfer to father (6634) - {concepto}"
+  "2210":
+    category: "Personal"
+    desc_template: "Transfer to Ana (2210) - {concepto}"
+
+# Category hints and budget map are in classification_hints.yaml (shared with llm/parser.py).
+# They are auto-merged by load_rules() at runtime.
+
+# Item-based overrides: when invoice items are available, classify by dollar-weighted
+# keyword matching. Each rule has keywords and a category. For each invoice line,
+# the first matching rule wins. The category with the highest dollar total wins.
+# This OVERRIDES the LLM's category when invoice items exist.
+item_overrides:
+  - keywords: ["pechuga", "muslo", "lomo", "carne", "atun", "beyond meat", "pollo", "res", "cerdo", "salmon", "tilapia", "chuleta"]
+    category: "Personal Diet"
+  - keywords: ["aceite oliva", "sal de mesa", "pimienta", "condimento", "oregano", "comino"]
+    category: "Personal Diet"
+  - keywords: ["leche", "queso", "huevo", "pan", "arroz", "azucar", "harina", "mantequilla", "yogurt", "cereal", "avena", "cafe", "te "]
+    category: "Home Food & Supplies"
+  - keywords: ["cloro", "esponja", "detergente", "jabon", "desodorante", "pasta dental", "papel higienico", "shampoo", "toalla"]
+    category: "Home Food & Supplies"
+
