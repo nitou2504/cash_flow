@@ -13,7 +13,7 @@ from telegram.ext import (
     filters,
 )
 
-from cashflow.database import create_connection, initialize_database
+from cashflow.database import create_connection, initialize_database, migrate_external_dbs
 from cashflow import repository
 from llm import parser as llm_parser
 from cashflow import controller
@@ -1029,6 +1029,11 @@ def main():
 
     # Initialize database
     initialize_database(DB_PATH)
+    import os
+    if os.path.exists("invoices.db") or os.path.exists("consumos.db"):
+        stats = migrate_external_dbs(DB_PATH)
+        if any(stats.values()):
+            logger.info(f"Migrated external DBs: {stats}")
     db_conn = create_connection(DB_PATH)
 
     # Run monthly rollover (sync state)

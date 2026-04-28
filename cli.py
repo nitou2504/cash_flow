@@ -18,7 +18,7 @@ from dateutil.relativedelta import relativedelta
 
 from dotenv import load_dotenv
 
-from cashflow.database import create_connection, initialize_database
+from cashflow.database import create_connection, initialize_database, migrate_external_dbs
 from cashflow import repository
 from cashflow import backup as db_backup
 from cashflow.config import (
@@ -1447,6 +1447,11 @@ def main():
     # --- Database Setup ---
     db_path = "cash_flow.db"
     initialize_database(db_path)
+    import os
+    if os.path.exists("invoices.db") or os.path.exists("consumos.db"):
+        stats = migrate_external_dbs(db_path)
+        if any(stats.values()):
+            print(f"Migrated external DBs: {stats}")
     conn = create_connection(db_path)
 
     # Per technical spec, always run rollover on startup to sync state.
