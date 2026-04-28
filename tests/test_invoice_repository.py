@@ -1,4 +1,4 @@
-"""Tests for cashflow.invoice_repository (invoices.db store)."""
+"""Tests for cashflow.invoice_repository (cash_flow.db store)."""
 import unittest
 from datetime import date
 

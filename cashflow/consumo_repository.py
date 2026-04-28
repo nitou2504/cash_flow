@@ -1,4 +1,4 @@
-"""Consumo repository: CRUD helpers for consumos.db.
+"""Consumo repository: CRUD helpers for consumos in cash_flow.db.
 
 Idempotent upsert keyed on msg_id (one Gmail message = one consumo).
 """

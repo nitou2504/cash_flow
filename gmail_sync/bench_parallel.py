@@ -64,15 +64,13 @@ def _call_llm(model: str, prompt: str) -> tuple[float, str]:
 
 
 def _get_test_prompts(n: int) -> list[str]:
-    """Get N different prompts from consumos DB, or generate synthetic ones."""
+    """Get N different prompts from cash_flow.db, or generate synthetic ones."""
     prompts = []
     try:
-        co = sqlite3.connect("consumos.db")
-        co.row_factory = sqlite3.Row
-        inv = sqlite3.connect("invoices.db")
-        inv.row_factory = sqlite3.Row
+        db = sqlite3.connect("cash_flow.db")
+        db.row_factory = sqlite3.Row
 
-        rows = co.execute("""
+        rows = db.execute("""
             SELECT merchant, amount, account, purchased_at, matched_invoice_number
             FROM consumos WHERE registered_txn_id IS NOT NULL
             ORDER BY RANDOM() LIMIT ?
@@ -81,14 +79,14 @@ def _get_test_prompts(n: int) -> list[str]:
         for r in rows:
             items = []
             if r["matched_invoice_number"]:
-                inv_row = inv.execute(
+                inv_row = db.execute(
                     "SELECT id FROM invoices WHERE invoice_number = ?",
                     (r["matched_invoice_number"],),
                 ).fetchone()
                 if inv_row:
                     items = [
                         {"desc": l["description"], "total": l["line_total"]}
-                        for l in inv.execute(
+                        for l in db.execute(
                             "SELECT description, line_total FROM invoice_lines WHERE invoice_id = ? LIMIT 15",
                             (inv_row["id"],),
                         ).fetchall()
@@ -97,8 +95,7 @@ def _get_test_prompts(n: int) -> list[str]:
                 r["merchant"], r["amount"], r["account"],
                 r["purchased_at"][:10], items,
             ))
-        co.close()
-        inv.close()
+        db.close()
     except Exception:
         pass
 

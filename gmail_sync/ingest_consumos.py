@@ -1,4 +1,4 @@
-"""Periodic Gmail ingest — pulls Consumos/* labels into consumos.db.
+"""Periodic Gmail ingest — pulls Consumos/* labels into cash_flow.db.
 
 Usage:
     # First-time bulk import
@@ -155,7 +155,7 @@ def _print_unparsed(conn, reason_filter: Optional[str]) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description="Ingest consumo emails from Gmail into consumos.db"
+        description="Ingest consumo emails from Gmail into cash_flow.db"
     )
     ap.add_argument("--after", help="YYYY-MM-DD (default: 2025-01-01 or --since-last)")
     ap.add_argument("--before", help="YYYY-MM-DD (Gmail 'before' is exclusive)")

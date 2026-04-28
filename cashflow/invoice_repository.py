@@ -1,4 +1,4 @@
-"""Invoice repository: CRUD helpers for the separate invoices.db store.
+"""Invoice repository: CRUD helpers for invoices in cash_flow.db.
 
 Idempotent upsert keyed on `invoice_number` (SRI estab-ptoEmi-secuencial is
 unique system-wide). Re-ingesting the same XML replaces its lines + taxes.

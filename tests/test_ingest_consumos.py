@@ -1,4 +1,4 @@
-"""Tests for gmail_sync.ingest_consumos — the Gmail → consumos.db ingest loop."""
+"""Tests for gmail_sync.ingest_consumos — the Gmail → cash_flow.db ingest loop."""
 import unittest
 from datetime import datetime
 from unittest.mock import MagicMock, patch

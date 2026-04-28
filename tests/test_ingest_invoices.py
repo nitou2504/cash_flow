@@ -1,4 +1,4 @@
-"""Tests for gmail_sync.ingest_invoices — the Gmail → invoices.db ingest loop.
+"""Tests for gmail_sync.ingest_invoices — the Gmail → cash_flow.db ingest loop.
 
 Uses a fake GmailClient that yields in-memory messages; no network calls.
 """
