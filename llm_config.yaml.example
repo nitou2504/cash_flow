@@ -30,7 +30,7 @@ providers:
     base_url: "http://localhost:11434"  # Ollama API endpoint
     models:
       - "llama3.2:3b"        # Recommended: best accuracy/speed for extraction (96% benchmark)
-      - "alibayram/smollm3"  # Good fallback (88% benchmark)
+      - "alibayram/smollm3"  # 88% benchmark
       - "gemma3:4b"          # Alternative (92% benchmark, needs response cleaning)
 
 # ============================================================================
@@ -65,16 +65,6 @@ function_models:
     provider: "gemini"
     model: "gemini-2.5-flash"
     reason: "Rarely called - not worth prompt optimization for local model"
-
-# ============================================================================
-# FALLBACK CHAIN (Optional)
-# ============================================================================
-# If primary model fails, try these in order
-# Useful for high availability scenarios
-
-fallback_chain:
-  - provider: "gemini"
-    model: "gemini-2.5-flash"
 
 # ============================================================================
 # GLOBAL SETTINGS

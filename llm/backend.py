@@ -1,6 +1,6 @@
 """
 Unified LLM backend supporting multiple providers via LiteLLM.
-Provides configuration-based model selection and automatic fallbacks.
+Provides configuration-based model selection with per-function routing.
 """
 import os
 import yaml
@@ -22,7 +22,6 @@ class LLMBackend:
     - Multi-provider support (Gemini, Ollama, OpenAI, etc.)
     - Configuration-based model selection
     - Per-function model routing
-    - Automatic fallback chains
     - Retry logic with exponential backoff
     """
 
@@ -245,15 +244,8 @@ class LLMBackend:
                     model_str, kwargs = self._build_model_call_params(provider, model, provider_config)
                     logger.warning(f"Rate limited, trying key #{self._key_index[provider] + 1}")
                     continue
-                # All keys exhausted, try fallback chain
-                if "fallback_chain" in self.config:
-                    logger.warning(f"All keys for {provider}/{model} exhausted: {e}")
-                    return self._try_fallback_chain(messages, temperature, str(e))
                 raise
-            except Exception as e:
-                if "fallback_chain" in self.config:
-                    logger.warning(f"Primary model {provider}/{model} failed: {e}")
-                    return self._try_fallback_chain(messages, temperature, str(e))
+            except Exception:
                 raise
 
     def _get_model_for_function(self, function_name: Optional[str]) -> Tuple[str, str]:
@@ -395,48 +387,3 @@ class LLMBackend:
         # All retries exhausted
         raise last_exception if last_exception else Exception("LLM call failed")
 
-    def _try_fallback_chain(
-        self,
-        messages: list,
-        temperature: Optional[float],
-        original_error: str
-    ) -> str:
-        """
-        Try fallback providers in order.
-
-        Args:
-            messages: Message list
-            temperature: Temperature parameter
-            original_error: Error message from primary provider
-
-        Returns:
-            str: Response text
-
-        Raises:
-            Exception: If all fallbacks fail
-        """
-        fallback_chain = self.config.get("fallback_chain", [])
-
-        for fallback in fallback_chain:
-            provider = fallback["provider"]
-            model = fallback["model"]
-
-            logger.warning(f"Trying fallback: {provider}/{model}")
-
-            try:
-                provider_config = self.config["providers"].get(provider, {})
-                model_str, kwargs = self._build_model_call_params(provider, model, provider_config)
-
-                return self._call_with_retry(
-                    model_str,
-                    messages,
-                    temperature or self.config.get("temperature", 0.0),
-                    kwargs
-                )
-
-            except Exception as e:
-                logger.warning(f"Fallback {provider}/{model} failed: {e}")
-                continue
-
-        # All fallbacks failed
-        raise Exception(f"All providers failed. Original error: {original_error}")
