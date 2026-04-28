@@ -3,7 +3,6 @@ import unittest
 from datetime import datetime
 from unittest.mock import patch
 
-from cashflow.consumo_database import create_test_consumos_db
 from cashflow.consumo_repository import upsert_consumo, find_unregistered, mark_registered
 from cashflow.database import create_test_db
 from cashflow.repository import (
@@ -116,7 +115,7 @@ class TestPrepareOne(unittest.TestCase):
     def test_uber_rule(self):
         consumo = {"merchant": "DLOCAL*UBER RIDES\\Mr", "amount": 1.50,
                     "account": "Diners", "purchased_at": "2026-04-20"}
-        result = prepare_one(consumo, self.cf_conn, None, use_llm=False, rules=TEST_RULES)
+        result = prepare_one(consumo, self.cf_conn, use_llm=False, rules=TEST_RULES)
         assert result["method"] == "merchant_rule"
         assert result["category"] == "Family Support"
 
@@ -124,21 +123,21 @@ class TestPrepareOne(unittest.TestCase):
         consumo = {"merchant": "Mercado", "amount": 20.0, "account": "Cash",
                     "destination_account": "6634", "concepto": "Mercado",
                     "purchased_at": "2026-04-20"}
-        result = prepare_one(consumo, self.cf_conn, None, use_llm=False, rules=TEST_RULES)
+        result = prepare_one(consumo, self.cf_conn, use_llm=False, rules=TEST_RULES)
         assert result["method"] == "transfer_rule"
         assert "6634" in result["description"]
 
     def test_fuzzy_match(self):
         consumo = {"merchant": "CORAL CARAPUNGO", "amount": 25.0,
                     "account": "Visa Pichincha", "purchased_at": "2026-04-20"}
-        result = prepare_one(consumo, self.cf_conn, None, use_llm=False, rules=TEST_RULES)
+        result = prepare_one(consumo, self.cf_conn, use_llm=False, rules=TEST_RULES)
         assert result["method"] == "fuzzy_match"
         assert result["category"] == "Home Food & Supplies"
 
     def test_fallback(self):
         consumo = {"merchant": "UNKNOWN STORE XYZ", "amount": 10.0,
                     "account": "Cash", "purchased_at": "2026-04-20"}
-        result = prepare_one(consumo, self.cf_conn, None, use_llm=False, rules=TEST_RULES)
+        result = prepare_one(consumo, self.cf_conn, use_llm=False, rules=TEST_RULES)
         assert result["method"] == "fallback"
         assert result["category"] == "Others"
 
@@ -155,7 +154,6 @@ def _make_txn(msg_id, merchant, amount, account="Visa Pichincha", label="Consumo
 class TestRegisterFlow(unittest.TestCase):
     def setUp(self):
         self.cf_conn = create_test_db()
-        self.consumos_conn = create_test_consumos_db()
         # Add accounts that match consumo accounts
         self.cf_conn.execute(
             "INSERT OR IGNORE INTO accounts VALUES (?, ?, ?, ?)",
@@ -168,9 +166,9 @@ class TestRegisterFlow(unittest.TestCase):
         self.cf_conn.commit()
 
     def test_register_creates_reviewable_transaction(self):
-        upsert_consumo(self.consumos_conn, _make_txn("m1", "CORAL CARAPUNGO", 25.0), "Consumos/Pichincha")
+        upsert_consumo(self.cf_conn, _make_txn("m1", "CORAL CARAPUNGO", 25.0), "Consumos/Pichincha")
         stats = register_consumos(
-            self.cf_conn, self.consumos_conn, None,
+            self.cf_conn,
             use_llm=False, rules=TEST_RULES,
         )
         assert stats["registered"] == 1
@@ -180,18 +178,18 @@ class TestRegisterFlow(unittest.TestCase):
         assert review[0]["source"] == "gmail"
 
     def test_register_links_consumo(self):
-        upsert_consumo(self.consumos_conn, _make_txn("m1", "CORAL CARAPUNGO", 25.0), "Consumos/Pichincha")
-        register_consumos(self.cf_conn, self.consumos_conn, None, use_llm=False)
+        upsert_consumo(self.cf_conn, _make_txn("m1", "CORAL CARAPUNGO", 25.0), "Consumos/Pichincha")
+        register_consumos(self.cf_conn, use_llm=False)
         review = get_transactions_needing_review(self.cf_conn, source="gmail")
         link = get_transaction_link(self.cf_conn, review[0]["id"])
         assert link is not None
-        assert link["consumo_msg_id"] == "m1"
+        assert link["msg_id"] == "m1"
         assert link["link_source"] == "auto_register"
 
     def test_register_marks_consumo_registered(self):
-        upsert_consumo(self.consumos_conn, _make_txn("m1", "CORAL CARAPUNGO", 25.0), "Consumos/Pichincha")
-        register_consumos(self.cf_conn, self.consumos_conn, None, use_llm=False)
-        unreg = find_unregistered(self.consumos_conn)
+        upsert_consumo(self.cf_conn, _make_txn("m1", "CORAL CARAPUNGO", 25.0), "Consumos/Pichincha")
+        register_consumos(self.cf_conn, use_llm=False)
+        unreg = find_unregistered(self.cf_conn)
         assert len(unreg) == 0
 
     def test_uber_rule_applied(self):
@@ -200,21 +198,21 @@ class TestRegisterFlow(unittest.TestCase):
             purchased_at=datetime(2026, 4, 22), amount=1.50,
             merchant="DLOCAL*UBER RIDES\\Mr", card_last="8811", subject="test",
         )
-        upsert_consumo(self.consumos_conn, txn, "Consumos/Diners")
-        register_consumos(self.cf_conn, self.consumos_conn, None, use_llm=False)
+        upsert_consumo(self.cf_conn, txn, "Consumos/Diners")
+        register_consumos(self.cf_conn, use_llm=False)
         review = get_transactions_needing_review(self.cf_conn, source="gmail")
         assert review[0]["category"] == "Family Support"
         assert "Uber" in review[0]["description"]
 
     def test_dry_run_no_writes(self):
-        upsert_consumo(self.consumos_conn, _make_txn("m1", "STORE", 10.0), "Consumos/Pichincha")
+        upsert_consumo(self.cf_conn, _make_txn("m1", "STORE", 10.0), "Consumos/Pichincha")
         stats = register_consumos(
-            self.cf_conn, self.consumos_conn, None,
+            self.cf_conn,
             dry_run=True, use_llm=False, rules=TEST_RULES,
         )
         assert stats["registered"] == 1
         assert len(get_transactions_needing_review(self.cf_conn)) == 0
-        assert len(find_unregistered(self.consumos_conn)) == 1
+        assert len(find_unregistered(self.cf_conn)) == 1
 
     def test_subscription_match_links_forecast(self):
         """Consumo matching a subscription forecast links to it instead of creating new txn."""
@@ -229,9 +227,9 @@ class TestRegisterFlow(unittest.TestCase):
             ("Internet Subscription", -22.43, "Visa Pichincha", "2026-04-15", "2026-05-15", "Home", "sub_internet"),
         )
         self.cf_conn.commit()
-        upsert_consumo(self.consumos_conn, _make_txn("m_inet", "HALLO NETWORK CIA", 22.43, account="Visa Pichincha"), "Consumos/Pichincha")
+        upsert_consumo(self.cf_conn, _make_txn("m_inet", "HALLO NETWORK CIA", 22.43, account="Visa Pichincha"), "Consumos/Pichincha")
         stats = register_consumos(
-            self.cf_conn, self.consumos_conn, None,
+            self.cf_conn,
             use_llm=False, rules=TEST_RULES,
         )
         assert stats["registered"] == 1
@@ -252,9 +250,9 @@ class TestRegisterFlow(unittest.TestCase):
             ("Internet Subscription", -22.43, "Visa Pichincha", "2026-04-15", "2026-05-15", "Home", "sub_internet"),
         )
         self.cf_conn.commit()
-        upsert_consumo(self.consumos_conn, _make_txn("m_other", "HALLO NETWORK", 50.00, account="Visa Pichincha"), "Consumos/Pichincha")
+        upsert_consumo(self.cf_conn, _make_txn("m_other", "HALLO NETWORK", 50.00, account="Visa Pichincha"), "Consumos/Pichincha")
         stats = register_consumos(
-            self.cf_conn, self.consumos_conn, None,
+            self.cf_conn,
             use_llm=False, rules=TEST_RULES,
         )
         assert stats["by_method"].get("subscription_match") is None
@@ -267,9 +265,9 @@ class TestRegisterFlow(unittest.TestCase):
             "amount": -25.0, "category": "Home Food & Supplies", "budget": None,
             "status": "committed", "origin_id": None,
         }])
-        upsert_consumo(self.consumos_conn, _make_txn("m1", "CORAL CARAPUNGO", 25.0), "Consumos/Pichincha")
+        upsert_consumo(self.cf_conn, _make_txn("m1", "CORAL CARAPUNGO", 25.0), "Consumos/Pichincha")
         stats = register_consumos(
-            self.cf_conn, self.consumos_conn, None,
+            self.cf_conn,
             use_llm=False, rules=TEST_RULES,
         )
         assert stats["registered"] == 1
@@ -285,17 +283,17 @@ class TestRegisterFlow(unittest.TestCase):
             "amount": -25.0, "category": "Home Food & Supplies", "budget": None,
             "status": "committed", "origin_id": None,
         }])
-        upsert_consumo(self.consumos_conn, _make_txn("m1", "CORAL CARAPUNGO", 25.0), "Consumos/Pichincha")
+        upsert_consumo(self.cf_conn, _make_txn("m1", "CORAL CARAPUNGO", 25.0), "Consumos/Pichincha")
         stats = register_consumos(
-            self.cf_conn, self.consumos_conn, None,
+            self.cf_conn,
             use_llm=False, rules=TEST_RULES,
         )
         assert stats["by_method"].get("existing_txn_match") is None
 
     def test_after_filter(self):
-        upsert_consumo(self.consumos_conn, _make_txn("m1", "A", 10.0), "Consumos/Pichincha")
+        upsert_consumo(self.cf_conn, _make_txn("m1", "A", 10.0), "Consumos/Pichincha")
         stats = register_consumos(
-            self.cf_conn, self.consumos_conn, None,
+            self.cf_conn,
             use_llm=False, after="2026-05-01", rules=TEST_RULES,
         )
         assert stats["registered"] == 0
@@ -304,7 +302,6 @@ class TestRegisterFlow(unittest.TestCase):
 class TestEnrichWithInvoices(unittest.TestCase):
     def setUp(self):
         self.cf_conn = create_test_db()
-        self.consumos_conn = create_test_consumos_db()
         self.cf_conn.execute(
             "INSERT OR IGNORE INTO accounts VALUES (?, ?, ?, ?)",
             ("Visa Pichincha", "credit_card", 13, 1),
@@ -313,16 +310,16 @@ class TestEnrichWithInvoices(unittest.TestCase):
 
     def test_enrich_updates_description(self):
         """Transaction with newly-matched invoice gets enriched description."""
-        upsert_consumo(self.consumos_conn, _make_txn("m1", "CORAL CARAPUNGO", 25.0), "Consumos/Pichincha")
-        register_consumos(self.cf_conn, self.consumos_conn, None, use_llm=False, rules=TEST_RULES)
+        upsert_consumo(self.cf_conn, _make_txn("m1", "CORAL CARAPUNGO", 25.0), "Consumos/Pichincha")
+        register_consumos(self.cf_conn, use_llm=False, rules=TEST_RULES)
         review = get_transactions_needing_review(self.cf_conn, source="gmail")
         assert len(review) == 1
-        # Simulate invoice arriving later: set matched_invoice_number on consumo
-        self.consumos_conn.execute(
-            "UPDATE consumos SET matched_invoice_number = ? WHERE msg_id = ?",
+        # Simulate invoice arriving later: set matched_invoice_number + matched_at after linked_at
+        self.cf_conn.execute(
+            "UPDATE consumos SET matched_invoice_number = ?, matched_at = datetime('now', '+1 second') WHERE msg_id = ?",
             ("001-001-000012345", "m1"),
         )
-        self.consumos_conn.commit()
+        self.cf_conn.commit()
         # Force date_created to today so it's within 3-day window
         self.cf_conn.execute(
             "UPDATE transactions SET date_created = date('now') WHERE id = ?",
@@ -330,28 +327,28 @@ class TestEnrichWithInvoices(unittest.TestCase):
         )
         self.cf_conn.commit()
         stats = enrich_with_invoices(
-            self.cf_conn, self.consumos_conn, None,
+            self.cf_conn,
             use_llm=False, rules=TEST_RULES,
         )
         assert stats["enriched"] == 1
         link = get_transaction_link(self.cf_conn, review[0]["id"])
-        assert link["invoice_number"] == "001-001-000012345"
+        assert link["matched_invoice_number"] == "001-001-000012345"
 
     def test_enrich_skips_approved_transactions(self):
         """Approved (needs_review=0) transactions should not be enriched."""
-        upsert_consumo(self.consumos_conn, _make_txn("m1", "CORAL CARAPUNGO", 25.0), "Consumos/Pichincha")
-        register_consumos(self.cf_conn, self.consumos_conn, None, use_llm=False, rules=TEST_RULES)
+        upsert_consumo(self.cf_conn, _make_txn("m1", "CORAL CARAPUNGO", 25.0), "Consumos/Pichincha")
+        register_consumos(self.cf_conn, use_llm=False, rules=TEST_RULES)
         review = get_transactions_needing_review(self.cf_conn, source="gmail")
         # Approve it
         self.cf_conn.execute("UPDATE transactions SET needs_review = 0 WHERE id = ?", (review[0]["id"],))
         self.cf_conn.commit()
-        self.consumos_conn.execute(
-            "UPDATE consumos SET matched_invoice_number = ? WHERE msg_id = ?",
+        self.cf_conn.execute(
+            "UPDATE consumos SET matched_invoice_number = ?, matched_at = datetime('now', '+1 second') WHERE msg_id = ?",
             ("001-001-000012345", "m1"),
         )
-        self.consumos_conn.commit()
+        self.cf_conn.commit()
         stats = enrich_with_invoices(
-            self.cf_conn, self.consumos_conn, None,
+            self.cf_conn,
             use_llm=False, rules=TEST_RULES,
         )
         assert stats["enriched"] == 0

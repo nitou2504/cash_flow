@@ -1,4 +1,4 @@
-"""Tests for transaction_links table CRUD operations."""
+"""Tests for transaction ↔ consumo linking via consumos table."""
 import unittest
 
 from cashflow.database import create_test_db
@@ -27,35 +27,49 @@ def _insert_txn(conn, desc="Test", amount=-10.0, account="Cash", category="Other
     return ids[0]
 
 
+def _insert_consumo(conn, msg_id, merchant="STORE", amount=10.0):
+    conn.execute("""
+        INSERT INTO consumos (msg_id, bank, account, purchased_at, amount,
+                              merchant, card_last, subject, label)
+        VALUES (?, 'Pichincha', 'Visa Pichincha', '2026-04-22T14:00:00', ?,
+                ?, '1234', 'subj', 'Consumos/Pichincha')
+    """, (msg_id, amount, merchant))
+    conn.commit()
+
+
 class TestLinkTransaction(unittest.TestCase):
     def setUp(self):
         self.conn = create_test_db()
 
     def test_link_consumo(self):
         tid = _insert_txn(self.conn)
+        _insert_consumo(self.conn, "msg123")
         link_transaction(self.conn, tid, consumo_msg_id="msg123", source="auto_match")
         link = get_transaction_link(self.conn, tid)
         assert link is not None
-        assert link["consumo_msg_id"] == "msg123"
+        assert link["msg_id"] == "msg123"
         assert link["link_source"] == "auto_match"
 
     def test_link_consumo_and_invoice(self):
         tid = _insert_txn(self.conn)
+        _insert_consumo(self.conn, "msg1")
         link_transaction(self.conn, tid, consumo_msg_id="msg1", invoice_number="001-002-003")
         link = get_transaction_link(self.conn, tid)
-        assert link["consumo_msg_id"] == "msg1"
-        assert link["invoice_number"] == "001-002-003"
+        assert link["msg_id"] == "msg1"
+        assert link["matched_invoice_number"] == "001-002-003"
 
     def test_upsert_adds_invoice(self):
         tid = _insert_txn(self.conn)
+        _insert_consumo(self.conn, "msg1")
         link_transaction(self.conn, tid, consumo_msg_id="msg1")
-        link_transaction(self.conn, tid, invoice_number="001-002-003")
+        link_transaction(self.conn, tid, consumo_msg_id="msg1", invoice_number="001-002-003")
         link = get_transaction_link(self.conn, tid)
-        assert link["consumo_msg_id"] == "msg1"
-        assert link["invoice_number"] == "001-002-003"
+        assert link["msg_id"] == "msg1"
+        assert link["matched_invoice_number"] == "001-002-003"
 
     def test_find_linked_by_consumo(self):
         tid = _insert_txn(self.conn, desc="Coral groceries")
+        _insert_consumo(self.conn, "msg_abc")
         link_transaction(self.conn, tid, consumo_msg_id="msg_abc")
         found = find_linked_transaction(self.conn, "msg_abc")
         assert found is not None
@@ -75,14 +89,15 @@ class TestUnlinkedTransactions(unittest.TestCase):
         self.conn = create_test_db()
 
     def test_all_unlinked(self):
-        t1 = _insert_txn(self.conn, desc="A")
-        t2 = _insert_txn(self.conn, desc="B")
+        _insert_txn(self.conn, desc="A")
+        _insert_txn(self.conn, desc="B")
         unlinked = get_unlinked_transactions(self.conn)
         assert len(unlinked) == 2
 
     def test_linked_excluded(self):
         t1 = _insert_txn(self.conn, desc="A")
         t2 = _insert_txn(self.conn, desc="B")
+        _insert_consumo(self.conn, "msg1")
         link_transaction(self.conn, t1, consumo_msg_id="msg1")
         unlinked = get_unlinked_transactions(self.conn)
         assert len(unlinked) == 1

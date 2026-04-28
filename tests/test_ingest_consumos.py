@@ -143,49 +143,47 @@ class TestIngestLabel(unittest.TestCase):
 
 class TestInvoiceMatching(unittest.TestCase):
     def setUp(self):
-        self.consumos_conn = create_test_consumos_db()
-        from cashflow.invoice_database import create_test_invoices_db
-        self.invoices_conn = create_test_invoices_db()
+        self.conn = create_test_consumos_db()
 
     def _insert_consumo(self, msg_id, amount, date_str):
-        self.consumos_conn.execute("""
+        self.conn.execute("""
             INSERT INTO consumos (msg_id, bank, account, purchased_at, amount,
                                   merchant, card_last, subject, label)
             VALUES (?, 'Pichincha', 'Visa Pichincha', ?, ?, 'STORE', '1234', 'subj', 'Consumos/Pichincha')
         """, (msg_id, date_str, amount))
-        self.consumos_conn.commit()
+        self.conn.commit()
 
     def _insert_invoice(self, invoice_number, total, issue_date):
-        self.invoices_conn.execute("""
+        self.conn.execute("""
             INSERT INTO invoices (doc_type, invoice_number, ruc, vendor,
                                   issue_date, subtotal_sin_impuesto, total, currency)
             VALUES ('factura', ?, '1234567890001', 'VENDOR', ?, ?, ?, 'USD')
         """, (invoice_number, issue_date, total - total * 0.15, total))
-        self.invoices_conn.commit()
+        self.conn.commit()
 
     def test_match_found(self):
         self._insert_consumo("m1", 15.05, "2026-04-22T14:30:00")
         self._insert_invoice("001-002-000000001", 15.05, "2026-04-22")
 
-        stats = match_invoices(self.consumos_conn, self.invoices_conn)
+        stats = match_invoices(self.conn)
         assert stats["matched"] == 1
-        row = self.consumos_conn.execute(
+        row = self.conn.execute(
             "SELECT matched_invoice_number FROM consumos WHERE msg_id = 'm1'"
         ).fetchone()
         assert row["matched_invoice_number"] == "001-002-000000001"
 
     def test_no_match(self):
         self._insert_consumo("m1", 15.05, "2026-04-22T14:30:00")
-        stats = match_invoices(self.consumos_conn, self.invoices_conn)
+        stats = match_invoices(self.conn)
         assert stats["no_match"] == 1
 
     def test_rematch_after_invoice_arrives(self):
         self._insert_consumo("m1", 15.05, "2026-04-22T14:30:00")
-        stats = match_invoices(self.consumos_conn, self.invoices_conn)
+        stats = match_invoices(self.conn)
         assert stats["no_match"] == 1
 
         self._insert_invoice("001-002-000000001", 15.05, "2026-04-22")
-        stats = match_invoices(self.consumos_conn, self.invoices_conn)
+        stats = match_invoices(self.conn)
         assert stats["matched"] == 1
 
 

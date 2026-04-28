@@ -26,8 +26,7 @@ import sys
 from datetime import datetime, timedelta
 from typing import Callable, Optional
 
-from cashflow.config import CONSUMOS_DB_PATH, INVOICES_DB_PATH
-from cashflow.consumo_database import create_consumo_connection, initialize_consumos_database
+from cashflow.database import create_connection, initialize_database
 from cashflow.consumo_repository import (
     find_unmatched,
     get_ingested_msg_ids,
@@ -108,22 +107,22 @@ def ingest_label(
     return stats
 
 
-def match_invoices(consumos_conn, invoices_conn, *, dry_run: bool = False) -> dict:
+def match_invoices(conn, *, dry_run: bool = False) -> dict:
     from cashflow.invoice_repository import find_invoices_near
 
-    unmatched = find_unmatched(consumos_conn)
+    unmatched = find_unmatched(conn)
     stats = {"attempted": len(unmatched), "matched": 0, "no_match": 0}
 
     for row in unmatched:
         purchased = datetime.fromisoformat(row["purchased_at"]).date()
         candidates = find_invoices_near(
-            invoices_conn, purchased, row["amount"],
+            conn, purchased, row["amount"],
             tol_days=2, tol_amount=0.01,
         )
         if candidates:
             best = candidates[0]
             if not dry_run:
-                set_invoice_match(consumos_conn, row["id"], best["invoice_number"])
+                set_invoice_match(conn, row["id"], best["invoice_number"])
             stats["matched"] += 1
         else:
             stats["no_match"] += 1
@@ -163,9 +162,7 @@ def main() -> int:
     ap.add_argument("--since-last", action="store_true",
                     help="Start from latest purchased_at in DB (minus 7 days)")
     ap.add_argument("--dry-run", action="store_true", help="Don't write to DB")
-    ap.add_argument("--db", default=None, help=f"Override DB path (default: {CONSUMOS_DB_PATH})")
-    ap.add_argument("--invoices-db", default=None,
-                    help=f"Override invoices DB path (default: {INVOICES_DB_PATH})")
+    ap.add_argument("--db", default="cash_flow.db", help="Override DB path")
     ap.add_argument("--show-unparsed", action="store_true",
                     help="List unresolved unparsed emails and exit")
     ap.add_argument("--unparsed-reason", help="Filter --show-unparsed by reason")
@@ -177,10 +174,9 @@ def main() -> int:
                     help="Skip invoice matching after ingest")
     args = ap.parse_args()
 
-    db_path = args.db or CONSUMOS_DB_PATH
-    invoices_db_path = args.invoices_db or INVOICES_DB_PATH
-    initialize_consumos_database(db_path)
-    conn = create_consumo_connection(db_path)
+    db_path = args.db
+    initialize_database(db_path)
+    conn = create_connection(db_path)
 
     try:
         if args.show_unparsed:
@@ -188,16 +184,11 @@ def main() -> int:
             return 0
 
         if args.rematch:
-            from cashflow.invoice_database import create_invoice_connection
-            inv_conn = create_invoice_connection(invoices_db_path)
-            try:
-                print("Re-matching unmatched consumos against invoices...")
-                mstats = match_invoices(conn, inv_conn, dry_run=args.dry_run)
-                print(f"  attempted={mstats['attempted']}  matched={mstats['matched']}  "
-                      f"no_match={mstats['no_match']}"
-                      + ("  [DRY RUN]" if args.dry_run else ""))
-            finally:
-                inv_conn.close()
+            print("Re-matching unmatched consumos against invoices...")
+            mstats = match_invoices(conn, dry_run=args.dry_run)
+            print(f"  attempted={mstats['attempted']}  matched={mstats['matched']}  "
+                  f"no_match={mstats['no_match']}"
+                  + ("  [DRY RUN]" if args.dry_run else ""))
             return 0
 
         gc = GmailClient()
@@ -240,15 +231,10 @@ def main() -> int:
         print(f"  unparsed:      {totals['unparsed_logged']}")
 
         if not args.no_match and not args.dry_run:
-            from cashflow.invoice_database import create_invoice_connection
-            inv_conn = create_invoice_connection(invoices_db_path)
-            try:
-                print("\nMatching against invoices.db...")
-                mstats = match_invoices(conn, inv_conn)
-                print(f"  attempted={mstats['attempted']}  matched={mstats['matched']}  "
-                      f"no_match={mstats['no_match']}")
-            finally:
-                inv_conn.close()
+            print("\nMatching against invoices...")
+            mstats = match_invoices(conn)
+            print(f"  attempted={mstats['attempted']}  matched={mstats['matched']}  "
+                  f"no_match={mstats['no_match']}")
 
         if totals["unparsed_logged"]:
             print("\nReview with: python3 -m gmail_sync.ingest_consumos --show-unparsed")

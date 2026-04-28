@@ -12,7 +12,6 @@ import argparse
 import json
 import os
 import re
-import sqlite3
 import sys
 from datetime import date, datetime
 from pathlib import Path
@@ -22,8 +21,6 @@ from typing import Optional
 import litellm
 import yaml
 
-from cashflow.config import CONSUMOS_DB_PATH, INVOICES_DB_PATH
-from cashflow.consumo_database import create_consumo_connection
 from cashflow.consumo_repository import find_unregistered, mark_registered
 from cashflow.database import create_connection
 from cashflow.repository import (
@@ -180,14 +177,14 @@ def _call_llm(prompt: str, model: str) -> tuple[dict, str]:
     return _parse_llm_response(raw), raw
 
 
-def _get_invoice_lines(invoices_conn, invoice_number: str) -> list[dict]:
-    inv = invoices_conn.execute(
+def _get_invoice_lines(conn, invoice_number: str) -> list[dict]:
+    inv = conn.execute(
         "SELECT id FROM invoices WHERE invoice_number = ?",
         (invoice_number,),
     ).fetchone()
     if not inv:
         return []
-    rows = invoices_conn.execute(
+    rows = conn.execute(
         "SELECT description, quantity, line_total FROM invoice_lines WHERE invoice_id = ? ORDER BY line_number",
         (inv["id"],),
     ).fetchall()
@@ -212,25 +209,25 @@ def _apply_item_overrides(items: list[dict], rules: dict) -> Optional[str]:
     return max(totals, key=totals.get)
 
 
-def _log_decision(consumos_conn, consumo_id: int, method: str, model: str,
+def _log_decision(conn, consumo_id: int, method: str, model: str,
                    prompt: str, response_raw: str, parsed_json: dict,
                    category: str, description: str) -> None:
-    consumos_conn.execute(
+    conn.execute(
         """INSERT INTO llm_decisions
            (consumo_id, model, method, prompt, response_raw, parsed_json, category, description)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
         (consumo_id, model, method, prompt, response_raw,
          json.dumps(parsed_json) if parsed_json else None, category, description),
     )
-    consumos_conn.commit()
+    conn.commit()
 
 
-def _resolve_budget(cf_conn, category: str, rules: dict, payment_date: date) -> Optional[str]:
+def _resolve_budget(conn, category: str, rules: dict, payment_date: date) -> Optional[str]:
     budget_map = rules.get("category_budget_map", {})
     prefix = budget_map.get(category)
     if not prefix:
         return None
-    row = cf_conn.execute(
+    row = conn.execute(
         """SELECT id FROM subscriptions
            WHERE is_budget = 1 AND id LIKE ?
              AND start_date <= ? AND (end_date IS NULL OR end_date >= ?)""",
@@ -241,8 +238,7 @@ def _resolve_budget(cf_conn, category: str, rules: dict, payment_date: date) -> 
 
 def prepare_one(
     consumo: dict,
-    cf_conn,
-    invoices_conn,
+    conn,
     *,
     use_llm: bool = True,
     rules: dict = None,
@@ -281,11 +277,11 @@ def prepare_one(
 
     # 3. Get context for LLM or fallback
     keywords = _extract_keywords(consumo["merchant"])
-    similar = find_similar_transactions(cf_conn, keywords, limit=8) if keywords else []
+    similar = find_similar_transactions(conn, keywords, limit=8) if keywords else []
 
     items = []
-    if consumo.get("matched_invoice_number") and invoices_conn:
-        items = _get_invoice_lines(invoices_conn, consumo["matched_invoice_number"])
+    if consumo.get("matched_invoice_number"):
+        items = _get_invoice_lines(conn, consumo["matched_invoice_number"])
 
     # 4. If no LLM, use first similar or fallback
     if not use_llm:
@@ -315,7 +311,7 @@ def prepare_one(
 
 
 def register_consumos(
-    cf_conn, consumos_conn, invoices_conn,
+    conn,
     *,
     dry_run: bool = False,
     use_llm: bool = True,
@@ -329,9 +325,9 @@ def register_consumos(
     if rules is None:
         rules = load_rules()
 
-    categories = get_all_categories(cf_conn)
+    categories = get_all_categories(conn)
 
-    unregistered = find_unregistered(consumos_conn)
+    unregistered = find_unregistered(conn)
     if after:
         unregistered = [c for c in unregistered if c["purchased_at"][:10] >= after]
     if labels:
@@ -348,7 +344,7 @@ def register_consumos(
 
         # Step 0: subscription match — link to existing forecast, don't duplicate
         forecast = find_matching_forecast(
-            cf_conn, consumo["account"], consumo["amount"], purchased,
+            conn, consumo["account"], consumo["amount"], purchased,
         )
         if forecast:
             method = "subscription_match"
@@ -358,18 +354,18 @@ def register_consumos(
                       f"[{method:14}] → forecast #{forecast['id']} {forecast['sub_name']}")
             else:
                 link_transaction(
-                    cf_conn, forecast["id"],
+                    conn, forecast["id"],
                     consumo_msg_id=consumo["msg_id"],
                     invoice_number=consumo.get("matched_invoice_number"),
                     source="auto_register",
                 )
-                mark_registered(consumos_conn, consumo["id"], forecast["id"])
+                mark_registered(conn, consumo["id"], forecast["id"])
             stats["registered"] += 1
             continue
 
         # Step 0.5: existing transaction match — link to manually-created txn
         existing = find_matching_transaction(
-            cf_conn, consumo["account"], consumo["amount"], purchased,
+            conn, consumo["account"], consumo["amount"], purchased,
         )
         if existing:
             method = "existing_txn_match"
@@ -379,18 +375,18 @@ def register_consumos(
                       f"[{method:14}] → txn #{existing['id']} {existing['description'][:30]}")
             else:
                 link_transaction(
-                    cf_conn, existing["id"],
+                    conn, existing["id"],
                     consumo_msg_id=consumo["msg_id"],
                     invoice_number=consumo.get("matched_invoice_number"),
                     source="auto_register",
                 )
-                mark_registered(consumos_conn, consumo["id"], existing["id"])
+                mark_registered(conn, consumo["id"], existing["id"])
             stats["registered"] += 1
             continue
 
         try:
             prep = prepare_one(
-                consumo, cf_conn, invoices_conn,
+                consumo, conn,
                 use_llm=use_llm, rules=rules, categories=categories,
             )
         except Exception as e:
@@ -405,14 +401,14 @@ def register_consumos(
         debug = prep.get("_debug", {})
         try:
             _log_decision(
-                consumos_conn, consumo["id"], method, debug.get("model", ""),
+                conn, consumo["id"], method, debug.get("model", ""),
                 debug.get("prompt", ""), debug.get("response_raw", ""),
                 debug.get("parsed_json"), prep["category"], prep["description"],
             )
         except Exception:
             pass
 
-        account = get_account_by_name(cf_conn, consumo["account"])
+        account = get_account_by_name(conn, consumo["account"])
         if not account:
             print(f"  SKIP {consumo['id']}: unknown account {consumo['account']}")
             stats["skipped"] += 1
@@ -431,7 +427,7 @@ def register_consumos(
             source="gmail",
             needs_review=True,
         )
-        budget_id = _resolve_budget(cf_conn, prep["category"], rules, txn["date_payed"])
+        budget_id = _resolve_budget(conn, prep["category"], rules, txn["date_payed"])
         txn["budget"] = budget_id
 
         if dry_run:
@@ -441,23 +437,23 @@ def register_consumos(
             stats["registered"] += 1
             continue
 
-        inserted_ids = add_transactions(cf_conn, [txn])
+        inserted_ids = add_transactions(conn, [txn])
         tid = inserted_ids[0]
 
         link_transaction(
-            cf_conn, tid,
+            conn, tid,
             consumo_msg_id=consumo["msg_id"],
             invoice_number=consumo.get("matched_invoice_number"),
             source="auto_register",
         )
-        mark_registered(consumos_conn, consumo["id"], tid)
+        mark_registered(conn, consumo["id"], tid)
         stats["registered"] += 1
 
     return stats
 
 
 def enrich_with_invoices(
-    cf_conn, consumos_conn, invoices_conn,
+    conn,
     *,
     use_llm: bool = True,
     rules: dict = None,
@@ -465,23 +461,24 @@ def enrich_with_invoices(
 ) -> dict:
     if rules is None:
         rules = load_rules()
-    categories = get_all_categories(cf_conn)
+    categories = get_all_categories(conn)
     stats = {"enriched": 0, "checked": 0}
 
-    rows = cf_conn.execute("""
+    rows = conn.execute("""
         SELECT t.id, t.description, t.account, t.amount, t.date_created,
-               tl.consumo_msg_id, tl.invoice_number
+               c.msg_id as consumo_msg_id, c.matched_invoice_number as invoice_number
         FROM transactions t
-        JOIN transaction_links tl ON t.id = tl.transaction_id
+        JOIN consumos c ON c.registered_txn_id = t.id
         WHERE t.needs_review = 1
-          AND tl.consumo_msg_id IS NOT NULL
-          AND tl.invoice_number IS NULL
+          AND c.msg_id IS NOT NULL
+          AND c.matched_invoice_number IS NOT NULL
+          AND c.matched_at > c.linked_at
           AND t.date_created >= date('now', '-3 days')
     """).fetchall()
 
     for row in rows:
         stats["checked"] += 1
-        consumo = consumos_conn.execute(
+        consumo = conn.execute(
             "SELECT * FROM consumos WHERE msg_id = ?", (row["consumo_msg_id"],),
         ).fetchone()
         if not consumo or not consumo["matched_invoice_number"]:
@@ -489,23 +486,24 @@ def enrich_with_invoices(
 
         consumo = dict(consumo)
         prep = prepare_one(
-            consumo, cf_conn, invoices_conn,
+            consumo, conn,
             use_llm=use_llm, rules=rules, categories=categories,
         )
 
         if dry_run:
             print(f"  ENRICH #{row['id']}: \"{row['description']}\" → \"{prep['description'][:50]}\" [{prep['category']}]")
         else:
-            cf_conn.execute(
+            conn.execute(
                 "UPDATE transactions SET description = ?, category = ? WHERE id = ?",
                 (prep["description"], prep["category"], row["id"]),
             )
             link_transaction(
-                cf_conn, row["id"],
+                conn, row["id"],
+                consumo_msg_id=row["consumo_msg_id"],
                 invoice_number=consumo["matched_invoice_number"],
                 source="auto_register",
             )
-            cf_conn.commit()
+            conn.commit()
         stats["enriched"] += 1
 
     return stats
@@ -519,21 +517,15 @@ def main() -> int:
     ap.add_argument("--after", help="Only consumos after YYYY-MM-DD")
     ap.add_argument("--labels", nargs="*", help="Filter by Gmail label")
     ap.add_argument("--db", default="cash_flow.db")
-    ap.add_argument("--consumos-db", default=None)
-    ap.add_argument("--invoices-db", default=None)
     ap.add_argument("--rules", default=None, help="Override rules YAML path")
     args = ap.parse_args()
 
     rules = load_rules(Path(args.rules)) if args.rules else load_rules()
-
-    cf_conn = create_connection(args.db)
-    consumos_conn = create_consumo_connection(args.consumos_db or CONSUMOS_DB_PATH)
-    invoices_conn = sqlite3.connect(args.invoices_db or INVOICES_DB_PATH)
-    invoices_conn.row_factory = sqlite3.Row
+    conn = create_connection(args.db)
 
     try:
         stats = register_consumos(
-            cf_conn, consumos_conn, invoices_conn,
+            conn,
             dry_run=args.dry_run,
             use_llm=not args.no_llm,
             limit=args.limit,
@@ -549,9 +541,7 @@ def main() -> int:
             for m, c in sorted(stats["by_method"].items()):
                 print(f"    {m}: {c}")
     finally:
-        cf_conn.close()
-        consumos_conn.close()
-        invoices_conn.close()
+        conn.close()
 
     return 0
 

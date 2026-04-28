@@ -24,10 +24,10 @@ CATEGORIES = [
 MODELS = ["llama3.2:3b", "gemma3", "gemma4:e2b", "llama3.1"]
 
 
-def _get_test_cases(cf_conn, consumos_conn, invoices_conn, limit=5):
+def _get_test_cases(conn, limit=5):
     """Build test cases: consumos with invoices that have existing transactions (ground truth)."""
     cases = []
-    rows = consumos_conn.execute("""
+    rows = conn.execute("""
         SELECT c.id, c.msg_id, c.merchant, c.amount, c.account, c.purchased_at,
                c.matched_invoice_number
         FROM consumos c
@@ -39,26 +39,26 @@ def _get_test_cases(cf_conn, consumos_conn, invoices_conn, limit=5):
     for r in rows:
         if len(cases) >= limit:
             break
-        txn = cf_conn.execute("""
+        txn = conn.execute("""
             SELECT t.description, t.category FROM transactions t
-            JOIN transaction_links tl ON t.id = tl.transaction_id
-            WHERE tl.consumo_msg_id = ?
+            JOIN consumos c ON c.registered_txn_id = t.id
+            WHERE c.msg_id = ?
         """, (r["msg_id"],)).fetchone()
         if not txn:
             continue
 
-        inv = invoices_conn.execute(
+        inv = conn.execute(
             "SELECT id, vendor FROM invoices WHERE invoice_number = ?",
             (r["matched_invoice_number"],),
         ).fetchone()
         lines = []
         if inv:
-            lines = invoices_conn.execute(
+            lines = conn.execute(
                 "SELECT description, quantity, line_total FROM invoice_lines WHERE invoice_id = ? ORDER BY line_number",
                 (inv["id"],),
             ).fetchall()
 
-        similar = cf_conn.execute("""
+        similar = conn.execute("""
             SELECT description, category, amount
             FROM transactions
             WHERE status = 'committed' AND amount < 0
@@ -81,10 +81,10 @@ def _get_test_cases(cf_conn, consumos_conn, invoices_conn, limit=5):
     return cases
 
 
-def _get_no_invoice_cases(cf_conn, consumos_conn, limit=5):
+def _get_no_invoice_cases(conn, limit=5):
     """Consumos without invoices that have linked transactions."""
     cases = []
-    rows = consumos_conn.execute("""
+    rows = conn.execute("""
         SELECT c.msg_id, c.merchant, c.amount, c.account, c.purchased_at
         FROM consumos c
         WHERE c.matched_invoice_number IS NULL AND c.registered_txn_id IS NOT NULL
@@ -95,15 +95,15 @@ def _get_no_invoice_cases(cf_conn, consumos_conn, limit=5):
     for r in rows:
         if len(cases) >= limit:
             break
-        txn = cf_conn.execute("""
+        txn = conn.execute("""
             SELECT t.description, t.category FROM transactions t
-            JOIN transaction_links tl ON t.id = tl.transaction_id
-            WHERE tl.consumo_msg_id = ?
+            JOIN consumos c ON c.registered_txn_id = t.id
+            WHERE c.msg_id = ?
         """, (r["msg_id"],)).fetchone()
         if not txn:
             continue
 
-        similar = cf_conn.execute("""
+        similar = conn.execute("""
             SELECT description, category, amount
             FROM transactions
             WHERE status = 'committed' AND amount < 0
@@ -241,36 +241,28 @@ def main():
     ap.add_argument("--cases", type=int, default=5, help="Number of test cases")
     ap.add_argument("--no-invoice", action="store_true", help="Test merchant-only case")
     ap.add_argument("--db", default="cash_flow.db")
-    ap.add_argument("--consumos-db", default="consumos.db")
-    ap.add_argument("--invoices-db", default="invoices.db")
     args = ap.parse_args()
 
     models = args.models or MODELS
 
-    cf = sqlite3.connect(args.db)
-    cf.row_factory = sqlite3.Row
-    co = sqlite3.connect(args.consumos_db)
-    co.row_factory = sqlite3.Row
-    inv = sqlite3.connect(args.invoices_db)
-    inv.row_factory = sqlite3.Row
+    conn = sqlite3.connect(args.db)
+    conn.row_factory = sqlite3.Row
 
     try:
         if not args.no_invoice:
-            cases = _get_test_cases(cf, co, inv, limit=args.cases)
+            cases = _get_test_cases(conn, limit=args.cases)
             if cases:
                 run_benchmark(cases, models, "WITH INVOICE")
             else:
                 print("No linked consumos with invoices found for benchmarking.")
 
-        no_inv_cases = _get_no_invoice_cases(cf, co, limit=args.cases)
+        no_inv_cases = _get_no_invoice_cases(conn, limit=args.cases)
         if no_inv_cases:
             run_benchmark(no_inv_cases, models, "NO INVOICE (merchant only)")
         else:
             print("No linked consumos without invoices found for benchmarking.")
     finally:
-        cf.close()
-        co.close()
-        inv.close()
+        conn.close()
 
 
 if __name__ == "__main__":

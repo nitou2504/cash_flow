@@ -25,11 +25,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from cashflow.config import INVOICES_DB_PATH
-from cashflow.invoice_database import (
-    create_invoice_connection,
-    initialize_invoices_database,
-)
+from cashflow.database import create_connection, initialize_database
 from cashflow.invoice_repository import (
     get_ingested_msg_ids,
     get_latest_issue_date,
@@ -226,16 +222,16 @@ def main() -> int:
                     help="Start from the latest issue_date in DB (minus 7 days)")
     ap.add_argument("--label", default="Facturas")
     ap.add_argument("--dry-run", action="store_true", help="Don't write to DB")
-    ap.add_argument("--db", default=None, help=f"Override DB path (default: {INVOICES_DB_PATH})")
+    ap.add_argument("--db", default="cash_flow.db", help="Override DB path")
     ap.add_argument("--show-unparsed", action="store_true",
                     help="List unresolved unparsed emails and exit")
     ap.add_argument("--unparsed-reason",
                     help="Filter --show-unparsed by reason (e.g. no_attachment)")
     args = ap.parse_args()
 
-    db_path = args.db or INVOICES_DB_PATH
-    initialize_invoices_database(db_path)
-    conn = create_invoice_connection(db_path)
+    db_path = args.db
+    initialize_database(db_path)
+    conn = create_connection(db_path)
     try:
         if args.show_unparsed:
             _print_unparsed(conn, args.unparsed_reason)

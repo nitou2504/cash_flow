@@ -577,7 +577,7 @@ def mark_reviewed(conn: Connection, transaction_id: int):
     update_transaction(conn, transaction_id, {"needs_review": 0})
 
 
-# --- Transaction links (consumo/invoice cross-DB references) ---
+# --- Transaction ↔ consumo linking (via consumos table) ---
 
 def link_transaction(
     conn: Connection,
@@ -585,40 +585,36 @@ def link_transaction(
     consumo_msg_id: str = None,
     invoice_number: str = None,
     source: str = "auto_match",
-) -> int:
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO transaction_links (transaction_id, consumo_msg_id, invoice_number, link_source)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(transaction_id) DO UPDATE SET
-            consumo_msg_id = COALESCE(excluded.consumo_msg_id, consumo_msg_id),
-            invoice_number = COALESCE(excluded.invoice_number, invoice_number),
-            link_source = excluded.link_source,
+) -> None:
+    if not consumo_msg_id:
+        return
+    conn.execute("""
+        UPDATE consumos SET
+            registered_txn_id = COALESCE(?, registered_txn_id),
+            matched_invoice_number = COALESCE(?, matched_invoice_number),
+            link_source = ?,
             linked_at = CURRENT_TIMESTAMP
-    """, (transaction_id, consumo_msg_id, invoice_number, source))
+        WHERE msg_id = ?
+    """, (transaction_id, invoice_number, source, consumo_msg_id))
     conn.commit()
-    return cursor.lastrowid
 
 
 def get_transaction_link(conn: Connection, transaction_id: int) -> Optional[Dict[str, Any]]:
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT * FROM transaction_links WHERE transaction_id = ?",
+    row = conn.execute(
+        "SELECT * FROM consumos WHERE registered_txn_id = ?",
         (transaction_id,),
-    )
-    row = cursor.fetchone()
+    ).fetchone()
     return dict(row) if row else None
 
 
 def find_linked_transaction(conn: Connection, consumo_msg_id: str) -> Optional[Dict[str, Any]]:
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT t.*, tl.consumo_msg_id, tl.invoice_number, tl.link_source, tl.linked_at
+    row = conn.execute("""
+        SELECT t.*, c.msg_id as consumo_msg_id, c.matched_invoice_number as invoice_number,
+               c.link_source, c.linked_at
         FROM transactions t
-        JOIN transaction_links tl ON t.id = tl.transaction_id
-        WHERE tl.consumo_msg_id = ?
-    """, (consumo_msg_id,))
-    row = cursor.fetchone()
+        JOIN consumos c ON c.registered_txn_id = t.id
+        WHERE c.msg_id = ?
+    """, (consumo_msg_id,)).fetchone()
     return dict(row) if row else None
 
 
@@ -630,8 +626,8 @@ def get_unlinked_transactions(
         placeholders = ",".join("?" * len(accounts))
         cursor.execute(f"""
             SELECT t.* FROM transactions t
-            LEFT JOIN transaction_links tl ON t.id = tl.transaction_id
-            WHERE tl.id IS NULL
+            LEFT JOIN consumos c ON c.registered_txn_id = t.id
+            WHERE c.id IS NULL
               AND t.status = 'committed' AND t.amount < 0
               AND t.account IN ({placeholders})
             ORDER BY t.date_created
@@ -639,8 +635,8 @@ def get_unlinked_transactions(
     else:
         cursor.execute("""
             SELECT t.* FROM transactions t
-            LEFT JOIN transaction_links tl ON t.id = tl.transaction_id
-            WHERE tl.id IS NULL
+            LEFT JOIN consumos c ON c.registered_txn_id = t.id
+            WHERE c.id IS NULL
               AND t.status = 'committed' AND t.amount < 0
             ORDER BY t.date_created
         """)
@@ -696,8 +692,8 @@ def find_matching_transaction(
     cursor.execute("""
         SELECT t.*
         FROM transactions t
-        LEFT JOIN transaction_links tl ON t.id = tl.transaction_id
-        WHERE tl.id IS NULL
+        LEFT JOIN consumos c ON c.registered_txn_id = t.id
+        WHERE c.id IS NULL
           AND t.status = 'committed'
           AND t.account = ?
           AND ABS(t.amount + ?) < ?

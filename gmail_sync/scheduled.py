@@ -6,18 +6,11 @@ Runs the full pipeline: ingest consumos → ingest invoices → match invoices
 import asyncio
 import logging
 import os
-import sqlite3
-from datetime import timedelta
 
 from telegram.ext import CallbackContext
 
-from cashflow.config import CONSUMOS_DB_PATH, DB_PATH, INVOICES_DB_PATH, TELEGRAM_ALLOWED_USERS
-from cashflow.consumo_database import (
-    create_consumo_connection,
-    initialize_consumos_database,
-)
+from cashflow.config import DB_PATH, TELEGRAM_ALLOWED_USERS
 from cashflow.database import create_connection
-from cashflow.invoice_database import create_invoice_connection, initialize_invoices_database
 from gmail_sync.auth import get_credentials
 from gmail_sync.client import GmailClient
 from gmail_sync.ingest_consumos import (
@@ -54,58 +47,52 @@ def _run_sync() -> dict:
     }
 
     gc = GmailClient()
-    consumos_conn = create_consumo_connection(CONSUMOS_DB_PATH)
-    invoices_conn = create_invoice_connection(INVOICES_DB_PATH)
-    cf_conn = create_connection(DB_PATH)
+    conn = create_connection(DB_PATH)
 
     try:
         # 1. Ingest consumos (since last)
-        after = consumos_compute_after(consumos_conn, None, True)
+        after = consumos_compute_after(conn, None, True)
         query = f"after:{after}"
         for label_name, (_bank, parser_fn) in LABEL_TO_PARSER.items():
             try:
                 label_id = gc.resolve_label_id(label_name)
             except KeyError:
                 continue
-            stats = ingest_label(gc, label_name, label_id, parser_fn, query, consumos_conn)
+            stats = ingest_label(gc, label_name, label_id, parser_fn, query, conn)
             summary["consumos_ingested"] += stats["upserted"]
 
         # 2. Ingest invoices (since last)
-        inv_after = invoices_compute_after(invoices_conn, None, True)
+        inv_after = invoices_compute_after(conn, None, True)
         inv_query = f"after:{inv_after}"
         try:
             label_id = gc.resolve_label_id("Facturas")
-            stats = ingest_messages(gc, label_id, inv_query, invoices_conn)
+            stats = ingest_messages(gc, label_id, inv_query, conn)
             summary["invoices_ingested"] += stats["upserted"]
         except KeyError:
             summary["errors"].append("Facturas label not found")
 
         # 3. Match invoices to consumos
-        mstats = match_invoices(consumos_conn, invoices_conn)
+        mstats = match_invoices(conn)
         summary["invoices_matched"] = mstats["matched"]
 
         # 4. Register unregistered consumos
         rules = load_rules()
         rstats = register_consumos(
-            cf_conn, consumos_conn, invoices_conn,
+            conn,
             use_llm=True, after=SYNC_AFTER, rules=rules,
         )
         summary["registered"] = rstats["registered"]
         summary["by_method"] = rstats["by_method"]
 
         # 5. Enrich with late invoices
-        estats = enrich_with_invoices(
-            cf_conn, consumos_conn, invoices_conn, rules=rules,
-        )
+        estats = enrich_with_invoices(conn, rules=rules)
         summary["enriched"] = estats["enriched"]
 
     except Exception as e:
         logger.exception("Gmail sync failed")
         summary["errors"].append(str(e))
     finally:
-        consumos_conn.close()
-        invoices_conn.close()
-        cf_conn.close()
+        conn.close()
 
     return summary
 
