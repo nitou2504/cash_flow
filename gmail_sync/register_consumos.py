@@ -39,11 +39,23 @@ from cashflow.repository import (
 from cashflow.transactions import create_single_transaction
 
 RULES_PATH = Path(__file__).resolve().parent.parent / "register_rules.yaml"
+CLASSIFICATION_HINTS_PATH = Path(__file__).resolve().parent.parent / "classification_hints.yaml"
 
 
 def load_rules(path: Path = RULES_PATH) -> dict:
     with open(path) as f:
-        return yaml.safe_load(f)
+        rules = yaml.safe_load(f)
+    if CLASSIFICATION_HINTS_PATH.exists():
+        with open(CLASSIFICATION_HINTS_PATH) as f:
+            shared = yaml.safe_load(f) or {}
+        hints = rules.get("category_hints", [])
+        hints.extend(shared.get("category_hints", []))
+        hints.extend(shared.get("user_hints", []))
+        rules["category_hints"] = hints
+        budget_map = rules.get("category_budget_map", {})
+        budget_map.update(shared.get("category_budget_map", {}))
+        rules["category_budget_map"] = budget_map
+    return rules
 
 
 def _extract_keywords(merchant: str) -> list[str]:
