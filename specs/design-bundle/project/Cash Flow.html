@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Cash Flow — Web GUI</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;550;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+
+  <link rel="stylesheet" href="styles/tokens.css"/>
+
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; background: #f5f5f7; }
+    body { font-family: 'Inter Tight', system-ui, sans-serif; }
+    #root { height: 100%; }
+  </style>
+
+  <template id="__bundler_thumbnail">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+      <rect width="100" height="100" fill="oklch(0.92 0.05 250)"/>
+      <path d="M20 60 L40 40 L55 50 L80 25" stroke="oklch(0.62 0.16 250)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <circle cx="80" cy="25" r="4" fill="oklch(0.62 0.16 250)"/>
+    </svg>
+  </template>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- React + Babel -->
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <!-- Canvas + Tweaks helpers -->
+  <script type="text/babel" src="design-canvas.jsx"></script>
+  <script type="text/babel" src="tweaks-panel.jsx"></script>
+
+  <!-- App -->
+  <script type="text/babel" src="data/sample.jsx"></script>
+  <script type="text/babel" src="components/primitives.jsx"></script>
+  <script type="text/babel" src="components/chart.jsx"></script>
+  <script type="text/babel" src="screens/dashboard.jsx"></script>
+  <script type="text/babel" src="screens/timeline.jsx"></script>
+  <script type="text/babel" src="screens/invoice.jsx"></script>
+  <script type="text/babel" src="screens/add.jsx"></script>
+  <script type="text/babel" src="screens/review.jsx"></script>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+      "theme": "light",
+      "density": "balanced",
+      "accent": "green",
+      "showPlanning": true,
+      "monoNumbers": true
+    }/*EDITMODE-END*/;
+
+    function App() {
+      const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
+
+      // Apply theme/density/accent globally
+      useEffect(() => {
+        document.documentElement.dataset.theme = tweaks.theme;
+        document.documentElement.dataset.density = tweaks.density;
+        document.documentElement.dataset.accent = tweaks.accent;
+      }, [tweaks.theme, tweaks.density, tweaks.accent]);
+
+      return (
+        <>
+          <DesignCanvas defaultZoom={0.7}>
+            <DCSection id="dashboard" title="Dashboard" subtitle="Overview · balance · accounts · budgets · activity">
+              <DCArtboard id="dash-main" label="Dashboard · Hero balance" width={1280} height={920}>
+                <Dashboard/>
+              </DCArtboard>
+            </DCSection>
+
+            <DCSection id="timeline" title="Transactions · Timeline" subtitle="Big chart with scrubber tied to running-balance rows">
+              <DCArtboard id="tl-main" label="Timeline · Running balance" width={1280} height={920}>
+                <Timeline/>
+              </DCArtboard>
+              <DCArtboard id="tl-invoice" label="Timeline · Invoice detail open" width={1280} height={920}>
+                <Timeline initialInvoiceTxnId={1052}/>
+              </DCArtboard>
+            </DCSection>
+
+            <DCSection id="add" title="Add Transaction" subtitle="Slide-over · natural language → parsed preview → confirm">
+              <DCArtboard id="add-main" label="Add · NL parse + form" width={1280} height={920}>
+                <AddTransaction/>
+              </DCArtboard>
+            </DCSection>
+
+            <DCSection id="review" title="Review Queue" subtitle="Auto-imported transactions · approve / edit / skip">
+              <DCArtboard id="rev-main" label="Review · Detail pane" width={1280} height={920}>
+                <ReviewQueue/>
+              </DCArtboard>
+            </DCSection>
+          </DesignCanvas>
+
+          <TweaksPanel title="Tweaks">
+            <TweakSection label="Appearance">
+              <TweakRadio label="Theme" value={tweaks.theme} onChange={(v) => setTweak('theme', v)}
+                options={[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]}/>
+              <TweakSelect label="Accent" value={tweaks.accent} onChange={(v) => setTweak('accent', v)}
+                options={[
+                  { value: 'blue', label: 'Blue (default)' },
+                  { value: 'green', label: 'Green' },
+                  { value: 'violet', label: 'Violet' },
+                  { value: 'amber', label: 'Amber' },
+                ]}/>
+            </TweakSection>
+            <TweakSection label="Density">
+              <TweakRadio label="Row density" value={tweaks.density} onChange={(v) => setTweak('density', v)}
+                options={[
+                  { value: 'compact', label: 'Compact' },
+                  { value: 'balanced', label: 'Balanced' },
+                  { value: 'spacious', label: 'Spacious' },
+                ]}/>
+            </TweakSection>
+            <TweakSection label="Behaviour">
+              <TweakToggle label="Show planning transactions" value={tweaks.showPlanning} onChange={(v) => setTweak('showPlanning', v)}/>
+              <TweakToggle label="Monospace numbers" value={tweaks.monoNumbers} onChange={(v) => setTweak('monoNumbers', v)}/>
+            </TweakSection>
+          </TweaksPanel>
+        </>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+</body>
+</html>
