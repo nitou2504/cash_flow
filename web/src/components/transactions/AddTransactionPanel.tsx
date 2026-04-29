@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api/client';
-import type { TransactionCreate, Account, Category, Subscription, Transaction } from '../../api/types';
+import type { TransactionCreate, Account, Category, Subscription, Transaction, BudgetSpending } from '../../api/types';
 import { fmtMoney, fmtDate, fmtDateLong } from '../../utils/format';
 import CatSwatch from '../primitives/CatSwatch';
 import Segmented from '../primitives/Segmented';
@@ -10,8 +10,14 @@ interface Props {
   onClose: () => void;
 }
 
+export interface FormInitial {
+  desc?: string; amount?: string; account?: string; category?: string;
+  budget?: string; date?: string; isIncome?: boolean; status?: string;
+}
+
 export default function AddTransactionPanel({ onClose }: Props) {
   const [mode, setMode] = useState('form');
+  const [formInit, setFormInit] = useState<FormInitial | null>(null);
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -67,8 +73,8 @@ export default function AddTransactionPanel({ onClose }: Props) {
         </div>
 
         <div style={{ flex: 1, overflow: 'auto', padding: '16px 22px 100px' }}>
-          {mode === 'nl' && <NLMode />}
-          {mode === 'form' && <FormMode onClose={onClose} queryClient={queryClient} />}
+          {mode === 'nl' && <NLMode onClose={onClose} queryClient={queryClient} onRevise={(vals) => { setFormInit(vals); setMode('form'); }} />}
+          {mode === 'form' && <FormMode onClose={onClose} queryClient={queryClient} initial={formInit} />}
           {mode === 'installments' && <InstallmentMode onClose={onClose} queryClient={queryClient} />}
           {mode === 'split' && <SplitMode onClose={onClose} queryClient={queryClient} />}
         </div>
@@ -77,8 +83,59 @@ export default function AddTransactionPanel({ onClose }: Props) {
   );
 }
 
-function NLMode() {
+function NLMode({ onClose, queryClient, onRevise }: { onClose: () => void; queryClient: ReturnType<typeof useQueryClient>; onRevise: (vals: FormInitial) => void }) {
   const [text, setText] = useState('');
+  const [parsed, setParsed] = useState<Record<string, unknown> | null>(null);
+  const [parseStep, setParseStep] = useState<string | null>(null);
+
+  const parseMut = useMutation({
+    mutationFn: (input: string) => api.parseTransaction(input, (_step, label) => setParseStep(label)),
+    onSuccess: (data) => { setParsed(data); setParseStep(null); },
+    onError: () => setParseStep(null),
+  });
+
+  const createMut = useMutation({
+    mutationFn: (body: TransactionCreate) => api.createTransaction(body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['timeline'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      onClose();
+    },
+  });
+
+  const handleParse = () => {
+    if (text.trim()) parseMut.mutate(text);
+  };
+
+  const handleConfirm = () => {
+    if (!parsed) return;
+    const body: TransactionCreate = {
+      description: String(parsed.description || ''),
+      amount: -(Math.abs(Number(parsed.amount || 0))),
+      account: String(parsed.account || ''),
+      category: parsed.category ? String(parsed.category) : undefined,
+      budget: parsed.budget ? String(parsed.budget) : undefined,
+      date: parsed.date_created ? String(parsed.date_created) : undefined,
+      is_income: !!parsed.is_income,
+      status: parsed.is_pending ? 'pending' : parsed.is_planning ? 'planning' : 'committed',
+      installments: parsed.installments ? Number(parsed.installments) : undefined,
+      grace_period_months: parsed.grace_period_months ? Number(parsed.grace_period_months) : 0,
+    };
+    if (parsed.is_income) body.amount = Math.abs(body.amount);
+    createMut.mutate(body);
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        if (parsed) handleConfirm();
+        else handleParse();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
   return (
     <>
       <div style={{
@@ -93,7 +150,8 @@ function NLMode() {
         </div>
         <input
           value={text}
-          onChange={e => setText(e.target.value)}
+          onChange={e => { setText(e.target.value); setParsed(null); }}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey) handleParse(); }}
           placeholder='e.g. "supermaxi groceries 84.20, visa, today"'
           style={{
             width: '100%', border: 'none', background: 'transparent',
@@ -103,15 +161,99 @@ function NLMode() {
         />
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--fg-faint)', flexWrap: 'wrap' }}>
           <span>Try:</span>
-          <ChipExample>netflix 14.99, amex</ChipExample>
-          <ChipExample>flight 312, visa, may 22</ChipExample>
-          <ChipExample>rent 300, 4 installments</ChipExample>
+          <ChipExample>supermaxi groceries 84.20, visa, today</ChipExample>
+          <ChipExample>uber 4.50 cash</ChipExample>
+          <ChipExample>tv 500, produbanco, 6 installments</ChipExample>
         </div>
       </div>
-      <div style={{ marginTop: 20, padding: 16, textAlign: 'center', color: 'var(--fg-faint)', fontSize: 13 }}>
-        Natural language parsing coming soon. Use Form mode for now.
-      </div>
+
+      {parseMut.isPending && <ParsingAnimation step={parseStep} />}
+
+      {parseMut.error && (
+        <div style={{ marginTop: 16, padding: '12px 16px', background: 'color-mix(in oklch, var(--neg) 8%, transparent)', border: '1px solid color-mix(in oklch, var(--neg) 25%, var(--border))', borderRadius: 10, fontSize: 12.5, color: 'var(--neg)' }}>
+          {parseMut.error.message || 'Failed to parse. Try rephrasing.'}
+        </div>
+      )}
+
+      {parsed && (
+        <div style={{ marginTop: 16 }}>
+          {/* Preview card */}
+          <div style={{
+            background: 'var(--bg-sunken)', border: '1px solid var(--border)', borderRadius: 14,
+            padding: '18px 20px', display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14,
+          }}>
+            <CatSwatch cat={parsed.category ? String(parsed.category) : null} size={44} />
+            <div style={{ flex: 1, lineHeight: 1.25 }}>
+              <div style={{ fontSize: 15, fontWeight: 600 }}>{String(parsed.description || '')}</div>
+              <div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
+                {parsed.date_created ? fmtDateLong(String(parsed.date_created)) : 'Today'} &middot; {String(parsed.account || '')}
+              </div>
+            </div>
+            <div className="num" style={{
+              fontSize: 24, fontWeight: 600, letterSpacing: '-0.02em',
+              color: parsed.is_income ? 'var(--pos)' : 'var(--fg)',
+            }}>
+              {fmtMoney(parsed.is_income ? Math.abs(Number(parsed.amount)) : -Math.abs(Number(parsed.amount)))}
+            </div>
+          </div>
+
+          {/* Parsed fields grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
+            <ParsedField label="Category" value={parsed.category ? String(parsed.category) : 'None'} />
+            <ParsedField label="Budget" value={parsed.budget ? String(parsed.budget) : 'None'} />
+            <ParsedField label="Type" value={String(parsed.type || 'simple')} />
+            {!!parsed.installments && <ParsedField label="Installments" value={String(parsed.installments)} />}
+            {!!parsed.grace_period_months && <ParsedField label="Grace period" value={`${parsed.grace_period_months} months`} />}
+            {!!parsed.is_pending && <ParsedField label="Status" value="Pending" />}
+          </div>
+
+          <div style={{
+            display: 'flex', gap: 8, justifyContent: 'flex-end',
+            position: 'sticky', bottom: 0, margin: '0 -22px', padding: '14px 22px',
+            borderTop: '1px solid var(--border)', background: 'var(--bg)',
+          }}>
+            {createMut.error && <span style={{ fontSize: 12, color: 'var(--neg)', flex: 1 }}>{createMut.error.message}</span>}
+            <span style={{ flex: createMut.error ? 0 : 1 }} />
+            <button onClick={() => onRevise({
+              desc: String(parsed.description || ''),
+              amount: String(Math.abs(Number(parsed.amount || 0))),
+              account: String(parsed.account || ''),
+              category: parsed.category ? String(parsed.category) : undefined,
+              budget: parsed.budget ? String(parsed.budget) : undefined,
+              date: parsed.date_created ? String(parsed.date_created) : undefined,
+              isIncome: !!parsed.is_income,
+              status: parsed.is_pending ? 'pending' : parsed.is_planning ? 'planning' : 'committed',
+            })} style={{
+              padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 550,
+              background: 'transparent', border: '1px solid var(--border)', color: 'var(--fg-muted)', cursor: 'pointer',
+            }}>Revise in form</button>
+            <button onClick={onClose} style={{
+              padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 550,
+              background: 'transparent', border: '1px solid var(--border)', color: 'var(--fg-muted)', cursor: 'pointer',
+            }}>Cancel</button>
+            <button onClick={handleConfirm} disabled={createMut.isPending} style={{
+              padding: '8px 20px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+              background: 'var(--accent)', border: 'none', color: 'white', cursor: 'pointer',
+              opacity: createMut.isPending ? 0.6 : 1,
+            }}>
+              {createMut.isPending ? 'Saving...' : 'Confirm'}
+              {!createMut.isPending && <span style={{ marginLeft: 8, opacity: 0.7, fontSize: 11 }}>&#8984;&#8629;</span>}
+            </button>
+          </div>
+        </div>
+      )}
     </>
+  );
+}
+
+function ParsedField({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{
+      padding: '8px 12px', background: 'var(--bg-elev)', border: '1px solid var(--border)', borderRadius: 8,
+    }}>
+      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--fg-faint)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 13, fontWeight: 550 }}>{value}</div>
+    </div>
   );
 }
 
@@ -124,28 +266,37 @@ function ChipExample({ children }: { children: React.ReactNode }) {
   );
 }
 
-function FormMode({ onClose, queryClient }: { onClose: () => void; queryClient: ReturnType<typeof useQueryClient> }) {
+function FormMode({ onClose, queryClient, initial }: { onClose: () => void; queryClient: ReturnType<typeof useQueryClient>; initial?: FormInitial | null }) {
   const { data: accounts } = useQuery<Account[]>({ queryKey: ['accounts'], queryFn: api.accounts });
   const { data: categories } = useQuery<Category[]>({ queryKey: ['categories'], queryFn: api.categories });
   const { data: budgets } = useQuery<Subscription[]>({ queryKey: ['budgets'], queryFn: api.budgets });
 
-  const [desc, setDesc] = useState('');
-  const [amount, setAmount] = useState('');
-  const [account, setAccount] = useState('');
-  const [category, setCategory] = useState('');
-  const [budget, setBudget] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [status, setStatus] = useState('committed');
-  const [isIncome, setIsIncome] = useState(false);
+  const [desc, setDesc] = useState(initial?.desc || '');
+  const [amount, setAmount] = useState(initial?.amount || '');
+  const [account, setAccount] = useState(initial?.account || '');
+  const [category, setCategory] = useState(initial?.category || '');
+  const [budget, setBudget] = useState(initial?.budget || '');
+  const [date, setDate] = useState(initial?.date || new Date().toISOString().slice(0, 10));
+  const [status, setStatus] = useState(initial?.status || 'committed');
+  const [isIncome, setIsIncome] = useState(initial?.isIncome || false);
+  const [needsReview, setNeedsReview] = useState(false);
 
   useEffect(() => {
-    if (accounts?.length && !account) setAccount(accounts[0].account_id);
-  }, [accounts, account]);
+    if (accounts?.length && !account) setAccount(initial?.account || accounts[0].account_id);
+  }, [accounts, account, initial]);
 
   const filteredBudgets = useMemo(() => {
     if (!budgets) return [];
-    return budgets.filter(b => b.is_budget && (!account || b.account === account));
+    return budgets.filter(b => b.is_budget && (!account || b.payment_account_id === account));
   }, [budgets, account]);
+
+  const budgetMonth = date ? date.slice(0, 7) : undefined;
+  const { data: budgetSpending } = useQuery<BudgetSpending[]>({
+    queryKey: ['budget-spending', budgetMonth],
+    queryFn: () => api.budgetSpending(budgetMonth),
+    enabled: !!budget && !!budgetMonth,
+  });
+  const selectedBudgetInfo = budgetSpending?.find(b => b.id === budget);
 
   const createMut = useMutation({
     mutationFn: (body: TransactionCreate) => api.createTransaction(body),
@@ -169,6 +320,7 @@ function FormMode({ onClose, queryClient }: { onClose: () => void; queryClient: 
       date: date || undefined,
       is_income: isIncome,
       status,
+      needs_review: needsReview,
     });
   };
 
@@ -239,10 +391,25 @@ function FormMode({ onClose, queryClient }: { onClose: () => void; queryClient: 
         ]} />
       </div>
 
-      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--fg-muted)', marginBottom: 14, cursor: 'pointer' }}>
-        <input type="checkbox" checked={isIncome} onChange={e => setIsIncome(e.target.checked)} style={{ accentColor: 'var(--accent)' }} />
-        This is income
-      </label>
+      <div style={{ display: 'flex', gap: 16, marginBottom: 14 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--fg-muted)', cursor: 'pointer' }}>
+          <input type="checkbox" checked={isIncome} onChange={e => setIsIncome(e.target.checked)} style={{ accentColor: 'var(--accent)' }} />
+          This is income
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--fg-muted)', cursor: 'pointer' }}>
+          <input type="checkbox" checked={needsReview} onChange={e => setNeedsReview(e.target.checked)} style={{ accentColor: 'var(--warn)' }} />
+          Needs review
+        </label>
+      </div>
+
+      {selectedBudgetInfo && (
+        <div style={{
+          background: 'var(--info-soft)', border: '1px solid color-mix(in oklch, var(--info) 25%, var(--border))',
+          borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 12.5, color: 'var(--info)',
+        }}>
+          <strong>{selectedBudgetInfo.name}</strong>: <span className="num">{fmtMoney(-selectedBudgetInfo.remaining)}</span> remaining of <span className="num">{fmtMoney(-selectedBudgetInfo.allocated)}</span> allocated
+        </div>
+      )}
 
       <Footer saving={createMut.isPending} error={createMut.error?.message} onCancel={onClose} onSave={handleSave} />
     </>
@@ -592,6 +759,43 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
       fontSize: 11.5, color: 'var(--fg-muted)', letterSpacing: '0.04em', textTransform: 'uppercase',
       fontWeight: 600, marginBottom: 6,
     }}>{children}</div>
+  );
+}
+
+const PARSE_STEPS = [
+  { key: 'pre_parse', label: 'Extracting date & account' },
+  { key: 'parsing', label: 'Classifying transaction' },
+];
+
+function ParsingAnimation({ step }: { step: string | null }) {
+  const activeIdx = step ? PARSE_STEPS.findIndex(s => s.label === step) : -1;
+
+  return (
+    <div style={{
+      marginTop: 16, padding: '20px 18px',
+      background: 'var(--bg-sunken)', border: '1px solid var(--border)', borderRadius: 12,
+      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14,
+    }}>
+      <div style={{
+        width: 36, height: 36, borderRadius: '50%',
+        border: '3px solid var(--border)',
+        borderTopColor: 'var(--accent)',
+        animation: 'spin 0.8s linear infinite',
+      }} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%', maxWidth: 220 }}>
+        {PARSE_STEPS.map((s, i) => (
+          <div key={s.key} style={{
+            display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 550,
+            color: i < activeIdx ? 'var(--pos)' : i === activeIdx ? 'var(--fg)' : 'var(--fg-faint)',
+            transition: 'color 0.3s',
+          }}>
+            <span style={{ fontSize: 14 }}>{i < activeIdx ? '✓' : i === activeIdx ? '›' : '·'}</span>
+            {s.label}
+          </div>
+        ))}
+      </div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
   );
 }
 
