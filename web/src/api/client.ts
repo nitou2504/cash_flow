@@ -90,6 +90,46 @@ export const api = {
     return request<import('./types').TimelineResponse>(`/transactions/timeline${qs}`);
   },
 
+  parseTransaction: (
+    text: string,
+    onStep?: (step: string, label: string) => void,
+  ): Promise<Record<string, unknown>> =>
+    new Promise((resolve, reject) => {
+      fetch(`${BASE}/transactions/parse`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      }).then(res => {
+        if (!res.ok || !res.body) {
+          res.json().then(d => reject(new ApiError(res.status, d.detail || 'Parse failed'))).catch(() => reject(new ApiError(res.status, 'Parse failed')));
+          return;
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        function read(): void {
+          reader.read().then(({ done, value }) => {
+            if (done) { reject(new ApiError(500, 'Stream ended without result')); return; }
+            buf += decoder.decode(value, { stream: true });
+            const lines = buf.split('\n');
+            buf = lines.pop() || '';
+            let eventName = '';
+            for (const line of lines) {
+              if (line.startsWith('event: ')) eventName = line.slice(7);
+              else if (line.startsWith('data: ')) {
+                const data = JSON.parse(line.slice(6));
+                if (eventName === 'step') onStep?.(data.step, data.label);
+                else if (eventName === 'done') { resolve(data.result); return; }
+                else if (eventName === 'error') { reject(new ApiError(422, data.detail)); return; }
+              }
+            }
+            read();
+          });
+        }
+        read();
+      }).catch(err => reject(err));
+    }),
+
   createTransaction: (body: import('./types').TransactionCreate) =>
     request<import('./types').TransactionCreateResponse>('/transactions', {
       method: 'POST',
@@ -100,6 +140,22 @@ export const api = {
     request<import('./types').Transaction[]>('/transactions/preview', {
       method: 'POST',
       body: JSON.stringify(body),
+    }),
+
+  updateTransaction: (id: number, body: import('./types').TransactionUpdate) =>
+    request<import('./types').Transaction>(`/transactions/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+
+  deleteTransaction: (id: number, deleteGroup = false) =>
+    request<{ ok: boolean }>(`/transactions/${id}?delete_group=${deleteGroup}`, {
+      method: 'DELETE',
+    }),
+
+  clearTransaction: (id: number) =>
+    request<import('./types').Transaction>(`/transactions/${id}/clear`, {
+      method: 'POST',
     }),
 };
 

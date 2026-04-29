@@ -45,11 +45,12 @@ export interface BudgetSpending {
 export interface Subscription {
   id: string;
   name: string;
-  amount: number;
-  account: string;
   category: string;
+  monthly_amount: number;
+  payment_account_id: string;
   is_budget: boolean;
-  monthly_amount: number | null;
+  is_income: boolean;
+  underspend_behavior: string;
   status: string | null;
 }
 
@@ -189,6 +190,7 @@ export interface TransactionCreate {
   date?: string | null;
   is_income?: boolean;
   status?: string;
+  needs_review?: boolean;
   installments?: number | null;
   grace_period_months?: number;
   start_from_installment?: number;
@@ -199,4 +201,15 @@ export interface TransactionCreateResponse {
   count: number;
   ids: number[];
   transactions: Transaction[];
+}
+
+export interface TransactionUpdate {
+  description?: string;
+  amount?: number;
+  category?: string | null;
+  budget?: string | null;
+  date?: string | null;
+  status?: string;
+  account?: string;
+  needs_review?: number;
 }
