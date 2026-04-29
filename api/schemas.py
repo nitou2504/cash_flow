@@ -206,6 +206,7 @@ class TransactionCreate(BaseModel):
     date: Optional[str] = None
     is_income: bool = False
     status: str = "committed"
+    needs_review: bool = False
     installments: Optional[int] = None
     grace_period_months: int = 0
     start_from_installment: int = 1
@@ -216,3 +217,14 @@ class TransactionCreateResponse(BaseModel):
     count: int
     ids: list[int]
     transactions: list[TransactionOut]
+
+
+class TransactionUpdate(BaseModel):
+    description: Optional[str] = None
+    amount: Optional[float] = None
+    category: Optional[str] = None
+    budget: Optional[str] = None
+    date: Optional[str] = None
+    status: Optional[str] = None
+    account: Optional[str] = None
+    needs_review: Optional[int] = None

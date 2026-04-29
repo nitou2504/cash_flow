@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from collections import OrderedDict
 from datetime import date, datetime
@@ -5,14 +6,15 @@ from typing import Optional
 
 from dateutil.relativedelta import relativedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 
 from api.deps import get_db, get_current_user
 from api.schemas import (
     BalancePoint, MonthGroup, TimelineResponse, TimelineStats,
     TimelineTransaction, TransactionCreate, TransactionCreateResponse,
-    TransactionOut,
+    TransactionOut, TransactionUpdate,
 )
-from cashflow import repository
+from cashflow import controller, repository
 from cashflow import transactions as txn_factory
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"], dependencies=[Depends(get_current_user)])
@@ -318,6 +320,51 @@ def _month_key(d) -> str:
     return str(d)[:7]
 
 
+# ── Parse (NL) ──
+
+@router.post("/parse")
+def parse_natural_language(
+    body: dict,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    text = body.get("text", "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="No text provided")
+
+    from llm import parser as llm_parser
+    from cashflow import transactions as tx_module
+
+    accounts = repository.get_all_accounts(conn)
+    budgets = repository.get_all_budgets(conn)
+
+    def sse_generate():
+        def event(name: str, data: dict):
+            return f"event: {name}\ndata: {json.dumps(data)}\n\n"
+
+        yield event("step", {"step": "pre_parse", "label": "Extracting date & account"})
+
+        try:
+            payment_month = tx_module.calculate_payment_month(text, accounts)
+        except Exception:
+            payment_month = None
+
+        yield event("step", {"step": "parsing", "label": "Classifying transaction"})
+
+        try:
+            result = llm_parser.parse_transaction_string(conn, text, accounts, budgets, payment_month)
+        except Exception:
+            yield event("error", {"detail": "LLM service temporarily unavailable. Try again in a moment."})
+            return
+
+        if not result:
+            yield event("error", {"detail": "Could not parse input. Try rephrasing or use the Form tab."})
+            return
+
+        yield event("done", {"result": result})
+
+    return StreamingResponse(sse_generate(), media_type="text/event-stream")
+
+
 # ── Create ──
 
 @router.post("", response_model=TransactionCreateResponse)
@@ -357,6 +404,10 @@ def create_transaction(
             is_income=body.is_income, is_pending=is_pending, is_planning=is_planning,
         )
         txn_list = [txn]
+
+    if body.needs_review:
+        for t in txn_list:
+            t["needs_review"] = 1
 
     ids = repository.add_transactions(conn, txn_list)
     created = []
@@ -431,3 +482,66 @@ def get_transaction_group(transaction_id: int, conn: sqlite3.Connection = Depend
         return [_txn_to_out(t)]
     group = repository.get_transactions_by_origin_id(conn, t["origin_id"])
     return [_txn_to_out(dict(g)) for g in group]
+
+
+# ── Update ──
+
+@router.put("/{transaction_id}", response_model=TransactionOut)
+def update_transaction(
+    transaction_id: int,
+    body: TransactionUpdate,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    t = repository.get_transaction_by_id(conn, transaction_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+
+    updates = {k: v for k, v in body.model_dump().items() if v is not None and k != "date"}
+    new_date = None
+    if body.date is not None:
+        new_date = date.fromisoformat(body.date)
+
+    try:
+        controller.process_transaction_edit(conn, transaction_id, updates, new_date)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    updated = repository.get_transaction_by_id(conn, transaction_id)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Transaction not found after update")
+    return _txn_to_out(dict(updated))
+
+
+# ── Delete ──
+
+@router.delete("/{transaction_id}")
+def delete_transaction(
+    transaction_id: int,
+    delete_group: bool = Query(False),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    t = repository.get_transaction_by_id(conn, transaction_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+
+    controller.process_transaction_deletion(conn, transaction_id, delete_group)
+    return {"ok": True}
+
+
+# ── Clear (commit) ──
+
+@router.post("/{transaction_id}/clear", response_model=TransactionOut)
+def clear_transaction(
+    transaction_id: int,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    t = repository.get_transaction_by_id(conn, transaction_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    if t["status"] not in ("pending", "planning"):
+        raise HTTPException(status_code=400, detail=f"Cannot clear transaction with status '{t['status']}'")
+
+    controller.process_transaction_clearance(conn, transaction_id)
+
+    updated = repository.get_transaction_by_id(conn, transaction_id)
+    return _txn_to_out(dict(updated))
