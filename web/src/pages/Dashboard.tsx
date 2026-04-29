@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
-import type { DashboardData, Transaction, BudgetSpending as BudgetType, CCCard } from '../api/types';
+import type { DashboardData, Transaction, BudgetSpending as BudgetType, CCCard, TimelineTransaction } from '../api/types';
+import TransactionDetailDrawer from '../components/transactions/TransactionDetailDrawer';
 import BalanceChart from '../components/charts/BalanceChart';
 import ProgressBar from '../components/charts/ProgressBar';
 import Card from '../components/primitives/Card';
@@ -16,6 +17,7 @@ export default function Dashboard() {
     queryFn: api.dashboard,
   });
   const [scrubIdx, setScrubIdx] = useState<number | undefined>(undefined);
+  const [detailTxn, setDetailTxn] = useState<TimelineTransaction | null>(null);
 
   if (isLoading) return <div style={{ padding: 28, color: 'var(--fg-muted)' }}>Loading...</div>;
   if (error || !data) return <div style={{ padding: 28, color: 'var(--neg)' }}>Failed to load dashboard</div>;
@@ -92,7 +94,7 @@ export default function Dashboard() {
           {/* Recent activity */}
           <Card title="Recent activity" subtitle={`Last ${data.recent_transactions.length} committed`} action={<GhostLink to="/transactions">View timeline</GhostLink>} padding={0}>
             <div>
-              {data.recent_transactions.map(t => <DashTxnRow key={t.id} txn={t} />)}
+              {data.recent_transactions.map(t => <DashTxnRow key={t.id} txn={t} onClick={() => setDetailTxn({ ...t, is_budget_allocation: false, has_invoice: false })} />)}
               {data.recent_transactions.length === 0 && <Empty>No transactions</Empty>}
             </div>
           </Card>
@@ -143,6 +145,10 @@ export default function Dashboard() {
           </Card>
         </div>
       </div>
+
+      {detailTxn && (
+        <TransactionDetailDrawer txn={detailTxn} onClose={() => setDetailTxn(null)} />
+      )}
     </div>
   );
 }
@@ -264,13 +270,16 @@ function BudgetMini({ b }: { b: BudgetType }) {
 
 /* ── Dashboard Transaction Row (compact, 3-column grid) ── */
 
-function DashTxnRow({ txn }: { txn: Transaction }) {
+function DashTxnRow({ txn, onClick }: { txn: Transaction; onClick?: () => void }) {
   return (
-    <div style={{
-      display: 'grid', gridTemplateColumns: '1fr 130px 110px',
-      alignItems: 'center', gap: 12, padding: '11px 18px',
-      borderTop: '1px solid var(--border)',
-    }}>
+    <div
+      onClick={onClick}
+      style={{
+        display: 'grid', gridTemplateColumns: '1fr 130px 110px',
+        alignItems: 'center', gap: 12, padding: '11px 18px',
+        borderTop: '1px solid var(--border)',
+        cursor: onClick ? 'pointer' : 'default',
+      }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
         <CatSwatchShared cat={txn.category} size={26} />
         <div style={{ minWidth: 0, lineHeight: 1.2 }}>

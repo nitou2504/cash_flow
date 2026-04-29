@@ -9,6 +9,7 @@ import TransactionRow from '../components/transactions/TransactionRow';
 import MonthGroupHeader from '../components/transactions/MonthGroupHeader';
 import InvoiceDrawer from '../components/transactions/InvoiceDrawer';
 import AddTransactionPanel from '../components/transactions/AddTransactionPanel';
+import TransactionDetailDrawer from '../components/transactions/TransactionDetailDrawer';
 
 export default function Transactions() {
   const [view, setView] = useState('timeline');
@@ -21,6 +22,7 @@ export default function Transactions() {
   const [months] = useState(3);
   const [scrubIdx, setScrubIdx] = useState<number | undefined>(undefined);
   const [invoiceTxn, setInvoiceTxn] = useState<TimelineTransaction | null>(null);
+  const [detailTxn, setDetailTxn] = useState<TimelineTransaction | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
@@ -194,7 +196,7 @@ export default function Transactions() {
                 showBalance={showBalance}
                 dateMode={dateMode}
                 selected={selectedId === txn.id || highlightedId === txn.id}
-                onClick={() => setSelectedId(txn.id)}
+                onClick={() => { setSelectedId(txn.id); setDetailTxn(txn); }}
                 onViewInvoice={() => setInvoiceTxn(txn)}
               />
             ))}
@@ -237,7 +239,7 @@ export default function Transactions() {
                 showBalance={showBalance}
                 dateMode={dateMode}
                 selected={selectedId === txn.id || highlightedId === txn.id}
-                onClick={() => setSelectedId(txn.id)}
+                onClick={() => { setSelectedId(txn.id); setDetailTxn(txn); }}
                 onViewInvoice={() => setInvoiceTxn(txn)}
               />
             ))}
@@ -251,6 +253,13 @@ export default function Transactions() {
         )}
       </div>
 
+      {detailTxn && !invoiceTxn && (
+        <TransactionDetailDrawer
+          txn={detailTxn}
+          onClose={() => { setDetailTxn(null); setSelectedId(null); }}
+          onViewInvoice={detailTxn.has_invoice ? () => { setInvoiceTxn(detailTxn); setDetailTxn(null); } : undefined}
+        />
+      )}
       {invoiceTxn && <InvoiceDrawer txn={invoiceTxn} onClose={() => setInvoiceTxn(null)} />}
       {addOpen && <AddTransactionPanel onClose={() => setAddOpen(false)} />}
     </div>
