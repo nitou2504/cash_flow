@@ -92,7 +92,7 @@ class LLMBackend:
                     "api_key_env": "GEMINI_API_KEY"
                 }
             },
-            "timeout_seconds": 30,
+            "timeout_seconds": 120,
             "max_retries": 2,
             "temperature": 0.0
         }
@@ -304,6 +304,8 @@ class LLMBackend:
             model_str = f"ollama/{model}"
             base_url = provider_config.get("base_url", "http://localhost:3001/v1")
             kwargs = {"api_base": base_url}
+            if "gemma" in model:
+                kwargs["extra_body"] = {"options": {"num_predict": 2048}, "think": False}
 
         elif provider == "openai":
             model_str = f"openai/{model}"
