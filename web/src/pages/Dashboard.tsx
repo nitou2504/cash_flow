@@ -7,27 +7,8 @@ import BalanceChart from '../components/charts/BalanceChart';
 import ProgressBar from '../components/charts/ProgressBar';
 import Card from '../components/primitives/Card';
 import Pill from '../components/primitives/Pill';
-
-function fmtMoney(n: number, opts?: { alwaysSign?: boolean }): string {
-  const sign = n < 0 ? '−' : opts?.alwaysSign && n > 0 ? '+' : '';
-  const v = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return `${sign}$${v}`;
-}
-
-function fmtMoneyCompact(n: number): string {
-  const sign = n < 0 ? '−' : '';
-  const a = Math.abs(n);
-  if (a >= 1000) return `${sign}$${(a / 1000).toFixed(1)}k`;
-  return `${sign}$${a.toFixed(0)}`;
-}
-
-function fmtDate(d: string): string {
-  return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
-}
-
-function fmtDateLong(d: string): string {
-  return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-}
+import CatSwatchShared, { catColor } from '../components/primitives/CatSwatch';
+import { fmtMoney, fmtMoneyCompact, fmtDate, fmtDateLong } from '../utils/format';
 
 export default function Dashboard() {
   const { data, isLoading, error } = useQuery<DashboardData>({
@@ -264,28 +245,13 @@ function CyclePill({ label, amount, imminent, faint }: { label: string; amount: 
 
 /* ── Budget Mini (matches design: CatSwatch + name + spent/allocated + progress) ── */
 
-const CATEGORY_COLORS: Record<string, string> = {
-  'Home': 'oklch(0.62 0.10 60)',
-  'Home Food & Supplies': 'var(--cat-1)',
-  'Personal Diet': 'var(--cat-2)',
-  'Dining-Snacks': 'var(--cat-2)',
-  'Personal': 'var(--cat-4)',
-  'Health': 'oklch(0.62 0.10 0)',
-  'Income': 'var(--pos)',
-  'Family Support': 'oklch(0.62 0.10 290)',
-  'Savings': 'var(--accent)',
-  'Sister Education': 'oklch(0.65 0.10 200)',
-  'Loans': 'oklch(0.58 0.10 25)',
-  'Others': 'var(--fg-faint)',
-};
-
 function BudgetMini({ b }: { b: BudgetType }) {
   const over = b.spent > b.allocated;
-  const color = CATEGORY_COLORS[b.category] || 'var(--accent)';
+  const color = catColor(b.category);
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-        <CatSwatch cat={b.category} size={18} />
+        <CatSwatchShared cat={b.category} size={18} />
         <span style={{ fontSize: 12.5, fontWeight: 550, flex: 1 }}>{b.name}</span>
         <span className="num" style={{ fontSize: 11.5, color: over ? 'var(--neg)' : 'var(--fg-muted)' }}>
           ${b.spent.toFixed(0)} / ${b.allocated.toFixed(0)}
@@ -306,7 +272,7 @@ function DashTxnRow({ txn }: { txn: Transaction }) {
       borderTop: '1px solid var(--border)',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-        <CatSwatch cat={txn.category} size={26} />
+        <CatSwatchShared cat={txn.category} size={26} />
         <div style={{ minWidth: 0, lineHeight: 1.2 }}>
           <div style={{ fontSize: 13, fontWeight: 550, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {txn.description}
@@ -342,39 +308,6 @@ function Insight({ tone, title, body }: { tone: string; title: string; body: str
         <div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>{body}</div>
       </div>
     </div>
-  );
-}
-
-/* ── Category Swatch ── */
-
-const CAT_COLORS: Record<string, string> = {
-  'Home Food & Supplies': 'var(--cat-1)',
-  'Dining-Snacks': 'var(--cat-2)',
-  'Personal Diet': 'var(--cat-2)',
-  'Home': 'oklch(0.62 0.10 60)',
-  'Personal': 'var(--cat-4)',
-  'Health': 'oklch(0.62 0.10 0)',
-  'Income': 'var(--pos)',
-  'Family Support': 'oklch(0.62 0.10 290)',
-  'Savings': 'var(--accent)',
-  'Sister Education': 'oklch(0.65 0.10 200)',
-  'Loans': 'oklch(0.58 0.10 25)',
-  'Others': 'var(--fg-faint)',
-};
-
-function CatSwatch({ cat, size = 22 }: { cat: string | null; size?: number }) {
-  const c = cat || 'Other';
-  const color = CAT_COLORS[c] || 'var(--fg-faint)';
-  const letter = c.slice(0, 1).toUpperCase();
-  return (
-    <span style={{
-      width: size, height: size, borderRadius: 6, flexShrink: 0,
-      background: `color-mix(in oklch, ${color} 18%, var(--bg-elev))`,
-      color, display: 'grid', placeItems: 'center',
-      fontSize: size * 0.55, fontWeight: 700, letterSpacing: 0,
-    }}>
-      {letter}
-    </span>
   );
 }
 

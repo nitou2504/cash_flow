@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Shell from './components/layout/Shell';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import Transactions from './pages/Transactions';
 import { api } from './api/client';
 
 const queryClient = new QueryClient({
@@ -32,7 +33,7 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route element={<AuthGate><Shell /></AuthGate>}>
             <Route index element={<Dashboard />} />
-            <Route path="transactions" element={<Placeholder title="Transactions" />} />
+            <Route path="transactions" element={<Transactions />} />
             <Route path="review" element={<Placeholder title="Review Queue" />} />
             <Route path="accounts" element={<Placeholder title="Accounts" />} />
             <Route path="categories" element={<Placeholder title="Categories" />} />

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from cashflow.config import DB_PATH
 from cashflow.database import create_connection, create_tables
@@ -42,4 +43,11 @@ app.include_router(invoices_router)
 
 static_dir = Path(__file__).resolve().parent.parent / "static"
 if static_dir.is_dir():
-    app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
+    app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def spa_fallback(full_path: str):
+        file = static_dir / full_path
+        if file.is_file():
+            return FileResponse(file)
+        return FileResponse(static_dir / "index.html")

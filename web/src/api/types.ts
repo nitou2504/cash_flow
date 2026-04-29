@@ -81,22 +81,24 @@ export interface DashboardData {
 }
 
 export interface InvoiceLine {
-  id: number;
-  invoice_id: number;
   line_number: number;
+  sku: string | null;
   description: string;
   quantity: number;
   unit_price: number;
-  total: number;
+  discount: number;
+  line_subtotal: number;
+  line_tax: number;
+  line_total: number;
+  tax_rate: number | null;
 }
 
 export interface InvoiceTax {
-  id: number;
-  invoice_id: number;
-  tax_code: string;
-  tax_percent: number;
-  base_amount: number;
-  tax_amount: number;
+  tax_code: number;
+  rate_code: number;
+  rate_pct: number;
+  base_imponible: number;
+  tax_value: number;
 }
 
 export interface Invoice {
@@ -112,7 +114,7 @@ export interface Invoice {
   propina: number;
   total: number;
   currency?: string;
-  forma_pago?: string | null;
+  forma_pago?: number | null;
   merchant_name?: string | null;
   store_address?: string | null;
   lines?: InvoiceLine[];
@@ -137,4 +139,64 @@ export interface ReviewItem {
   consumo: Consumo | null;
   invoice: Invoice | null;
   llm_decision: Record<string, unknown> | null;
+}
+
+// Timeline
+
+export interface TimelineTransaction extends Transaction {
+  is_budget_allocation: boolean;
+  has_invoice: boolean;
+}
+
+export interface MonthGroup {
+  month_key: string;
+  month_label: string;
+  transactions: TimelineTransaction[];
+  mom_change: number | null;
+  month_spending: number | null;
+  total_in: number;
+  total_out: number;
+}
+
+export interface TimelineStats {
+  mom_change: number;
+  forecast_end: number;
+  lowest_in_period: number;
+}
+
+export interface TimelineResponse {
+  pending_from_past: TimelineTransaction[];
+  starting_balance: number | null;
+  months: MonthGroup[];
+  balance_series: BalancePoint[];
+  stats: TimelineStats;
+}
+
+// Transaction creation
+
+export interface SplitItem {
+  amount: number;
+  category?: string | null;
+  budget?: string | null;
+}
+
+export interface TransactionCreate {
+  description: string;
+  amount: number;
+  account: string;
+  category?: string | null;
+  budget?: string | null;
+  date?: string | null;
+  is_income?: boolean;
+  status?: string;
+  installments?: number | null;
+  grace_period_months?: number;
+  start_from_installment?: number;
+  splits?: SplitItem[] | null;
+}
+
+export interface TransactionCreateResponse {
+  count: number;
+  ids: number[];
+  transactions: Transaction[];
 }

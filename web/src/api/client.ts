@@ -81,6 +81,26 @@ export const api = {
 
   invoice: (id: number) =>
     request<import('./types').Invoice>(`/invoices/${id}`),
+
+  invoiceByTransaction: (txnId: number) =>
+    request<import('./types').Invoice>(`/invoices/by-transaction/${txnId}`),
+
+  timeline: (params?: Record<string, string>) => {
+    const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+    return request<import('./types').TimelineResponse>(`/transactions/timeline${qs}`);
+  },
+
+  createTransaction: (body: import('./types').TransactionCreate) =>
+    request<import('./types').TransactionCreateResponse>('/transactions', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  previewTransaction: (body: import('./types').TransactionCreate) =>
+    request<import('./types').Transaction[]>('/transactions/preview', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 };
 
 export { ApiError };

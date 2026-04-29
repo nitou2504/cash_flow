@@ -51,7 +51,7 @@ export default function BalanceChart({ series, height = 220, scrubIndex, onScrub
     if (m !== lastMonth) { monthMarks.push({ m, xi: x(i) }); lastMonth = m; }
   });
 
-  const handleMove = (e: React.MouseEvent) => {
+  const handleClick = (e: React.MouseEvent) => {
     if (!onScrub || !ref.current) return;
     const rect = ref.current.getBoundingClientRect();
     const px = e.clientX - rect.left;
@@ -63,7 +63,7 @@ export default function BalanceChart({ series, height = 220, scrubIndex, onScrub
   const gradId = mini ? 'bg-m' : 'bg-l';
 
   return (
-    <div ref={ref} style={{ position: 'relative', width: '100%', height, userSelect: 'none' }} onMouseMove={handleMove}>
+    <div ref={ref} style={{ position: 'relative', width: '100%', height, userSelect: 'none', cursor: 'crosshair' }} onClick={handleClick}>
       <svg width={w} height={height} style={{ display: 'block', overflow: 'visible' }}>
         <defs>
           <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">

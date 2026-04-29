@@ -156,3 +156,63 @@ class ReviewItemOut(BaseModel):
     consumo: Optional[ConsumoOut] = None
     invoice: Optional[InvoiceOut] = None
     llm_decision: Optional[dict] = None
+
+
+# ── Timeline ──
+
+class TimelineTransaction(TransactionOut):
+    is_budget_allocation: bool = False
+    has_invoice: bool = False
+
+
+class MonthGroup(BaseModel):
+    month_key: str
+    month_label: str
+    transactions: list[TimelineTransaction] = []
+    mom_change: Optional[float] = None
+    month_spending: Optional[float] = None
+    total_in: float = 0
+    total_out: float = 0
+
+
+class TimelineStats(BaseModel):
+    mom_change: float = 0
+    forecast_end: float = 0
+    lowest_in_period: float = 0
+
+
+class TimelineResponse(BaseModel):
+    pending_from_past: list[TimelineTransaction] = []
+    starting_balance: Optional[float] = None
+    months: list[MonthGroup] = []
+    balance_series: list[BalancePoint] = []
+    stats: TimelineStats = TimelineStats()
+
+
+# ── Transaction creation ──
+
+class SplitItem(BaseModel):
+    amount: float
+    category: Optional[str] = None
+    budget: Optional[str] = None
+
+
+class TransactionCreate(BaseModel):
+    description: str
+    amount: float
+    account: str
+    category: Optional[str] = None
+    budget: Optional[str] = None
+    date: Optional[str] = None
+    is_income: bool = False
+    status: str = "committed"
+    installments: Optional[int] = None
+    grace_period_months: int = 0
+    start_from_installment: int = 1
+    splits: Optional[list[SplitItem]] = None
+
+
+class TransactionCreateResponse(BaseModel):
+    count: int
+    ids: list[int]
+    transactions: list[TransactionOut]
