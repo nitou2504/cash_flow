@@ -1,0 +1,102 @@
+/* Cash Flow — Design tokens
+ * Modern fintech: soft cards, blue accent, balanced density.
+ */
+
+:root {
+  /* Type */
+  --font-sans: 'Inter Tight', 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Accent — blue */
+  --accent: oklch(0.62 0.16 250);
+  --accent-soft: oklch(0.92 0.05 250);
+  --accent-fg: white;
+
+  /* Semantic */
+  --pos: oklch(0.62 0.14 155);
+  --pos-soft: oklch(0.94 0.05 155);
+  --neg: oklch(0.58 0.18 25);
+  --neg-soft: oklch(0.95 0.04 25);
+  --warn: oklch(0.72 0.13 75);
+  --warn-soft: oklch(0.94 0.07 75);
+  --info: oklch(0.62 0.16 250);
+  --info-soft: oklch(0.94 0.04 250);
+
+  /* Tag categories — muted */
+  --cat-1: oklch(0.65 0.10 250);
+  --cat-2: oklch(0.65 0.10 30);
+  --cat-3: oklch(0.62 0.10 155);
+  --cat-4: oklch(0.65 0.10 290);
+  --cat-5: oklch(0.65 0.09 80);
+  --cat-6: oklch(0.62 0.09 200);
+
+  /* Light theme (default) */
+  --bg: oklch(0.985 0.003 250);
+  --bg-elev: #ffffff;
+  --bg-sunken: oklch(0.965 0.005 250);
+  --bg-hover: oklch(0.96 0.006 250);
+  --border: oklch(0.92 0.005 250);
+  --border-strong: oklch(0.86 0.008 250);
+  --fg: oklch(0.22 0.012 250);
+  --fg-muted: oklch(0.5 0.012 250);
+  --fg-faint: oklch(0.65 0.01 250);
+  --shadow-card: 0 1px 0 oklch(0.92 0.005 250 / 0.6), 0 1px 3px oklch(0.5 0.02 250 / 0.04);
+  --shadow-pop: 0 8px 28px oklch(0.3 0.02 250 / 0.10), 0 2px 6px oklch(0.3 0.02 250 / 0.06);
+  --row-zebra: oklch(0.985 0.004 250);
+
+  /* Spacing scale */
+  --r-xs: 6px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 20px;
+  --r-pill: 999px;
+
+  /* Density */
+  --row-h: 44px;
+  --row-px: 16px;
+}
+
+[data-theme='dark'] {
+  --bg: oklch(0.18 0.01 250);
+  --bg-elev: oklch(0.22 0.012 250);
+  --bg-sunken: oklch(0.16 0.01 250);
+  --bg-hover: oklch(0.25 0.012 250);
+  --border: oklch(0.28 0.012 250);
+  --border-strong: oklch(0.36 0.014 250);
+  --fg: oklch(0.96 0.005 250);
+  --fg-muted: oklch(0.72 0.012 250);
+  --fg-faint: oklch(0.55 0.012 250);
+  --row-zebra: oklch(0.20 0.011 250);
+
+  --accent: oklch(0.72 0.14 250);
+  --accent-soft: oklch(0.32 0.08 250);
+
+  --pos: oklch(0.78 0.14 155);
+  --pos-soft: oklch(0.30 0.06 155);
+  --neg: oklch(0.72 0.16 25);
+  --neg-soft: oklch(0.32 0.07 25);
+  --warn: oklch(0.82 0.14 75);
+  --warn-soft: oklch(0.32 0.08 75);
+  --info: oklch(0.72 0.14 250);
+  --info-soft: oklch(0.30 0.07 250);
+
+  --shadow-card: 0 1px 0 oklch(1 0 0 / 0.04), 0 1px 3px black;
+  --shadow-pop: 0 12px 32px oklch(0 0 0 / 0.45), 0 2px 8px oklch(0 0 0 / 0.3);
+}
+
+/* Density variants */
+[data-density='compact'] { --row-h: 36px; --row-px: 12px; }
+[data-density='balanced'] { --row-h: 44px; --row-px: 16px; }
+[data-density='spacious'] { --row-h: 56px; --row-px: 20px; }
+
+/* Accent overrides */
+[data-accent='blue'] { --accent: oklch(0.62 0.16 250); --accent-soft: oklch(0.92 0.05 250); --info: oklch(0.62 0.16 250); --info-soft: oklch(0.94 0.04 250); }
+[data-accent='green'] { --accent: oklch(0.58 0.14 155); --accent-soft: oklch(0.92 0.05 155); }
+[data-accent='violet'] { --accent: oklch(0.58 0.16 290); --accent-soft: oklch(0.92 0.05 290); }
+[data-accent='amber'] { --accent: oklch(0.68 0.14 65); --accent-soft: oklch(0.94 0.06 65); }
+
+[data-theme='dark'][data-accent='blue'] { --accent: oklch(0.72 0.14 250); --accent-soft: oklch(0.32 0.08 250); }
+[data-theme='dark'][data-accent='green'] { --accent: oklch(0.78 0.14 155); --accent-soft: oklch(0.30 0.07 155); }
+[data-theme='dark'][data-accent='violet'] { --accent: oklch(0.74 0.14 290); --accent-soft: oklch(0.32 0.08 290); }
+[data-theme='dark'][data-accent='amber'] { --accent: oklch(0.82 0.14 65); --accent-soft: oklch(0.32 0.08 65); }
