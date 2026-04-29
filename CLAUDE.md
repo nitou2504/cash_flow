@@ -7,22 +7,23 @@ Personal finance CLI app. Budget envelopes, CC billing-cycle awareness, single t
 ```
 cli.py                  # Main CLI entry point (all commands)
 bot.py                  # Telegram bot
-cash_flow.db            # Main SQLite database
-invoices.db             # SRI invoice store (separate DB)
+cash_flow.db            # Single SQLite database (all tables)
 llm_config.yaml         # LLM model routing config
 
 cashflow/               # Core domain
   config.py             # Paths, backup settings, Telegram user config
-  database.py           # Schema creation, migrations
+  database.py           # Schema creation, migrations (all tables incl invoices/consumos)
   repository.py         # All SQL queries (CRUD)
   controller.py         # Business logic orchestration
   transactions.py       # Transaction factory functions
   backup.py             # Auto/manual backup with retention
-  invoice_database.py   # invoices.db schema
+  invoice_database.py   # Compatibility shim → database.py
   invoice_repository.py # Invoice CRUD
+  consumo_database.py   # Compatibility shim → database.py
+  consumo_repository.py # Consumo CRUD
 
 llm/
-  backend.py            # LLMBackend singleton (LiteLLM wrapper, multi-provider)
+  backend.py            # LLMBackend singleton (LiteLLM wrapper, per-function routing)
   parser.py             # All LLM parsing functions
 
 ui/
@@ -36,8 +37,8 @@ gmail_sync/             # Gmail integration
   client.py             # GmailClient wrapper
   parsers.py            # CC consumo email parsers (Pichincha/Diners/Produbanco/Cash)
   invoice.py            # SRI XML parser (3 schema families)
-  ingest_consumos.py    # Consumos/* labels → consumos.db
-  ingest_invoices.py    # Facturas label → invoices.db
+  ingest_consumos.py    # Consumos/* labels → consumos table
+  ingest_invoices.py    # Facturas label → invoices table
   register_consumos.py  # Auto-register consumos → cash_flow.db transactions
   scheduled.py          # Scheduled Gmail sync job (PTB JobQueue)
   inspect_label.py      # Debug: eyeball email format
@@ -91,6 +92,10 @@ cli.py add --import installments.csv --installments
 | `backup` | `bk` | `[name]`, `list`, `restore FILE` |
 
 ## Data Model
+
+Single SQLite database (`cash_flow.db`) holds all tables: transactions, accounts, subscriptions, invoices, consumos, llm_decisions. On first run, if legacy `invoices.db` or `consumos.db` exist, they are auto-migrated and renamed to `.migrated`.
+
+Consumos link directly to transactions via `consumos.registered_txn_id` column (no bridge table). Link metadata: `link_source`, `linked_at`, `matched_invoice_number`, `matched_at`.
 
 ### Accounts
 
@@ -177,19 +182,19 @@ Each returns `EmailTxn(msg_id, bank, account, purchased_at, amount, merchant, ca
 ### Ingest workflows
 
 ```bash
-# Consumo emails → consumos.db
+# Consumo emails → consumos table
 python3 -m gmail_sync.ingest_consumos --since-last
 python3 -m gmail_sync.ingest_consumos --after 2025-01-01  # bulk
 python3 -m gmail_sync.ingest_consumos --show-unparsed
 python3 -m gmail_sync.ingest_consumos --rematch           # re-match invoices
 
-# Facturas XML → invoices.db
+# Facturas XML → invoices table
 python3 -m gmail_sync.ingest_invoices --since-last
 python3 -m gmail_sync.ingest_invoices --after 2025-01-01  # bulk
 python3 -m gmail_sync.ingest_invoices --show-unparsed
 ```
 
-### Invoice system (`invoices.db`)
+### Invoice system
 
 SRI electronic invoices (Ecuador). Parsed from XML attachments in Facturas label.
 - 3 XML schema families: bare `<factura>`, `<autorizacion>` CDATA wrap, SOAP envelope
@@ -210,7 +215,6 @@ SRI electronic invoices (Ecuador). Parsed from XML attachments in Facturas label
 | `check_no_budget` | ollama/llama3.2:3b | Fuzzy phrase detection |
 
 - Multiple Gemini API keys rotated randomly (`GEMINI_API_KEY_1` through `_4`)
-- Fallback chain on failure
 - `_clean_llm_response()` strips `<think>` tags and markdown fencing from local models
 - Two-step add: pre_parse extracts date+account cheaply, then full parse with budget filtering by payment month
 
@@ -240,7 +244,7 @@ Auto-registration pipeline (`gmail_sync/register_consumos.py`):
 1. Scheduled sync runs at midnight+midday via `gmail_sync/scheduled.py` (PTB JobQueue)
 2. Consumos matched to subscriptions/existing txns are linked (no new txn created)
 3. Unmatched consumos: deterministic rules (`register_rules.yaml`) → LLM (gemma4:e2b, think=False)
-4. LLM decisions logged in `consumos.db:llm_decisions` table (prompt, response, category)
+4. LLM decisions logged in `llm_decisions` table (prompt, response, category)
 5. Budget auto-assigned via `category_budget_map` in rules, resolved by payment month
 6. All auto-registered txns get `needs_review=1`, `source="gmail"`
 

@@ -434,6 +434,7 @@ def migrate_external_dbs(main_db_path: str, invoices_db_path: str = None, consum
                 stats[table] = count
             except sqlite3.OperationalError:
                 stats[table] = 0
+        conn.commit()
         conn.execute("DETACH DATABASE inv_db")
         os.rename(invoices_db_path, invoices_db_path + ".migrated")
 
@@ -454,6 +455,7 @@ def migrate_external_dbs(main_db_path: str, invoices_db_path: str = None, consum
                 stats[table] = conn.execute("SELECT changes()").fetchone()[0]
             except sqlite3.OperationalError:
                 stats[table] = 0
+        conn.commit()
         conn.execute("DETACH DATABASE con_db")
         os.rename(consumos_db_path, consumos_db_path + ".migrated")
 
