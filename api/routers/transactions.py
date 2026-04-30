@@ -491,17 +491,19 @@ def update_transaction(
     if not t:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
-    updates = {k: v for k, v in body.model_dump().items() if v is not None and k != "date"}
+    provided = body.model_dump(exclude_unset=True)
+    updates = {k: v for k, v in provided.items() if k != "date"}
     new_date = None
-    if body.date is not None:
-        new_date = date.fromisoformat(body.date)
+    if "date" in provided and provided["date"] is not None:
+        new_date = date.fromisoformat(provided["date"])
 
     try:
-        controller.process_transaction_edit(conn, transaction_id, updates, new_date)
+        new_ids = controller.process_transaction_edit(conn, transaction_id, updates, new_date)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    updated = repository.get_transaction_by_id(conn, transaction_id)
+    fetch_id = new_ids[0] if new_ids else transaction_id
+    updated = repository.get_transaction_by_id(conn, fetch_id)
     if not updated:
         raise HTTPException(status_code=404, detail="Transaction not found after update")
     return _txn_to_out(dict(updated))
