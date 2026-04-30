@@ -5,6 +5,7 @@ import Shell from './components/layout/Shell';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Transactions from './pages/Transactions';
+import Review from './pages/Review';
 import { api } from './api/client';
 
 const queryClient = new QueryClient({
@@ -34,7 +35,7 @@ export default function App() {
           <Route element={<AuthGate><Shell /></AuthGate>}>
             <Route index element={<Dashboard />} />
             <Route path="transactions" element={<Transactions />} />
-            <Route path="review" element={<Placeholder title="Review Queue" />} />
+            <Route path="review" element={<Review />} />
             <Route path="accounts" element={<Placeholder title="Accounts" />} />
             <Route path="categories" element={<Placeholder title="Categories" />} />
           </Route>

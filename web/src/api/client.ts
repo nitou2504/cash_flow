@@ -79,6 +79,15 @@ export const api = {
   reviewContext: (id: number) =>
     request<import('./types').ReviewItem>(`/review/${id}/context`),
 
+  approveReview: (id: number) =>
+    request<{ ok: boolean }>(`/review/${id}/approve`, { method: 'POST' }),
+
+  approveReviewBatch: (ids: number[]) =>
+    request<{ approved: number }>('/review/approve-batch', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
+
   invoice: (id: number) =>
     request<import('./types').Invoice>(`/invoices/${id}`),
 
@@ -156,6 +165,12 @@ export const api = {
   clearTransaction: (id: number) =>
     request<import('./types').Transaction>(`/transactions/${id}/clear`, {
       method: 'POST',
+    }),
+
+  convertTransaction: (id: number, body: import('./types').TransactionCreate) =>
+    request<import('./types').TransactionCreateResponse>(`/transactions/${id}/convert`, {
+      method: 'POST',
+      body: JSON.stringify(body),
     }),
 };
 

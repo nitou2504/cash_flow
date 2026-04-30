@@ -11,10 +11,14 @@ export function fmtMoneyCompact(n: number): string {
   return `${sign}$${a.toFixed(0)}`;
 }
 
+function parseDate(d: string): Date {
+  return d.includes('T') ? new Date(d) : new Date(d + 'T00:00:00');
+}
+
 export function fmtDate(d: string): string {
-  return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
+  return parseDate(d).toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
 }
 
 export function fmtDateLong(d: string): string {
-  return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  return parseDate(d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }

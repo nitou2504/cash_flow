@@ -124,11 +124,13 @@ export default function Dashboard() {
           {/* Heads up */}
           <Card title="Heads up" subtitle="Things to look at">
             {data.review_count > 0 && (
-              <Insight
-                tone="warn"
-                title={`${data.review_count} transactions need review`}
-                body="From Gmail sync and auto-registration."
-              />
+              <Link to="/review" style={{ textDecoration: 'none', color: 'inherit' }}>
+                <Insight
+                  tone="warn"
+                  title={`${data.review_count} transactions need review`}
+                  body="From Gmail sync and auto-registration."
+                />
+              </Link>
             )}
             {data.budgets.some(b => b.spent > b.allocated) && (
               <Insight

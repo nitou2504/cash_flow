@@ -7,12 +7,11 @@ import BalanceChart from '../components/charts/BalanceChart';
 import Segmented from '../components/primitives/Segmented';
 import TransactionRow from '../components/transactions/TransactionRow';
 import MonthGroupHeader from '../components/transactions/MonthGroupHeader';
-import InvoiceDrawer from '../components/transactions/InvoiceDrawer';
 import AddTransactionPanel from '../components/transactions/AddTransactionPanel';
 import TransactionDetailDrawer from '../components/transactions/TransactionDetailDrawer';
 
 export default function Transactions() {
-  const [view, setView] = useState('timeline');
+  const [view, setView] = useState('summary');
   const [showPlanning, setShowPlanning] = useState(true);
   const [accountFilter, setAccountFilter] = useState('all');
   const [fromMonth, setFromMonth] = useState(() => {
@@ -21,8 +20,8 @@ export default function Transactions() {
   });
   const [months] = useState(3);
   const [scrubIdx, setScrubIdx] = useState<number | undefined>(undefined);
-  const [invoiceTxn, setInvoiceTxn] = useState<TimelineTransaction | null>(null);
   const [detailTxn, setDetailTxn] = useState<TimelineTransaction | null>(null);
+  const [openWithInvoice, setOpenWithInvoice] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
@@ -55,7 +54,16 @@ export default function Transactions() {
 
   const totalEntries = allTxns.length;
 
-  const scrubPoint = data?.balance_series?.[scrubIdx ?? (data?.balance_series?.length ?? 1) - 1];
+  const todayIdx = useMemo(() => {
+    if (!data?.balance_series?.length) return 0;
+    const today = new Date().toISOString().slice(0, 10);
+    let idx = data.balance_series.findIndex(p => p.date > today);
+    if (idx === -1) idx = data.balance_series.length - 1;
+    else if (idx > 0) idx -= 1;
+    return idx;
+  }, [data?.balance_series]);
+
+  const scrubPoint = data?.balance_series?.[scrubIdx ?? todayIdx];
   const scrubDate = scrubPoint?.date;
 
   const highlightedId = useMemo(() => {
@@ -65,12 +73,12 @@ export default function Transactions() {
   }, [allTxns, scrubDate]);
 
   useEffect(() => {
-    if (highlightedId && rowRefs.current[highlightedId]) {
+    if (scrubIdx != null && highlightedId && rowRefs.current[highlightedId]) {
       rowRefs.current[highlightedId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
-  }, [highlightedId]);
+  }, [highlightedId, scrubIdx]);
 
-  const showBalance = view === 'timeline';
+  const showBalance = view === 'timeline' || view === 'summary';
 
   const prevMonth = () => {
     const [y, m] = fromMonth.split('-').map(Number);
@@ -140,7 +148,7 @@ export default function Transactions() {
             { value: 'summary', label: 'Summary' },
           ]} />
         </div>
-        <BalanceChart series={data?.balance_series ?? []} height={130} scrubIndex={scrubIdx} onScrub={setScrubIdx} />
+        <BalanceChart series={data?.balance_series ?? []} height={130} scrubIndex={scrubIdx ?? todayIdx} onScrub={setScrubIdx} />
       </div>
 
       {/* Filter bar */}
@@ -197,7 +205,7 @@ export default function Transactions() {
                 dateMode={dateMode}
                 selected={selectedId === txn.id || highlightedId === txn.id}
                 onClick={() => { setSelectedId(txn.id); setDetailTxn(txn); }}
-                onViewInvoice={() => setInvoiceTxn(txn)}
+                onViewInvoice={() => { setDetailTxn(txn); setSelectedId(txn.id); setOpenWithInvoice(true); }}
               />
             ))}
           </>
@@ -240,7 +248,7 @@ export default function Transactions() {
                 dateMode={dateMode}
                 selected={selectedId === txn.id || highlightedId === txn.id}
                 onClick={() => { setSelectedId(txn.id); setDetailTxn(txn); }}
-                onViewInvoice={() => setInvoiceTxn(txn)}
+                onViewInvoice={() => { setDetailTxn(txn); setSelectedId(txn.id); setOpenWithInvoice(true); }}
               />
             ))}
           </div>
@@ -253,14 +261,13 @@ export default function Transactions() {
         )}
       </div>
 
-      {detailTxn && !invoiceTxn && (
+      {detailTxn && (
         <TransactionDetailDrawer
           txn={detailTxn}
-          onClose={() => { setDetailTxn(null); setSelectedId(null); }}
-          onViewInvoice={detailTxn.has_invoice ? () => { setInvoiceTxn(detailTxn); setDetailTxn(null); } : undefined}
+          onClose={() => { setDetailTxn(null); setSelectedId(null); setOpenWithInvoice(false); }}
+          initialShowInvoice={openWithInvoice}
         />
       )}
-      {invoiceTxn && <InvoiceDrawer txn={invoiceTxn} onClose={() => setInvoiceTxn(null)} />}
       {addOpen && <AddTransactionPanel onClose={() => setAddOpen(false)} />}
     </div>
   );

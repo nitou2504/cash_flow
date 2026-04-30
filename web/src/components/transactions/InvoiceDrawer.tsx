@@ -88,7 +88,7 @@ export default function InvoiceDrawer({ txn, onClose }: Props) {
   );
 }
 
-function InvoiceBody({ txn, invoice }: { txn: TimelineTransaction; invoice: Invoice }) {
+export function InvoiceBody({ txn, invoice }: { txn: TimelineTransaction; invoice: Invoice }) {
   const lines = invoice.lines || [];
   const taxes = invoice.taxes || [];
 
