@@ -199,6 +199,26 @@ def get_budget_allocation_for_month(
         return dict(allocation)
     return None
 
+def get_expenses_for_budget_in_month(
+    conn: Connection, budget_id: str, month_date: date
+) -> List[Dict[str, Any]]:
+    cursor = conn.cursor()
+    start_of_month = month_date.replace(day=1)
+    from dateutil.relativedelta import relativedelta
+    end_of_month = (start_of_month + relativedelta(months=1)) - relativedelta(days=1)
+
+    query = """
+        SELECT * FROM transactions
+        WHERE budget = ?
+        AND date(date_payed) BETWEEN ? AND ?
+        AND (origin_id IS NULL OR origin_id != ?)
+        AND status != 'pending'
+        ORDER BY date_payed
+    """
+    cursor.execute(query, (budget_id, start_of_month, end_of_month, budget_id))
+    return [dict(row) for row in cursor.fetchall()]
+
+
 def get_total_spent_for_budget_in_month(
     conn: Connection, budget_id: str, month_date: date
 ) -> float:

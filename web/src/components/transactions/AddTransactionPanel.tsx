@@ -307,8 +307,8 @@ function FormMode({ onClose, queryClient, initial, footerContainer }: { onClose:
 
   const filteredBudgets = useMemo(() => {
     if (!budgets) return [];
-    return budgets.filter(b => b.is_budget && (!account || b.payment_account_id === account));
-  }, [budgets, account]);
+    return budgets.filter(b => b.is_budget);
+  }, [budgets]);
 
   const budgetMonth = date ? date.slice(0, 7) : undefined;
   const { data: budgetSpending } = useQuery<BudgetSpending[]>({

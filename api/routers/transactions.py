@@ -10,9 +10,9 @@ from fastapi.responses import StreamingResponse
 
 from api.deps import get_db, get_current_user
 from api.schemas import (
-    BalancePoint, MonthGroup, TimelineResponse, TimelineStats,
-    TimelineTransaction, TransactionCreate, TransactionCreateResponse,
-    TransactionOut, TransactionUpdate,
+    BalancePoint, BudgetExpensesResponse, MonthGroup, TimelineResponse,
+    TimelineStats, TimelineTransaction, TransactionCreate,
+    TransactionCreateResponse, TransactionOut, TransactionUpdate,
 )
 from cashflow import controller, repository
 from cashflow import transactions as txn_factory
@@ -477,6 +477,66 @@ def get_transaction_group(transaction_id: int, conn: sqlite3.Connection = Depend
         return [_txn_to_out(t)]
     group = repository.get_transactions_by_origin_id(conn, t["origin_id"])
     return [_txn_to_out(dict(g)) for g in group]
+
+
+@router.get("/{transaction_id}/budget-expenses", response_model=BudgetExpensesResponse)
+def get_budget_expenses(transaction_id: int, conn: sqlite3.Connection = Depends(get_db)):
+    from cashflow.transactions import _calculate_credit_card_payment_date
+
+    t = repository.get_transaction_by_id(conn, transaction_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    t = dict(t)
+
+    budget_id = t.get("origin_id")
+    if not budget_id or t.get("budget") != budget_id:
+        raise HTTPException(status_code=400, detail="Not a budget allocation")
+
+    sub = repository.get_subscription_by_id(conn, budget_id)
+    budget_name = sub["name"] if sub else budget_id
+
+    pay_date = datetime.strptime(str(t["date_payed"]), "%Y-%m-%d").date()
+    month_start = pay_date.replace(day=1)
+
+    allocated = sub["monthly_amount"] if sub else 0
+
+    spent = repository.get_total_spent_for_budget_in_month(conn, budget_id, month_start)
+    remaining = allocated - spent
+
+    expenses_raw = repository.get_expenses_for_budget_in_month(conn, budget_id, month_start)
+
+    budgets = repository.get_all_budgets(conn)
+    budget_ids = {b["id"] for b in budgets}
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT DISTINCT registered_txn_id FROM consumos "
+        "WHERE registered_txn_id IS NOT NULL AND matched_invoice_number IS NOT NULL"
+    )
+    invoice_txn_ids = {row[0] for row in cursor.fetchall()}
+
+    today = date.today()
+    month_end = (month_start + relativedelta(months=1)) - relativedelta(days=1)
+    accounts = repository.get_all_accounts(conn)
+    card_affects: list[str] = []
+    for acct in accounts:
+        if acct["account_type"] == "credit_card" and acct.get("cut_off_day") and acct.get("payment_day"):
+            pd = _calculate_credit_card_payment_date(today, acct["cut_off_day"], acct["payment_day"])
+            if month_start <= pd <= month_end:
+                card_affects.append(acct["account_id"])
+        elif acct["account_type"] == "cash":
+            if month_start <= today <= month_end:
+                card_affects.append(acct["account_id"])
+
+    return BudgetExpensesResponse(
+        budget_id=budget_id,
+        budget_name=budget_name,
+        month=month_start.strftime("%Y-%m"),
+        allocated=allocated,
+        spent=spent,
+        remaining=remaining,
+        expenses=[_txn_to_timeline(e, budget_ids, invoice_txn_ids) for e in expenses_raw],
+        card_affects=card_affects,
+    )
 
 
 # ── Update ──

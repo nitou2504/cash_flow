@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api/client';
-import type { TimelineTransaction, Transaction, TransactionCreate, TransactionUpdate, Account, Category, Subscription, BudgetSpending, ReviewItem } from '../../api/types';
+import type { TimelineTransaction, Transaction, TransactionCreate, TransactionUpdate, Account, Category, Subscription, BudgetSpending, BudgetExpensesResponse, ReviewItem } from '../../api/types';
 import { fmtMoney, fmtDate, fmtDateLong } from '../../utils/format';
 import CatSwatch from '../primitives/CatSwatch';
 import Segmented from '../primitives/Segmented';
@@ -22,21 +22,34 @@ export default function TransactionDetailDrawer({ txn, onClose, initialEdit, ini
   const queryClient = useQueryClient();
   const [footerEl, setFooterEl] = useState<HTMLDivElement | null>(null);
 
+  const [subTxn, setSubTxn] = useState<TimelineTransaction | null>(null);
+  const [subShowInvoice, setSubShowInvoice] = useState(false);
+  const [subEditing, setSubEditing] = useState(false);
+  const [subFooterEl, setSubFooterEl] = useState<HTMLDivElement | null>(null);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (showInvoice) setShowInvoice(false);
+        if (subShowInvoice) setSubShowInvoice(false);
+        else if (subTxn) { setSubTxn(null); setSubEditing(false); }
+        else if (showInvoice) setShowInvoice(false);
         else onClose();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, showInvoice]);
+  }, [onClose, showInvoice, subTxn, subShowInvoice]);
 
   const { data: group } = useQuery<Transaction[]>({
     queryKey: ['transaction-group', txn.id],
     queryFn: () => api.transactionGroup(txn.id),
-    enabled: !!txn.origin_id,
+    enabled: !!txn.origin_id && !txn.is_budget_allocation,
+  });
+
+  const { data: budgetExpenses } = useQuery<BudgetExpensesResponse>({
+    queryKey: ['budget-expenses', txn.id],
+    queryFn: () => api.budgetExpenses(txn.id),
+    enabled: !!txn.is_budget_allocation,
   });
 
   const { data: context } = useQuery<ReviewItem>({
@@ -48,6 +61,22 @@ export default function TransactionDetailDrawer({ txn, onClose, initialEdit, ini
 
   const isGroup = group && group.length > 1;
 
+  const { data: subContext } = useQuery<ReviewItem>({
+    queryKey: ['review-context', subTxn?.id],
+    queryFn: () => api.reviewContext(subTxn!.id),
+    enabled: !!subTxn,
+  });
+  const subInvoice = subContext?.invoice || null;
+
+  const { data: subGroup } = useQuery<Transaction[]>({
+    queryKey: ['transaction-group', subTxn?.id],
+    queryFn: () => api.transactionGroup(subTxn!.id),
+    enabled: !!subTxn?.origin_id && !subTxn?.is_budget_allocation,
+  });
+  const subIsGroup = subGroup && subGroup.length > 1;
+
+  const paneCount = 1 + (subTxn ? 1 : 0) + (subShowInvoice ? 1 : 0) + (showInvoice && !txn.is_budget_allocation ? 1 : 0);
+
   return (
     <div
       style={{
@@ -58,8 +87,107 @@ export default function TransactionDetailDrawer({ txn, onClose, initialEdit, ini
       }}
       onClick={onClose}
     >
-      {/* Invoice side pane */}
-      {showInvoice && (
+      {/* Sub-transaction invoice pane (leftmost) */}
+      {subShowInvoice && subTxn && (
+        <aside
+          onClick={e => e.stopPropagation()}
+          style={{
+            width: 460, maxWidth: paneCount > 3 ? '25vw' : '35vw', height: '100%',
+            background: 'var(--bg-elev)', borderLeft: '1px solid var(--border)',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden',
+          }}
+        >
+          <header style={{
+            padding: '14px 20px', borderBottom: '1px solid var(--border)',
+            display: 'flex', alignItems: 'center', gap: 12, background: 'var(--bg)',
+          }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: 8,
+              background: 'var(--accent-soft)', color: 'var(--accent)',
+              display: 'grid', placeItems: 'center', flexShrink: 0,
+            }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 2v20l3-2 3 2 3-2 3 2 3-2 3 2V2l-3 2-3-2-3 2-3-2-3 2z"/>
+                <line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/>
+              </svg>
+            </div>
+            <div style={{ flex: 1, lineHeight: 1.2, minWidth: 0 }}>
+              <div style={{ fontSize: 11, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+                Factura electr&oacute;nica
+              </div>
+              <div className="num" style={{ fontSize: 14.5, fontWeight: 600, letterSpacing: '-0.01em' }}>
+                {subInvoice?.invoice_number ?? '...'}
+              </div>
+            </div>
+            <button onClick={() => setSubShowInvoice(false)} style={{
+              width: 32, height: 32, borderRadius: 8,
+              background: 'transparent', border: '1px solid var(--border)',
+              color: 'var(--fg-muted)', display: 'grid', placeItems: 'center', cursor: 'pointer',
+            }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </header>
+          <div style={{ flex: 1, overflow: 'auto', padding: '18px 20px 100px' }}>
+            {!subInvoice && <div style={{ padding: 20, color: 'var(--fg-muted)' }}>Loading...</div>}
+            {subInvoice && <InvoiceBody txn={subTxn} invoice={subInvoice} />}
+          </div>
+        </aside>
+      )}
+
+      {/* Sub-transaction detail pane */}
+      {subTxn && (
+        <aside
+          onClick={e => e.stopPropagation()}
+          style={{
+            width: 500, maxWidth: paneCount > 2 ? '35vw' : '45vw', height: '100%',
+            background: 'var(--bg-elev)', borderLeft: '1px solid var(--border)',
+            boxShadow: 'var(--shadow-pop)',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden',
+          }}
+        >
+          <header style={{
+            padding: '14px 20px', borderBottom: '1px solid var(--border)',
+            display: 'flex', alignItems: 'center', gap: 12, background: 'var(--bg)',
+          }}>
+            <CatSwatch cat={subTxn.category} size={32} />
+            <div style={{ flex: 1, lineHeight: 1.2, minWidth: 0 }}>
+              <div style={{ fontSize: 11, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+                Transaction #{subTxn.id}
+              </div>
+              <div style={{ fontSize: 14.5, fontWeight: 600, letterSpacing: '-0.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {subTxn.description}
+              </div>
+            </div>
+            <div className="num" style={{
+              fontSize: 22, fontWeight: 600, letterSpacing: '-0.02em',
+              color: subTxn.amount > 0 ? 'var(--pos)' : 'var(--fg)',
+            }}>
+              {fmtMoney(subTxn.amount)}
+            </div>
+            <button onClick={() => { setSubTxn(null); setSubEditing(false); setSubShowInvoice(false); }} style={{
+              width: 32, height: 32, borderRadius: 8,
+              background: 'transparent', border: '1px solid var(--border)',
+              color: 'var(--fg-muted)', display: 'grid', placeItems: 'center', cursor: 'pointer',
+            }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </header>
+          <div style={{ flex: 1, overflow: 'auto', padding: '18px 20px 20px' }}>
+            {subEditing
+              ? <EditMode txn={subTxn} group={subGroup || null} context={subContext || null} queryClient={queryClient} onClose={() => { setSubTxn(null); setSubEditing(false); }} onCancel={() => setSubEditing(false)} onViewInvoice={() => setSubShowInvoice(true)} footerContainer={subFooterEl} />
+              : <ViewMode txn={subTxn} group={subGroup || null} isGroup={!!subIsGroup} context={subContext || null} budgetExpenses={null} onEdit={() => setSubEditing(true)} onClose={() => { setSubTxn(null); setSubEditing(false); }} onViewInvoice={() => setSubShowInvoice(true)} queryClient={queryClient} footerContainer={subFooterEl} />
+            }
+          </div>
+          <div ref={setSubFooterEl} />
+        </aside>
+      )}
+
+      {/* Invoice side pane (for non-envelope main txn) */}
+      {showInvoice && !txn.is_budget_allocation && (
         <aside
           onClick={e => e.stopPropagation()}
           style={{
@@ -107,11 +235,13 @@ export default function TransactionDetailDrawer({ txn, onClose, initialEdit, ini
         </aside>
       )}
 
-      {/* Transaction drawer */}
+      {/* Main transaction / envelope drawer */}
       <aside
         onClick={e => e.stopPropagation()}
         style={{
-          width: 540, maxWidth: showInvoice ? '50vw' : '90%', height: '100%',
+          width: txn.is_budget_allocation ? 480 : 540,
+          maxWidth: paneCount > 1 ? `${Math.floor(90 / paneCount)}vw` : '90%',
+          height: '100%',
           background: 'var(--bg-elev)', borderLeft: '1px solid var(--border)',
           boxShadow: 'var(--shadow-pop)',
           display: 'flex', flexDirection: 'column', overflow: 'hidden',
@@ -122,21 +252,45 @@ export default function TransactionDetailDrawer({ txn, onClose, initialEdit, ini
           padding: '14px 20px', borderBottom: '1px solid var(--border)',
           display: 'flex', alignItems: 'center', gap: 12, background: 'var(--bg)',
         }}>
-          <CatSwatch cat={txn.category} size={32} />
-          <div style={{ flex: 1, lineHeight: 1.2, minWidth: 0 }}>
-            <div style={{ fontSize: 11, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
-              Transaction #{txn.id}
-            </div>
-            <div style={{ fontSize: 14.5, fontWeight: 600, letterSpacing: '-0.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {txn.description}
-            </div>
-          </div>
-          <div className="num" style={{
-            fontSize: 22, fontWeight: 600, letterSpacing: '-0.02em',
-            color: txn.amount > 0 ? 'var(--pos)' : 'var(--fg)',
-          }}>
-            {fmtMoney(txn.amount)}
-          </div>
+          {txn.is_budget_allocation ? (
+            <>
+              <div style={{
+                width: 32, height: 32, borderRadius: 8,
+                background: 'var(--accent-soft)', color: 'var(--accent)',
+                display: 'grid', placeItems: 'center', flexShrink: 0,
+              }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 10h20"/><path d="M6 16h4"/>
+                </svg>
+              </div>
+              <div style={{ flex: 1, lineHeight: 1.2, minWidth: 0 }}>
+                <div style={{ fontSize: 11, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+                  Envelope
+                </div>
+                <div style={{ fontSize: 14.5, fontWeight: 600, letterSpacing: '-0.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {txn.description}
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <CatSwatch cat={txn.category} size={32} />
+              <div style={{ flex: 1, lineHeight: 1.2, minWidth: 0 }}>
+                <div style={{ fontSize: 11, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+                  Transaction #{txn.id}
+                </div>
+                <div style={{ fontSize: 14.5, fontWeight: 600, letterSpacing: '-0.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {txn.description}
+                </div>
+              </div>
+              <div className="num" style={{
+                fontSize: 22, fontWeight: 600, letterSpacing: '-0.02em',
+                color: txn.amount > 0 ? 'var(--pos)' : 'var(--fg)',
+              }}>
+                {fmtMoney(txn.amount)}
+              </div>
+            </>
+          )}
           <button onClick={onClose} style={{
             width: 32, height: 32, borderRadius: 8,
             background: 'transparent', border: '1px solid var(--border)',
@@ -152,7 +306,7 @@ export default function TransactionDetailDrawer({ txn, onClose, initialEdit, ini
         <div style={{ flex: 1, overflow: 'auto', padding: '18px 20px 20px' }}>
           {editing
             ? <EditMode txn={txn} group={group || null} context={context || null} queryClient={queryClient} onClose={onClose} onCancel={initialEdit ? onClose : () => setEditing(false)} onViewInvoice={() => setShowInvoice(true)} footerContainer={footerEl} />
-            : <ViewMode txn={txn} group={group || null} isGroup={!!isGroup} context={context || null} onEdit={() => setEditing(true)} onClose={onClose} onViewInvoice={() => setShowInvoice(true)} queryClient={queryClient} footerContainer={footerEl} />
+            : <ViewMode txn={txn} group={group || null} isGroup={!!isGroup} context={context || null} budgetExpenses={budgetExpenses || null} onEdit={() => setEditing(true)} onClose={onClose} onViewInvoice={() => setShowInvoice(true)} onSelectExpense={(e, withInvoice) => { setSubTxn(e); setSubEditing(false); setSubShowInvoice(!!withInvoice); }} selectedExpenseId={subTxn?.id ?? null} queryClient={queryClient} footerContainer={footerEl} />
           }
         </div>
         <div ref={setFooterEl} />
@@ -162,14 +316,17 @@ export default function TransactionDetailDrawer({ txn, onClose, initialEdit, ini
 }
 
 
-function ViewMode({ txn, group, isGroup, context, onEdit, onClose, onViewInvoice, queryClient, footerContainer }: {
+function ViewMode({ txn, group, isGroup, context, budgetExpenses, onEdit, onClose, onViewInvoice, onSelectExpense, selectedExpenseId, queryClient, footerContainer }: {
   txn: TimelineTransaction;
   group: Transaction[] | null;
   isGroup: boolean;
   context: ReviewItem | null;
+  budgetExpenses: BudgetExpensesResponse | null;
   onEdit: () => void;
   onClose: () => void;
   onViewInvoice: () => void;
+  onSelectExpense?: (e: TimelineTransaction, withInvoice?: boolean) => void;
+  selectedExpenseId?: number | null;
   queryClient: ReturnType<typeof useQueryClient>;
   footerContainer?: HTMLDivElement | null;
 }) {
@@ -200,6 +357,7 @@ function ViewMode({ txn, group, isGroup, context, onEdit, onClose, onViewInvoice
 
   return (
     <>
+      {!txn.is_budget_allocation && (<>
       {/* Detail fields */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
         <InfoBlock label="Purchase date" value={fmtDateLong(txn.date_created)} />
@@ -286,9 +444,100 @@ function ViewMode({ txn, group, isGroup, context, onEdit, onClose, onViewInvoice
           )}
         </ContextCard>
       )}
+      </>)}
+
+      {/* Budget envelope expenses */}
+      {txn.is_budget_allocation && budgetExpenses && (() => {
+        const overspent = budgetExpenses.remaining < 0;
+        return (
+        <>
+          <SectionLabel>{budgetExpenses.budget_name} &middot; {budgetExpenses.month}</SectionLabel>
+          <div style={{
+            display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 12,
+          }}>
+            {[
+              { label: 'Allocated', value: budgetExpenses.allocated, color: 'var(--accent)' },
+              { label: 'Spent', value: budgetExpenses.spent, color: 'var(--fg)' },
+              { label: overspent ? 'Overspent' : 'Remaining', value: Math.abs(budgetExpenses.remaining), color: overspent ? 'var(--neg)' : budgetExpenses.remaining > 0 ? 'var(--pos)' : 'var(--fg-muted)' },
+            ].map(s => (
+              <div key={s.label} style={{
+                padding: '8px 10px', background: 'var(--bg-sunken)',
+                border: '1px solid var(--border)', borderRadius: 8, textAlign: 'center',
+              }}>
+                <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--fg-faint)', textTransform: 'uppercase', marginBottom: 3 }}>{s.label}</div>
+                <div className="num" style={{ fontSize: 14, fontWeight: 600, color: s.color }}>{fmtMoney(s.value)}</div>
+              </div>
+            ))}
+          </div>
+
+          {budgetExpenses.card_affects.length > 0 && (
+            <div style={{
+              padding: '8px 12px', marginBottom: 12, borderRadius: 8, fontSize: 12,
+              background: 'color-mix(in oklch, var(--accent) 6%, transparent)',
+              border: '1px solid color-mix(in oklch, var(--accent) 20%, transparent)',
+              color: 'var(--fg-muted)',
+            }}>
+              <span style={{ fontWeight: 600, color: 'var(--accent)' }}>Today&rsquo;s purchases affect this envelope:</span>{' '}
+              {budgetExpenses.card_affects.join(', ')}
+            </div>
+          )}
+
+          {budgetExpenses.expenses.length > 0 ? (
+            <div style={{
+              border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden',
+              background: 'var(--bg-elev)', marginBottom: 18,
+            }}>
+              <div style={{
+                display: 'grid', gridTemplateColumns: '1fr 72px 72px 80px',
+                gap: 6, padding: '8px 14px', fontSize: 10.5, fontWeight: 600,
+                color: 'var(--fg-faint)', letterSpacing: '0.05em', textTransform: 'uppercase',
+                background: 'var(--bg-sunken)', borderBottom: '1px solid var(--border)',
+              }}>
+                <div>Description</div><div style={{ textAlign: 'right' }}>Bought</div><div style={{ textAlign: 'right' }}>Pays</div><div style={{ textAlign: 'right' }}>Amount</div>
+              </div>
+              {budgetExpenses.expenses.map((e, i) => (
+                <div key={e.id} onClick={() => onSelectExpense?.(e)} style={{
+                  display: 'grid', gridTemplateColumns: '1fr 72px 72px 80px',
+                  gap: 6, padding: '8px 14px', fontSize: 12.5,
+                  borderTop: i === 0 ? 'none' : '1px solid var(--border)',
+                  cursor: 'pointer',
+                  background: selectedExpenseId === e.id ? 'var(--bg-hover)' : 'transparent',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                    <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.description}</span>
+                    {e.has_invoice && (
+                      <button
+                        onClick={ev => { ev.stopPropagation(); onSelectExpense?.(e, true); }}
+                        title="View invoice"
+                        style={{
+                          background: 'var(--bg-sunken)', border: '1px solid var(--border)',
+                          borderRadius: 4, padding: '1px 4px', fontSize: 10, color: 'var(--fg-muted)',
+                          cursor: 'pointer', flexShrink: 0,
+                        }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M4 2v20l3-2 3 2 3-2 3 2 3-2 3 2V2l-3 2-3-2-3 2-3-2-3 2z"/>
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                  <div className="num" style={{ textAlign: 'right', fontSize: 11.5, color: 'var(--fg-muted)' }}>{fmtDate(e.date_created)}</div>
+                  <div className="num" style={{ textAlign: 'right', fontSize: 11.5, color: e.date_created !== e.date_payed ? 'var(--fg-faint)' : 'var(--fg-muted)' }}>{e.date_created !== e.date_payed ? fmtDate(e.date_payed) : ''}</div>
+                  <div className="num" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(e.amount)}</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ padding: 16, textAlign: 'center', color: 'var(--fg-faint)', fontSize: 13, marginBottom: 18 }}>
+              No expenses charged to this budget yet
+            </div>
+          )}
+        </>
+        );
+      })()}
 
       {/* Installment group */}
-      {isGroup && group && (
+      {!txn.is_budget_allocation && isGroup && group && (
         <>
           <SectionLabel>Installment group &middot; {group.length} payments</SectionLabel>
           <div style={{
@@ -320,7 +569,7 @@ function ViewMode({ txn, group, isGroup, context, onEdit, onClose, onViewInvoice
         </>
       )}
 
-      {footerContainer && createPortal(
+      {!txn.is_budget_allocation && footerContainer && createPortal(
         <div style={{
           padding: '14px 20px',
           borderTop: '1px solid var(--border)', background: 'var(--bg-elev)',
@@ -422,8 +671,8 @@ function EditMode({ txn, group, context, queryClient, onClose, onCancel, onViewI
 
   const filteredBudgets = useMemo(() => {
     if (!budgets) return [];
-    return budgets.filter(b => b.is_budget && (!account || b.payment_account_id === account));
-  }, [budgets, account]);
+    return budgets.filter(b => b.is_budget);
+  }, [budgets]);
 
   const budgetMonth = date ? date.slice(0, 7) : undefined;
   const { data: budgetSpending } = useQuery<BudgetSpending[]>({
@@ -441,6 +690,7 @@ function EditMode({ txn, group, context, queryClient, onClose, onCancel, onViewI
       queryClient.invalidateQueries({ queryKey: ['timeline'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['transaction-group'] });
+      queryClient.invalidateQueries({ queryKey: ['budget-expenses'] });
       onClose();
     },
   });
@@ -451,6 +701,7 @@ function EditMode({ txn, group, context, queryClient, onClose, onCancel, onViewI
       queryClient.invalidateQueries({ queryKey: ['timeline'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['transaction-group'] });
+      queryClient.invalidateQueries({ queryKey: ['budget-expenses'] });
       onClose();
     },
   });

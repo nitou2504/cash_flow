@@ -42,22 +42,61 @@ CLASSIFICATION_HINTS_PATH = _BASE_DIR / "classification_hints.yaml"
 CLASSIFICATION_HINTS_EXAMPLE_PATH = _BASE_DIR / "classification_hints.yaml.example"
 
 
-def load_rules(path: Path = RULES_PATH) -> dict:
-    rules_file = path if path.exists() else RULES_EXAMPLE_PATH
-    with open(rules_file) as f:
-        rules = yaml.safe_load(f)
-    hints_file = CLASSIFICATION_HINTS_PATH if CLASSIFICATION_HINTS_PATH.exists() else CLASSIFICATION_HINTS_EXAMPLE_PATH
-    if hints_file.exists():
-        with open(hints_file) as f:
-            shared = yaml.safe_load(f) or {}
-        hints = rules.get("category_hints", [])
-        hints.extend(shared.get("category_hints", []))
-        hints.extend(shared.get("user_hints", []))
-        rules["category_hints"] = hints
-        budget_map = rules.get("category_budget_map", {})
-        budget_map.update(shared.get("category_budget_map", {}))
-        rules["category_budget_map"] = budget_map
+def load_rules(path: Path = RULES_PATH, conn=None) -> dict:
+    rules = _load_rules_from_db(conn) if conn else None
+    if rules is None:
+        rules_file = path if path.exists() else RULES_EXAMPLE_PATH
+        with open(rules_file) as f:
+            rules = yaml.safe_load(f)
+        hints = _load_hints_from_db(conn) if conn else None
+        if hints is None:
+            hints_file = CLASSIFICATION_HINTS_PATH if CLASSIFICATION_HINTS_PATH.exists() else CLASSIFICATION_HINTS_EXAMPLE_PATH
+            if hints_file.exists():
+                with open(hints_file) as f:
+                    hints = yaml.safe_load(f) or {}
+        if hints:
+            all_hints = rules.get("category_hints", [])
+            all_hints.extend(hints.get("category_hints", []))
+            all_hints.extend(hints.get("user_hints", []))
+            rules["category_hints"] = all_hints
+            budget_map = rules.get("category_budget_map", {})
+            budget_map.update(hints.get("category_budget_map", {}))
+            rules["category_budget_map"] = budget_map
     return rules
+
+
+def _load_rules_from_db(conn) -> dict | None:
+    if not conn:
+        return None
+    import json
+    try:
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", ("config:register_rules",)).fetchone()
+        if not row:
+            return None
+        rules = json.loads(row[0])
+        hints = _load_hints_from_db(conn)
+        if hints:
+            all_hints = rules.get("category_hints", [])
+            all_hints.extend(hints.get("category_hints", []))
+            all_hints.extend(hints.get("user_hints", []))
+            rules["category_hints"] = all_hints
+            budget_map = rules.get("category_budget_map", {})
+            budget_map.update(hints.get("category_budget_map", {}))
+            rules["category_budget_map"] = budget_map
+        return rules
+    except Exception:
+        return None
+
+
+def _load_hints_from_db(conn) -> dict | None:
+    if not conn:
+        return None
+    import json
+    try:
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", ("config:classification_hints",)).fetchone()
+        return json.loads(row[0]) if row else None
+    except Exception:
+        return None
 
 
 def _extract_keywords(merchant: str) -> list[str]:

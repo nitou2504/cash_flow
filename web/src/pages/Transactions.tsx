@@ -28,6 +28,8 @@ export default function Transactions() {
   const rowRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
   const { data: accounts } = useQuery<Account[]>({ queryKey: ['accounts'], queryFn: api.accounts });
+  useQuery({ queryKey: ['categories'], queryFn: api.categories, staleTime: 5 * 60_000 });
+  useQuery({ queryKey: ['budgets'], queryFn: api.budgets, staleTime: 5 * 60_000 });
 
   const sortBy = view === 'created' ? 'date_created' : 'date_payed';
   const dateMode: 'payed' | 'created' = view === 'created' ? 'created' : 'payed';

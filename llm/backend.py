@@ -59,22 +59,41 @@ class LLMBackend:
         """
         config = self._get_default_config()
 
-        # Try YAML file
-        yaml_path = "llm_config.yaml"
-        if os.path.exists(yaml_path):
-            try:
-                with open(yaml_path, 'r') as f:
-                    yaml_config = yaml.safe_load(f)
-                    if yaml_config:
-                        config.update(yaml_config)
-                        logger.info(f"Loaded configuration from {yaml_path}")
-            except Exception as e:
-                logger.warning(f"Failed to load {yaml_path}: {e}. Using defaults.")
+        # Try DB first
+        db_config = self._load_config_from_db()
+        if db_config:
+            config.update(db_config)
+            logger.info("Loaded LLM configuration from database")
+        else:
+            yaml_path = "llm_config.yaml"
+            if os.path.exists(yaml_path):
+                try:
+                    with open(yaml_path, 'r') as f:
+                        yaml_config = yaml.safe_load(f)
+                        if yaml_config:
+                            config.update(yaml_config)
+                            logger.info(f"Loaded configuration from {yaml_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to load {yaml_path}: {e}. Using defaults.")
 
         # Override with environment variables
         self._apply_env_overrides(config)
 
         return config
+
+    def _load_config_from_db(self) -> Optional[Dict[str, Any]]:
+        import json
+        try:
+            from cashflow.config import DB_PATH
+            from cashflow.database import create_connection
+            conn = create_connection(DB_PATH)
+            row = conn.execute("SELECT value FROM settings WHERE key = ?", ("config:llm_config",)).fetchone()
+            conn.close()
+            if row:
+                return json.loads(row[0])
+        except Exception:
+            pass
+        return None
 
     def _get_default_config(self) -> Dict[str, Any]:
         """

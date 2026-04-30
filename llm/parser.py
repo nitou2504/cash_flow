@@ -79,6 +79,18 @@ def _load_classification_hints() -> dict:
     global _classification_hints_cache
     if _classification_hints_cache is not None:
         return _classification_hints_cache
+    import json
+    try:
+        from cashflow.config import DB_PATH
+        from cashflow.database import create_connection
+        conn = create_connection(DB_PATH)
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", ("config:classification_hints",)).fetchone()
+        conn.close()
+        if row:
+            _classification_hints_cache = json.loads(row[0])
+            return _classification_hints_cache
+    except Exception:
+        pass
     base = Path(__file__).resolve().parent.parent
     hints_path = base / "classification_hints.yaml"
     if not hints_path.exists():

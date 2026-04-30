@@ -76,7 +76,7 @@ def _run_sync() -> dict:
         summary["invoices_matched"] = mstats["matched"]
 
         # 4. Register unregistered consumos
-        rules = load_rules()
+        rules = load_rules(conn=conn)
         rstats = register_consumos(
             conn,
             use_llm=True, after=SYNC_AFTER, rules=rules,

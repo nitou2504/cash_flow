@@ -257,6 +257,8 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
             _apply_expense_to_budget(conn, t)
         # --- End Budget Logic ---
 
+        return inserted_ids
+
 
 def process_subscription_request(conn: sqlite3.Connection, subscription_data: Dict[str, Any]):
     """
@@ -287,13 +289,10 @@ def process_transaction_edit(conn: sqlite3.Connection, transaction_id: int, upda
     """
     validate_category(conn, updates.get("category"))
     if new_date:
-        # If the date is changing, we must use the robust process that
-        # correctly recalculates budgets and payment dates across months.
-        process_transaction_date_update(conn, transaction_id, new_date, updates)
+        return process_transaction_date_update(conn, transaction_id, new_date, updates)
     else:
-        # For any other change (amount, description, status, etc.), a direct
-        # update is sufficient.
         process_transaction_update(conn, transaction_id, updates)
+        return [transaction_id]
 
 
 def process_transaction_update(conn: sqlite3.Connection, transaction_id: int, updates: Dict[str, Any]):
@@ -997,7 +996,7 @@ def process_transaction_date_update(conn: sqlite3.Connection, transaction_id: in
         _recalculate_and_update_budget(conn, budget_id, month_date)
 
     # 4. Re-create: Generate the new transaction(s) with the new date
-    process_transaction_request(conn, recreation_context, transaction_date=new_date)
+    return process_transaction_request(conn, recreation_context, transaction_date=new_date)
 
 
 if __name__ == '__main__':
