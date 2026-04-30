@@ -213,6 +213,32 @@ def process_transaction_request(conn: sqlite3.Connection, request: Dict[str, Any
             source=request.get("source"),
             needs_review=request.get("needs_review", False),
         )
+    elif transaction_type == "split_installment":
+        installments = request.get("installments")
+        total_installments = request.get("total_installments")
+        start_from = request.get("start_from_installment", 1)
+
+        if installments is None and total_installments is not None:
+            installments = total_installments - start_from + 1
+
+        if installments is None or not request.get("splits"):
+            raise ValueError("Split-installment request needs 'installments' and 'splits'.")
+
+        new_transactions = transactions.create_split_installment_transactions(
+            description=request["description"],
+            splits=request["splits"],
+            installments=installments,
+            account=account,
+            transaction_date=effective_transaction_date,
+            grace_period_months=request.get("grace_period_months", 0),
+            start_from_installment=start_from,
+            total_installments=total_installments,
+            is_income=request.get("is_income", False),
+            is_pending=request.get("is_pending", False),
+            is_planning=request.get("is_planning", False),
+            source=request.get("source"),
+            needs_review=request.get("needs_review", False),
+        )
     else:
         raise ValueError(f"Invalid transaction type: {transaction_type}")
 

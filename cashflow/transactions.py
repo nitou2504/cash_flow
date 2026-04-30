@@ -269,6 +269,64 @@ def create_split_transactions(
         transactions.append(transaction)
     return transactions
 
+def create_split_installment_transactions(
+    description: str,
+    splits: List[Dict[str, Any]],
+    installments: int,
+    account: Dict[str, Any],
+    transaction_date: date,
+    grace_period_months: int = 0,
+    start_from_installment: int = 1,
+    total_installments: Optional[int] = None,
+    is_income: bool = False,
+    is_pending: bool = False,
+    is_planning: bool = False,
+    source: Optional[str] = None,
+    needs_review: bool = False,
+) -> List[Dict[str, Any]]:
+    origin_id = _generate_origin_id()
+    final_total_installments = total_installments if total_installments is not None else installments
+    transactions_list = []
+
+    for i in range(installments):
+        current_installment_num = start_from_installment + i
+        if total_installments is not None and current_installment_num > total_installments:
+            break
+
+        future_billing_date = transaction_date + relativedelta(months=i + grace_period_months)
+
+        for split in splits:
+            split_amount = round(split["amount"] / final_total_installments, 2)
+            final_amount = abs(split_amount) if is_income else -abs(split_amount)
+            cat_label = split.get("category") or "Split"
+            inst_desc = f"{description} ({current_installment_num}/{final_total_installments}) - {cat_label}"
+
+            txn = _create_base_transaction(
+                description=inst_desc,
+                amount=final_amount,
+                category=split.get("category"),
+                budget=split.get("budget"),
+                transaction_date=transaction_date,
+                is_pending=is_pending,
+                is_planning=is_planning,
+                source=source,
+                needs_review=needs_review,
+            )
+            txn["account"] = account.get("account_id")
+            txn["origin_id"] = origin_id
+
+            if account.get("account_type") == "credit_card":
+                txn["date_payed"] = _calculate_credit_card_payment_date(
+                    future_billing_date, account["cut_off_day"], account["payment_day"]
+                )
+            else:
+                txn["date_payed"] = future_billing_date
+
+            transactions_list.append(txn)
+
+    return transactions_list
+
+
 def create_recurrent_transactions(
     subscription: Dict[str, Any],
     account: Dict[str, Any],
