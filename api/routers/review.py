@@ -1,11 +1,13 @@
 import sqlite3
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from api.deps import get_db, get_current_user
 from api.schemas import TransactionOut, ReviewItemOut, ConsumoOut, InvoiceOut
 from api.routers.transactions import _txn_to_out
+from api.routers.invoices import _build_invoice
 from cashflow import repository
 
 router = APIRouter(prefix="/api/review", tags=["review"], dependencies=[Depends(get_current_user)])
@@ -50,19 +52,7 @@ def review_context(transaction_id: int, conn: sqlite3.Connection = Depends(get_d
             )
             inv_row = cursor.fetchone()
             if inv_row:
-                inv = dict(inv_row)
-                invoice = InvoiceOut(
-                    id=inv["id"], invoice_number=inv["invoice_number"],
-                    doc_type=inv["doc_type"], ruc=inv["ruc"], vendor=inv["vendor"],
-                    vendor_trade_name=inv.get("vendor_trade_name"),
-                    issue_date=str(inv["issue_date"]),
-                    subtotal_sin_impuesto=inv["subtotal_sin_impuesto"],
-                    total_descuento=inv.get("total_descuento", 0),
-                    propina=inv.get("propina", 0), total=inv["total"],
-                    forma_pago=inv.get("forma_pago"),
-                    merchant_name=inv.get("merchant_name"),
-                    store_address=inv.get("store_address"),
-                )
+                invoice = _build_invoice(dict(inv_row), cursor)
         cursor.execute(
             "SELECT * FROM llm_decisions WHERE consumo_id = ? ORDER BY id DESC LIMIT 1",
             (c["id"],),
@@ -74,3 +64,27 @@ def review_context(transaction_id: int, conn: sqlite3.Connection = Depends(get_d
     return ReviewItemOut(
         transaction=txn_out, consumo=consumo, invoice=invoice, llm_decision=llm_decision,
     )
+
+
+@router.post("/{transaction_id}/approve")
+def approve_review(transaction_id: int, conn: sqlite3.Connection = Depends(get_db)):
+    t = repository.get_transaction_by_id(conn, transaction_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    repository.mark_reviewed(conn, transaction_id)
+    return {"ok": True}
+
+
+class BatchApproveBody(BaseModel):
+    ids: List[int]
+
+
+@router.post("/approve-batch")
+def approve_review_batch(body: BatchApproveBody, conn: sqlite3.Connection = Depends(get_db)):
+    approved = 0
+    for tid in body.ids:
+        t = repository.get_transaction_by_id(conn, tid)
+        if t and dict(t).get("needs_review"):
+            repository.mark_reviewed(conn, tid)
+            approved += 1
+    return {"approved": approved}
