@@ -173,9 +173,10 @@ def get_timeline(
                     "needs_review": 0, "running_balance": 0.0,
                 })
             else:
+                pay_date = date_key if isinstance(date_key, date) else date.fromisoformat(str(date_key)[:10])
                 summary_txns.append({
-                    "id": 0, "date_created": date_key, "date_payed": date_key,
-                    "description": f"{acct} Payment",
+                    "id": 0, "date_created": pay_date, "date_payed": pay_date,
+                    "description": f"{acct} Payment ({pay_date.strftime('%b')})",
                     "account": acct, "amount": data["amount"],
                     "category": "Credit Card", "budget": None,
                     "status": st, "origin_id": None, "source": None,
@@ -186,7 +187,7 @@ def get_timeline(
 
     # Sort
     date_field = "date_created" if sort_by == "date_created" else "date_payed"
-    display_txns.sort(key=lambda t: (str(t[date_field]), t.get("id", 0)))
+    display_txns.sort(key=lambda t: (str(t[date_field]), t.get("id") or 999999))
 
     # Account filter
     if account:
@@ -320,6 +321,46 @@ def _month_key(d) -> str:
     return str(d)[:7]
 
 
+def _build_transaction_list(body: TransactionCreate, account, txn_date, is_pending, is_planning):
+    if body.splits and body.installments and body.installments >= 2:
+        splits = [{"amount": s.amount, "category": s.category, "budget": s.budget} for s in body.splits]
+        actual_count = body.installments - body.start_from_installment + 1
+        return txn_factory.create_split_installment_transactions(
+            description=body.description, splits=splits, installments=actual_count,
+            account=account, transaction_date=txn_date,
+            grace_period_months=body.grace_period_months,
+            start_from_installment=body.start_from_installment,
+            total_installments=body.installments,
+            is_income=body.is_income, is_pending=is_pending, is_planning=is_planning,
+        )
+    elif body.splits:
+        splits = [{"amount": s.amount, "category": s.category, "budget": s.budget} for s in body.splits]
+        return txn_factory.create_split_transactions(
+            description=body.description, splits=splits, account=account,
+            transaction_date=txn_date, is_income=body.is_income,
+            is_pending=is_pending, is_planning=is_planning,
+        )
+    elif body.installments and body.installments >= 2:
+        actual_count = body.installments - body.start_from_installment + 1
+        return txn_factory.create_installment_transactions(
+            description=body.description, total_amount=body.amount,
+            installments=actual_count, category=body.category,
+            budget=body.budget, account=account, transaction_date=txn_date,
+            grace_period_months=body.grace_period_months,
+            start_from_installment=body.start_from_installment,
+            total_installments=body.installments,
+            is_income=body.is_income, is_pending=is_pending, is_planning=is_planning,
+        )
+    else:
+        txn = txn_factory.create_single_transaction(
+            description=body.description, amount=body.amount,
+            category=body.category, budget=body.budget, account=account,
+            transaction_date=txn_date, grace_period_months=body.grace_period_months,
+            is_income=body.is_income, is_pending=is_pending, is_planning=is_planning,
+        )
+        return [txn]
+
+
 # ── Parse (NL) ──
 
 @router.post("/parse")
@@ -380,30 +421,7 @@ def create_transaction(
     is_pending = body.status == "pending"
     is_planning = body.status == "planning"
 
-    if body.splits:
-        splits = [{"amount": s.amount, "category": s.category, "budget": s.budget} for s in body.splits]
-        txn_list = txn_factory.create_split_transactions(
-            description=body.description, splits=splits, account=account,
-            transaction_date=txn_date, is_income=body.is_income,
-            is_pending=is_pending, is_planning=is_planning,
-        )
-    elif body.installments and body.installments >= 2:
-        txn_list = txn_factory.create_installment_transactions(
-            description=body.description, total_amount=body.amount,
-            installments=body.installments, category=body.category,
-            budget=body.budget, account=account, transaction_date=txn_date,
-            grace_period_months=body.grace_period_months,
-            start_from_installment=body.start_from_installment,
-            is_income=body.is_income, is_pending=is_pending, is_planning=is_planning,
-        )
-    else:
-        txn = txn_factory.create_single_transaction(
-            description=body.description, amount=body.amount,
-            category=body.category, budget=body.budget, account=account,
-            transaction_date=txn_date, grace_period_months=body.grace_period_months,
-            is_income=body.is_income, is_pending=is_pending, is_planning=is_planning,
-        )
-        txn_list = [txn]
+    txn_list = _build_transaction_list(body, account, txn_date, is_pending, is_planning)
 
     if body.needs_review:
         for t in txn_list:
@@ -434,30 +452,7 @@ def preview_transaction(
     is_pending = body.status == "pending"
     is_planning = body.status == "planning"
 
-    if body.splits:
-        splits = [{"amount": s.amount, "category": s.category, "budget": s.budget} for s in body.splits]
-        txn_list = txn_factory.create_split_transactions(
-            description=body.description, splits=splits, account=account,
-            transaction_date=txn_date, is_income=body.is_income,
-            is_pending=is_pending, is_planning=is_planning,
-        )
-    elif body.installments and body.installments >= 2:
-        txn_list = txn_factory.create_installment_transactions(
-            description=body.description, total_amount=body.amount,
-            installments=body.installments, category=body.category,
-            budget=body.budget, account=account, transaction_date=txn_date,
-            grace_period_months=body.grace_period_months,
-            start_from_installment=body.start_from_installment,
-            is_income=body.is_income, is_pending=is_pending, is_planning=is_planning,
-        )
-    else:
-        txn = txn_factory.create_single_transaction(
-            description=body.description, amount=body.amount,
-            category=body.category, budget=body.budget, account=account,
-            transaction_date=txn_date, grace_period_months=body.grace_period_months,
-            is_income=body.is_income, is_pending=is_pending, is_planning=is_planning,
-        )
-        txn_list = [txn]
+    txn_list = _build_transaction_list(body, account, txn_date, is_pending, is_planning)
 
     return [_txn_to_out({**t, "id": 0}) for t in txn_list]
 
@@ -545,3 +540,66 @@ def clear_transaction(
 
     updated = repository.get_transaction_by_id(conn, transaction_id)
     return _txn_to_out(dict(updated))
+
+
+# ── Convert (type change) ──
+
+@router.post("/{transaction_id}/convert", response_model=TransactionCreateResponse)
+def convert_transaction(
+    transaction_id: int,
+    body: TransactionCreate,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    t = repository.get_transaction_by_id(conn, transaction_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+
+    target_type = "simple"
+    if body.splits and body.installments and body.installments >= 2:
+        target_type = "split_installment"
+    elif body.splits:
+        target_type = "split"
+    elif body.installments and body.installments >= 2:
+        target_type = "installment"
+
+    splits = None
+    if body.splits:
+        splits = [{"amount": s.amount, "category": s.category, "budget": s.budget} for s in body.splits]
+
+    conversion_details = {
+        "target_type": target_type,
+        "description": body.description,
+        "amount": body.amount,
+        "total_amount": body.amount,
+        "account": body.account,
+        "category": body.category,
+        "budget": body.budget,
+        "is_income": body.is_income,
+        "is_pending": body.status == "pending",
+        "is_planning": body.status == "planning",
+        "installments": body.installments,
+        "grace_period_months": body.grace_period_months,
+        "start_from_installment": body.start_from_installment,
+        "splits": splits,
+    }
+
+    try:
+        controller.process_transaction_conversion(conn, transaction_id, conversion_details)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    account = repository.get_account_by_name(conn, body.account)
+    txn_date = date.fromisoformat(body.date) if body.date else date.today()
+    is_pending = body.status == "pending"
+    is_planning = body.status == "planning"
+    preview = _build_transaction_list(body, account, txn_date, is_pending, is_planning)
+
+    cursor = conn.execute(
+        "SELECT * FROM transactions ORDER BY id DESC LIMIT ?",
+        (len(preview),),
+    )
+    created = [_txn_to_out(dict(row)) for row in cursor.fetchall()]
+    created.reverse()
+    ids = [c.id for c in created]
+
+    return TransactionCreateResponse(count=len(created), ids=ids, transactions=created)
