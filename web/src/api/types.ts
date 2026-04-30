@@ -40,6 +40,18 @@ export interface BudgetSpending {
   allocated: number;
   spent: number;
   remaining: number;
+  reachable_via: string[];
+}
+
+export interface BudgetExpensesResponse {
+  budget_id: string;
+  budget_name: string;
+  month: string;
+  allocated: number;
+  spent: number;
+  remaining: number;
+  expenses: TimelineTransaction[];
+  card_affects: string[];
 }
 
 export interface Subscription {
@@ -212,4 +224,76 @@ export interface TransactionUpdate {
   status?: string;
   account?: string;
   needs_review?: number;
+}
+
+// Settings
+
+export interface SyncSummary {
+  consumos_ingested: number;
+  invoices_ingested: number;
+  invoices_matched: number;
+  registered: number;
+  enriched: number;
+  by_method: Record<string, number>;
+  errors: string[];
+}
+
+export interface SyncStatus {
+  last_run: string | null;
+  summary: SyncSummary | null;
+  running: boolean;
+  next_run: string | null;
+}
+
+export interface MerchantRule {
+  pattern: string;
+  category: string;
+  desc?: string | null;
+}
+
+export interface TransferRule {
+  account_suffix: string;
+  category: string;
+  desc_template: string;
+}
+
+export interface ItemOverride {
+  keywords: string[];
+  category: string;
+}
+
+export interface RegisterRules {
+  llm_model: string;
+  merchant_rules: MerchantRule[];
+  transfer_rules: TransferRule[];
+  item_overrides: ItemOverride[];
+}
+
+export interface ClassificationHints {
+  category_hints: string[];
+  user_hints: string[];
+  category_budget_map: Record<string, string>;
+}
+
+export interface FunctionModel {
+  provider: string;
+  model: string;
+  reason?: string | null;
+}
+
+export interface LLMProvider {
+  type: string;
+  api_key_env?: string | null;
+  base_url?: string | null;
+  models: string[];
+}
+
+export interface LLMConfig {
+  default_provider: string;
+  default_model: string;
+  providers: Record<string, LLMProvider>;
+  function_models: Record<string, FunctionModel>;
+  timeout_seconds: number;
+  max_retries: number;
+  temperature: number;
 }

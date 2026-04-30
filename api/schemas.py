@@ -63,6 +63,18 @@ class BudgetSpending(BaseModel):
     allocated: float
     spent: float
     remaining: float
+    reachable_via: list[str] = []
+
+
+class BudgetExpensesResponse(BaseModel):
+    budget_id: str
+    budget_name: str
+    month: str
+    allocated: float
+    spent: float
+    remaining: float
+    expenses: list['TimelineTransaction']
+    card_affects: list[str]
 
 
 class BalancePoint(BaseModel):

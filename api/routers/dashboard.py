@@ -101,21 +101,41 @@ def dashboard(
     review_txns = repository.get_transactions_needing_review(conn)
     review_count = len(review_txns)
 
-    # #4C — budgets whose date range includes today
+    # Compute reachable budget months: which months a purchase today would hit
+    from cashflow.transactions import _calculate_credit_card_payment_date
+    reachable_months: dict[str, list[str]] = {}  # month_str → [account_names]
+
+    for a in accounts:
+        if a["account_type"] == "cash":
+            mk = today.strftime("%Y-%m")
+            reachable_months.setdefault(mk, []).append(a["account_id"])
+        elif a["account_type"] == "credit_card" and a.get("cut_off_day") and a.get("payment_day"):
+            pay_date = _calculate_credit_card_payment_date(today, a["cut_off_day"], a["payment_day"])
+            mk = pay_date.strftime("%Y-%m")
+            reachable_months.setdefault(mk, []).append(a["account_id"])
+
     budgets_raw = repository.get_all_budgets_with_status(conn, reference_date=month_start)
     active_budgets = [b for b in budgets_raw if b.get("status") == "Active"]
     budget_spending = []
     for b in active_budgets:
         b_start = str(b.get("start_date") or "")
         b_end = str(b.get("end_date") or "9999-12-31")
-        if b_start > today_str or b_end < today_str:
+        via = []
+        for mk, acct_names in reachable_months.items():
+            month_first = mk + "-01"
+            month_last = mk + "-31"
+            if b_start <= month_last and b_end >= month_first:
+                via.extend(acct_names)
+        if not via:
             continue
+        budget_month = date.fromisoformat(b_start) if b_start else month_start
         allocated = b["monthly_amount"]
-        spent = repository.get_total_spent_for_budget_in_month(conn, b["id"], month_start)
+        spent = repository.get_total_spent_for_budget_in_month(conn, b["id"], budget_month)
         budget_spending.append(BudgetSpending(
             id=b["id"], name=b["name"], monthly_amount=b["monthly_amount"],
             payment_account_id=b["payment_account_id"], category=b["category"],
             allocated=allocated, spent=spent, remaining=max(0, allocated - spent),
+            reachable_via=sorted(set(via)),
         ))
 
     cc_debt = sum(c.total_owed for c in cc_cards)

@@ -35,9 +35,8 @@ const TransactionRow = forwardRef<HTMLDivElement, Props>(
       color = 'var(--fg-faint)';
       borderLeft = '3px solid var(--warn)';
     } else if (status === 'forecast') {
-      color = 'var(--fg-muted)';
-      borderLeft = '3px dashed var(--border)';
-      opacity = 0.7;
+      color = 'var(--fg-faint)';
+      borderLeft = '3px dashed color-mix(in oklch, var(--fg-faint) 40%, transparent)';
     } else if (status === 'planning') {
       color = 'oklch(0.58 0.16 290)';
       borderLeft = '3px solid oklch(0.58 0.16 290)';
@@ -93,6 +92,16 @@ const TransactionRow = forwardRef<HTMLDivElement, Props>(
               color: status === 'pending' ? 'var(--warn)' : status === 'planning' ? 'oklch(0.58 0.16 290)' : 'var(--fg-faint)',
             }}>
               {statusTag}
+            </span>
+          )}
+          {is_budget_allocation && (
+            <span style={{
+              fontSize: 9, fontWeight: 700, letterSpacing: '0.06em',
+              padding: '1px 5px', borderRadius: 4, flexShrink: 0, fontStyle: 'normal',
+              background: 'color-mix(in oklch, var(--accent) 12%, transparent)',
+              color: 'var(--accent)',
+            }}>
+              ENVELOPE
             </span>
           )}
           {txn.has_invoice && (

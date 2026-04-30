@@ -112,7 +112,7 @@ export default function Dashboard() {
           {/* Budget envelopes */}
           <Card
             title="Budget envelopes"
-            subtitle={`${monthShort} · ${data.budgets.length} active`}
+            subtitle={`Reachable now · ${data.budgets.length} budgets`}
             padding={0}
           >
             <div style={{ padding: '4px 16px 14px', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -172,29 +172,24 @@ function KpiSmall({ label, value, tone }: { label: string; value: string; tone: 
 
 /* ── Account Row ── */
 
-const CC_COLORS: Record<string, string> = {
-  'Visa Pichincha': 'oklch(0.62 0.14 30)',
-  'Diners': 'oklch(0.55 0.06 250)',
-  'Visa Produbanco': 'oklch(0.58 0.14 155)',
-  'Cash': 'oklch(0.58 0.14 155)',
-};
-
 function AccountRow({ account, ccCards, balance }: {
   account: { account_id: string; account_type: string; cut_off_day: number | null; payment_day: number | null };
   ccCards: CCCard[];
   balance: number;
 }) {
   const isCC = account.account_type === 'credit_card';
-  const color = CC_COLORS[account.account_id] || 'oklch(0.6 0.1 250)';
+  const color = catColor(account.account_id);
   const cc = ccCards.find(c => c.name === account.account_id);
 
   if (!isCC) {
     return (
       <div style={{ padding: '10px 10px', display: 'flex', alignItems: 'center', gap: 12, borderRadius: 8 }}>
         <div style={{
-          width: 38, height: 26, borderRadius: 5, background: color, color: 'white',
-          display: 'grid', placeItems: 'center', fontSize: 9, fontWeight: 700, flexShrink: 0, letterSpacing: '0.06em',
-        }}>CASH</div>
+          width: 38, height: 26, borderRadius: 5,
+          background: `color-mix(in oklch, ${color} 15%, var(--bg-elev))`,
+          color, display: 'grid', placeItems: 'center',
+          fontSize: 9, fontWeight: 700, flexShrink: 0, letterSpacing: '0.06em',
+        }}>{acctAbbr(account.account_id)}</div>
         <div style={{ flex: 1, lineHeight: 1.2 }}>
           <div style={{ fontSize: 13, fontWeight: 550 }}>{account.account_id}</div>
           <div style={{ fontSize: 11, color: 'var(--fg-faint)' }}>Available cash</div>
@@ -213,9 +208,11 @@ function AccountRow({ account, ccCards, balance }: {
     <div style={{ padding: '10px 10px', borderRadius: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
         <div style={{
-          width: 38, height: 26, borderRadius: 5, background: color, color: 'white',
-          display: 'grid', placeItems: 'center', fontSize: 9, fontWeight: 700, flexShrink: 0, letterSpacing: '0.06em',
-        }}>CC</div>
+          width: 38, height: 26, borderRadius: 5,
+          background: `color-mix(in oklch, ${color} 15%, var(--bg-elev))`,
+          color, display: 'grid', placeItems: 'center',
+          fontSize: 9, fontWeight: 700, flexShrink: 0, letterSpacing: '0.06em',
+        }}>{acctAbbr(account.account_id)}</div>
         <div style={{ flex: 1, lineHeight: 1.2 }}>
           <div style={{ fontSize: 13, fontWeight: 550 }}>{account.account_id}</div>
         </div>
@@ -253,6 +250,14 @@ function CyclePill({ label, amount, imminent, faint }: { label: string; amount: 
 
 /* ── Budget Mini (matches design: CatSwatch + name + spent/allocated + progress) ── */
 
+const ACCT_ABBR: Record<string, string> = {
+  'Cash': 'Cash', 'Visa Pichincha': 'VP', 'Diners': 'DIN', 'Visa Produbanco': 'VPR',
+};
+
+function acctAbbr(name: string) {
+  return ACCT_ABBR[name] || name.slice(0, 3).toUpperCase();
+}
+
 function BudgetMini({ b }: { b: BudgetType }) {
   const over = b.spent > b.allocated;
   const color = catColor(b.category);
@@ -260,8 +265,22 @@ function BudgetMini({ b }: { b: BudgetType }) {
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
         <CatSwatchShared cat={b.category} size={18} />
-        <span style={{ fontSize: 12.5, fontWeight: 550, flex: 1 }}>{b.name}</span>
-        <span className="num" style={{ fontSize: 11.5, color: over ? 'var(--neg)' : 'var(--fg-muted)' }}>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 5 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 550, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.name}</span>
+          {b.reachable_via.length > 0 && (
+            <span style={{ display: 'inline-flex', gap: 3, flexShrink: 0 }}>
+              {b.reachable_via.map(a => (
+                <span key={a} style={{
+                  fontSize: 8.5, fontWeight: 700, letterSpacing: '0.03em',
+                  padding: '1px 4px', borderRadius: 3,
+                  background: `color-mix(in oklch, ${catColor(a)} 15%, transparent)`,
+                  color: catColor(a),
+                }}>{acctAbbr(a)}</span>
+              ))}
+            </span>
+          )}
+        </div>
+        <span className="num" style={{ fontSize: 11.5, color: over ? 'var(--neg)' : 'var(--fg-muted)', flexShrink: 0 }}>
           ${b.spent.toFixed(0)} / ${b.allocated.toFixed(0)}
         </span>
       </div>
