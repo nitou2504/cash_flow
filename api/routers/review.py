@@ -75,12 +75,12 @@ def approve_review(transaction_id: int, conn: sqlite3.Connection = Depends(get_d
     return {"ok": True}
 
 
-class BatchApproveBody(BaseModel):
+class BatchIdsBody(BaseModel):
     ids: List[int]
 
 
 @router.post("/approve-batch")
-def approve_review_batch(body: BatchApproveBody, conn: sqlite3.Connection = Depends(get_db)):
+def approve_review_batch(body: BatchIdsBody, conn: sqlite3.Connection = Depends(get_db)):
     approved = 0
     for tid in body.ids:
         t = repository.get_transaction_by_id(conn, tid)
@@ -88,3 +88,15 @@ def approve_review_batch(body: BatchApproveBody, conn: sqlite3.Connection = Depe
             repository.mark_reviewed(conn, tid)
             approved += 1
     return {"approved": approved}
+
+
+@router.post("/delete-batch")
+def delete_review_batch(body: BatchIdsBody, conn: sqlite3.Connection = Depends(get_db)):
+    from cashflow import controller
+    deleted = 0
+    for tid in body.ids:
+        t = repository.get_transaction_by_id(conn, tid)
+        if t:
+            controller.process_transaction_deletion(conn, tid, delete_group=False)
+            deleted += 1
+    return {"deleted": deleted}

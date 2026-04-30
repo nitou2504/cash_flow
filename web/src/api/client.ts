@@ -57,6 +57,9 @@ export const api = {
   transactionGroup: (id: number) =>
     request<import('./types').Transaction[]>(`/transactions/${id}/group`),
 
+  budgetExpenses: (id: number) =>
+    request<import('./types').BudgetExpensesResponse>(`/transactions/${id}/budget-expenses`),
+
   accounts: () =>
     request<import('./types').Account[]>('/accounts'),
 
@@ -81,6 +84,12 @@ export const api = {
 
   approveReview: (id: number) =>
     request<{ ok: boolean }>(`/review/${id}/approve`, { method: 'POST' }),
+
+  deleteReviewBatch: (ids: number[]) =>
+    request<{ deleted: number }>('/review/delete-batch', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
 
   approveReviewBatch: (ids: number[]) =>
     request<{ approved: number }>('/review/approve-batch', {
@@ -170,6 +179,39 @@ export const api = {
   convertTransaction: (id: number, body: import('./types').TransactionCreate) =>
     request<import('./types').TransactionCreateResponse>(`/transactions/${id}/convert`, {
       method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  syncStatus: () =>
+    request<import('./types').SyncStatus>('/sync/status'),
+
+  syncTrigger: () =>
+    request<import('./types').SyncSummary>('/sync/trigger', { method: 'POST' }),
+
+  registerRulesGet: () =>
+    request<import('./types').RegisterRules>('/settings/register-rules'),
+
+  registerRulesSave: (body: import('./types').RegisterRules) =>
+    request<{ ok: boolean }>('/settings/register-rules', {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+
+  classificationHintsGet: () =>
+    request<import('./types').ClassificationHints>('/settings/classification-hints'),
+
+  classificationHintsSave: (body: import('./types').ClassificationHints) =>
+    request<{ ok: boolean }>('/settings/classification-hints', {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+
+  llmConfigGet: () =>
+    request<import('./types').LLMConfig>('/settings/llm-config'),
+
+  llmConfigSave: (body: import('./types').LLMConfig) =>
+    request<{ ok: boolean }>('/settings/llm-config', {
+      method: 'PUT',
       body: JSON.stringify(body),
     }),
 };

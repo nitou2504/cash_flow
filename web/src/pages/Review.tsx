@@ -20,11 +20,22 @@ export default function Review() {
     queryFn: () => api.reviewList(sourceFilter === 'all' ? undefined : sourceFilter),
   });
 
+  const invalidateAll = () => {
+    queryClient.invalidateQueries({ queryKey: ['review'] });
+    queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    queryClient.invalidateQueries({ queryKey: ['timeline'] });
+  };
+
   const { data: context, isFetching: ctxLoading } = useQuery<ReviewItem>({
     queryKey: ['review-context', selectedId],
     queryFn: () => api.reviewContext(selectedId!),
     enabled: !!selectedId,
   });
+
+  // Prefetch so EditPanel dropdowns are instant
+  useQuery({ queryKey: ['accounts'], queryFn: api.accounts });
+  useQuery({ queryKey: ['categories'], queryFn: api.categories });
+  useQuery({ queryKey: ['budgets'], queryFn: api.budgets });
 
   const sources = useMemo(() => {
     if (!txns) return [];
@@ -35,8 +46,7 @@ export default function Review() {
   const approveMut = useMutation({
     mutationFn: (id: number) => api.approveReview(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['review'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      invalidateAll();
       if (selectedId && txns) {
         const idx = txns.findIndex(t => t.id === selectedId);
         const next = txns[idx + 1] || txns[idx - 1];
@@ -49,8 +59,30 @@ export default function Review() {
   const batchApproveMut = useMutation({
     mutationFn: (ids: number[]) => api.approveReviewBatch(ids),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['review'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      invalidateAll();
+      setChecked(new Set());
+      setSelectedId(null);
+      setEditing(false);
+    },
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: number) => api.deleteTransaction(id),
+    onSuccess: () => {
+      invalidateAll();
+      if (selectedId && txns) {
+        const idx = txns.findIndex(t => t.id === selectedId);
+        const next = txns[idx + 1] || txns[idx - 1];
+        setSelectedId(next?.id ?? null);
+      }
+      setEditing(false);
+    },
+  });
+
+  const batchDeleteMut = useMutation({
+    mutationFn: (ids: number[]) => api.deleteReviewBatch(ids),
+    onSuccess: () => {
+      invalidateAll();
       setChecked(new Set());
       setSelectedId(null);
       setEditing(false);
@@ -73,9 +105,8 @@ export default function Review() {
 
   const handleEditDone = () => {
     setEditing(false);
-    queryClient.invalidateQueries({ queryKey: ['review'] });
+    invalidateAll();
     queryClient.invalidateQueries({ queryKey: ['review-context', selectedId] });
-    queryClient.invalidateQueries({ queryKey: ['dashboard'] });
   };
 
   return (
@@ -110,12 +141,21 @@ export default function Review() {
         )}
 
         {checked.size > 0 && (
-          <button onClick={() => batchApproveMut.mutate(Array.from(checked))} style={{
-            padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-            background: 'var(--pos)', border: 'none', color: 'white', cursor: 'pointer',
-          }}>
-            Approve {checked.size} selected
-          </button>
+          <>
+            <button onClick={() => batchDeleteMut.mutate(Array.from(checked))} style={{
+              padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+              background: 'transparent', border: '1px solid var(--neg)',
+              color: 'var(--neg)', cursor: 'pointer',
+            }}>
+              Delete {checked.size}
+            </button>
+            <button onClick={() => batchApproveMut.mutate(Array.from(checked))} style={{
+              padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+              background: 'var(--pos)', border: 'none', color: 'white', cursor: 'pointer',
+            }}>
+              Approve {checked.size}
+            </button>
+          </>
         )}
         {txns && txns.length > 0 && checked.size === 0 && (
           <button onClick={() => batchApproveMut.mutate(txns.map(t => t.id))} style={{
@@ -242,9 +282,11 @@ export default function Review() {
               <ContextPanel
                 item={context}
                 onApprove={() => approveMut.mutate(selectedId)}
+                onDelete={() => deleteMut.mutate(selectedId)}
                 onEdit={() => setEditing(true)}
                 onViewInvoice={() => setShowInvoice(v => !v)}
                 approving={approveMut.isPending}
+                deleting={deleteMut.isPending}
               />
             )}
             {context && editing && (
@@ -462,12 +504,14 @@ function SourcePill({ source }: { source: string }) {
 
 /* ── Context Panel ── */
 
-function ContextPanel({ item, onApprove, onEdit, onViewInvoice, approving }: {
+function ContextPanel({ item, onApprove, onDelete, onEdit, onViewInvoice, approving, deleting }: {
   item: ReviewItem;
   onApprove: () => void;
+  onDelete: () => void;
   onEdit: () => void;
   onViewInvoice: () => void;
   approving: boolean;
+  deleting: boolean;
 }) {
   const { transaction: txn, consumo, invoice, llm_decision } = item;
 
@@ -561,6 +605,14 @@ function ContextPanel({ item, onApprove, onEdit, onViewInvoice, approving }: {
         padding: '14px 18px', borderTop: '1px solid var(--border)',
         display: 'flex', gap: 8, background: 'var(--bg-elev)',
       }}>
+        <button onClick={onDelete} disabled={deleting} style={{
+          padding: '8px 12px', borderRadius: 8, fontSize: 13, fontWeight: 550,
+          background: 'transparent', border: '1px solid var(--neg)',
+          color: 'var(--neg)', cursor: 'pointer',
+          opacity: deleting ? 0.6 : 1,
+        }}>
+          {deleting ? '...' : 'Delete'}
+        </button>
         <button onClick={onEdit} style={{
           flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 13, fontWeight: 550,
           background: 'transparent', border: '1px solid var(--border)',
