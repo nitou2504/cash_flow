@@ -1,0 +1,18 @@
+services:
+  cashflow:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cashflow
+    restart: unless-stopped
+    ports:
+      - "8787:8000"
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      - WEB_DEV_MODE=true
+      - LLM_OLLAMA_BASE_URL=http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
