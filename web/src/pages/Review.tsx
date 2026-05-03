@@ -18,6 +18,8 @@ export default function Review() {
   const { data: txns, isLoading } = useQuery<Transaction[]>({
     queryKey: ['review', sourceFilter === 'all' ? undefined : sourceFilter],
     queryFn: () => api.reviewList(sourceFilter === 'all' ? undefined : sourceFilter),
+    refetchOnMount: 'always',
+    staleTime: 0,
   });
 
   const invalidateAll = () => {
@@ -30,12 +32,18 @@ export default function Review() {
     queryKey: ['review-context', selectedId],
     queryFn: () => api.reviewContext(selectedId!),
     enabled: !!selectedId,
+    staleTime: 0,
   });
 
   // Prefetch so EditPanel dropdowns are instant
   useQuery({ queryKey: ['accounts'], queryFn: api.accounts });
   useQuery({ queryKey: ['categories'], queryFn: api.categories });
-  useQuery({ queryKey: ['budgets'], queryFn: api.budgets });
+  const { data: budgets } = useQuery<Subscription[]>({ queryKey: ['budgets'], queryFn: api.budgets });
+
+  const budgetNames = useMemo(() => {
+    if (!budgets) return {} as Record<string, string>;
+    return Object.fromEntries(budgets.filter(b => b.is_budget).map(b => [b.id, b.name]));
+  }, [budgets]);
 
   const sources = useMemo(() => {
     if (!txns) return [];
@@ -174,7 +182,7 @@ export default function Review() {
           {/* Column headers */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: '36px 78px 1fr 120px 110px 100px 48px',
+            gridTemplateColumns: '36px 78px 1fr 110px 100px minmax(80px, 140px) 90px 48px',
             gap: 8, padding: '8px 20px', background: 'var(--bg-sunken)',
             borderBottom: '1px solid var(--border)', fontSize: 11, fontWeight: 600,
             color: 'var(--fg-muted)', letterSpacing: '0.04em', textTransform: 'uppercase',
@@ -187,6 +195,7 @@ export default function Review() {
             <div>Description</div>
             <div>Account</div>
             <div>Category</div>
+            <div>Budget</div>
             <div style={{ textAlign: 'right' }}>Amount</div>
             <div />
           </div>
@@ -197,6 +206,7 @@ export default function Review() {
             <ReviewRow
               key={txn.id}
               txn={txn}
+              budgetName={txn.budget ? budgetNames[txn.budget] || txn.budget : null}
               selected={selectedId === txn.id}
               checked={checked.has(txn.id)}
               onCheck={() => toggleCheck(txn.id)}
@@ -294,6 +304,7 @@ export default function Review() {
                 txn={context.transaction}
                 onCancel={() => setEditing(false)}
                 onSaved={handleEditDone}
+                onApprove={() => approveMut.mutate(selectedId!)}
                 onViewInvoice={() => setShowInvoice(v => !v)}
                 hasInvoice={!!context.invoice}
               />
@@ -307,10 +318,11 @@ export default function Review() {
 
 /* ── Edit Panel (inline) ── */
 
-function EditPanel({ txn, onCancel, onSaved, onViewInvoice, hasInvoice }: {
+function EditPanel({ txn, onCancel, onSaved, onApprove, onViewInvoice, hasInvoice }: {
   txn: Transaction;
   onCancel: () => void;
   onSaved: () => void;
+  onApprove: () => void;
   onViewInvoice: () => void;
   hasInvoice: boolean;
 }) {
@@ -324,19 +336,26 @@ function EditPanel({ txn, onCancel, onSaved, onViewInvoice, hasInvoice }: {
   const [category, setCategory] = useState(txn.category || '');
   const [budget, setBudget] = useState(txn.budget || '');
   const [date, setDate] = useState(txn.date_created);
+  const [approveAfterSave, setApproveAfterSave] = useState(false);
   const isIncome = txn.amount > 0;
 
   const filteredBudgets = useMemo(() => {
     if (!budgets) return [];
-    return budgets.filter(b => b.is_budget && (!account || b.payment_account_id === account));
-  }, [budgets, account]);
+    return budgets.filter(b => b.is_budget);
+  }, [budgets]);
 
   const updateMut = useMutation({
     mutationFn: (body: TransactionUpdate) => api.updateTransaction(txn.id, body),
-    onSuccess: onSaved,
+    onSuccess: () => {
+      if (approveAfterSave) {
+        onApprove();
+      } else {
+        onSaved();
+      }
+    },
   });
 
-  const handleSave = () => {
+  const buildUpdates = (): TransactionUpdate | null => {
     const updates: TransactionUpdate = {};
     if (desc !== txn.description) updates.description = desc;
     const newAmt = isIncome ? Math.abs(parseFloat(amount)) : -Math.abs(parseFloat(amount));
@@ -345,7 +364,20 @@ function EditPanel({ txn, onCancel, onSaved, onViewInvoice, hasInvoice }: {
     if ((category || null) !== (txn.category || null)) updates.category = category || null;
     if ((budget || null) !== (txn.budget || null)) updates.budget = budget || null;
     if (date !== txn.date_created) updates.date = date;
-    if (Object.keys(updates).length === 0) { onCancel(); return; }
+    return Object.keys(updates).length > 0 ? updates : null;
+  };
+
+  const handleSave = () => {
+    const updates = buildUpdates();
+    if (!updates) { onCancel(); return; }
+    setApproveAfterSave(false);
+    updateMut.mutate(updates);
+  };
+
+  const handleSaveAndApprove = () => {
+    const updates = buildUpdates();
+    if (!updates) { onApprove(); return; }
+    setApproveAfterSave(true);
     updateMut.mutate(updates);
   };
 
@@ -407,16 +439,22 @@ function EditPanel({ txn, onCancel, onSaved, onViewInvoice, hasInvoice }: {
       }}>
         {updateMut.error && <span style={{ fontSize: 12, color: 'var(--neg)', flex: 1 }}>{updateMut.error.message}</span>}
         <button onClick={onCancel} style={{
-          flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 13, fontWeight: 550,
+          padding: '8px 12px', borderRadius: 8, fontSize: 13, fontWeight: 550,
           background: 'transparent', border: '1px solid var(--border)',
           color: 'var(--fg-muted)', cursor: 'pointer',
         }}>Cancel</button>
         <button onClick={handleSave} disabled={updateMut.isPending} style={{
-          flex: 2, padding: '8px 0', borderRadius: 8, fontSize: 13, fontWeight: 600,
-          background: 'var(--accent)', border: 'none', color: 'white', cursor: 'pointer',
+          flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 13, fontWeight: 600,
+          background: 'transparent', border: '1px solid var(--accent)',
+          color: 'var(--accent)', cursor: 'pointer',
+          opacity: updateMut.isPending ? 0.6 : 1,
+        }}>Save</button>
+        <button onClick={handleSaveAndApprove} disabled={updateMut.isPending} style={{
+          flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 13, fontWeight: 600,
+          background: 'var(--pos)', border: 'none', color: 'white', cursor: 'pointer',
           opacity: updateMut.isPending ? 0.6 : 1,
         }}>
-          {updateMut.isPending ? 'Saving...' : 'Save changes'}
+          {updateMut.isPending && approveAfterSave ? 'Saving...' : 'Save & Approve'}
         </button>
       </div>
     </div>
@@ -425,8 +463,9 @@ function EditPanel({ txn, onCancel, onSaved, onViewInvoice, hasInvoice }: {
 
 /* ── Review Row ── */
 
-function ReviewRow({ txn, selected, checked, onCheck, onClick, onApprove }: {
+function ReviewRow({ txn, budgetName, selected, checked, onCheck, onClick, onApprove }: {
   txn: Transaction;
+  budgetName: string | null;
   selected: boolean;
   checked: boolean;
   onCheck: () => void;
@@ -438,7 +477,7 @@ function ReviewRow({ txn, selected, checked, onCheck, onClick, onApprove }: {
       onClick={onClick}
       style={{
         display: 'grid',
-        gridTemplateColumns: '36px 78px 1fr 120px 110px 100px 48px',
+        gridTemplateColumns: '36px 78px 1fr 110px 100px minmax(80px, 140px) 90px 48px',
         gap: 8, padding: '9px 20px',
         background: selected ? 'var(--bg-hover)' : 'transparent',
         borderTop: '1px solid var(--border)',
@@ -465,6 +504,14 @@ function ReviewRow({ txn, selected, checked, onCheck, onClick, onApprove }: {
 
       <span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>{txn.account}</span>
       <span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>{txn.category || ''}</span>
+
+      <span style={{
+        fontSize: 11, color: budgetName ? 'var(--accent)' : 'var(--fg-faint)',
+        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        fontWeight: budgetName ? 550 : 400,
+      }}>
+        {budgetName || '—'}
+      </span>
 
       <span className="num" style={{ textAlign: 'right', fontWeight: 600, color: txn.amount > 0 ? 'var(--pos)' : 'var(--fg)' }}>
         {fmtMoney(txn.amount)}
