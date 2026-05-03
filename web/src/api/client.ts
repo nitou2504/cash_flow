@@ -51,6 +51,11 @@ export const api = {
     return request<import('./types').Transaction[]>(`/transactions${qs}`);
   },
 
+  searchTransactions: (params: Record<string, string>) => {
+    const qs = '?' + new URLSearchParams(params).toString();
+    return request<import('./types').SearchResponse>(`/transactions/search${qs}`);
+  },
+
   transaction: (id: number) =>
     request<import('./types').Transaction>(`/transactions/${id}`),
 

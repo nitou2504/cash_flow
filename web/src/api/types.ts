@@ -226,6 +226,27 @@ export interface TransactionUpdate {
   needs_review?: number;
 }
 
+// Search
+
+export interface SearchFilters {
+  account?: string;
+  category?: string;
+  statuses?: string[];
+  budget?: string;
+  from_date?: string;
+  to_date?: string;
+  min_amount?: string;
+  max_amount?: string;
+  date_field?: 'date_payed' | 'date_created';
+}
+
+export interface SearchResponse {
+  results: TimelineTransaction[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 // Settings
 
 export interface SyncSummary {
@@ -251,10 +272,9 @@ export interface MerchantRule {
   desc?: string | null;
 }
 
-export interface TransferRule {
+export interface TransferDestination {
   account_suffix: string;
-  category: string;
-  desc_template: string;
+  name: string;
 }
 
 export interface ItemOverride {
@@ -265,7 +285,7 @@ export interface ItemOverride {
 export interface RegisterRules {
   llm_model: string;
   merchant_rules: MerchantRule[];
-  transfer_rules: TransferRule[];
+  transfer_destinations: TransferDestination[];
   item_overrides: ItemOverride[];
 }
 
