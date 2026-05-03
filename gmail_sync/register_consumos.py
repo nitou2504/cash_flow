@@ -114,16 +114,15 @@ def _match_rule(merchant: str, merchant_rules: dict) -> Optional[dict]:
     return None
 
 
-def _match_transfer_rule(consumo: dict, transfer_rules: dict) -> Optional[dict]:
+def _build_transfer_desc(consumo: dict, destinations: dict) -> Optional[str]:
     if consumo.get("account") != "Cash":
         return None
     dest = consumo.get("destination_account") or ""
-    rule = transfer_rules.get(dest)
-    if rule:
-        concepto = consumo.get("concepto") or consumo.get("merchant") or ""
-        desc = rule["desc_template"].format(concepto=concepto)
-        return {"category": rule["category"], "desc": desc}
-    return None
+    name = destinations.get(dest)
+    if not name:
+        return None
+    concepto = consumo.get("concepto") or consumo.get("merchant") or ""
+    return f"Transfer to {name} ({dest}) - {concepto}"
 
 
 def _build_category_block(categories: list[dict]) -> str:
@@ -141,32 +140,44 @@ def _build_category_block(categories: list[dict]) -> str:
 def _build_llm_prompt(
     consumo: dict, items: list[dict], similar: list[dict], categories: list[dict],
     hints: list[str] = None,
+    transfer_desc: str = None,
 ) -> str:
     cat_block = _build_category_block(categories)
 
-    parts = [dedent("""\
-        Given a credit card purchase, generate a short description and select a category.
-        Description style: "Merchant - 3-5 key items in Spanish". ALWAYS start with merchant name, then dash, then pick the 3-5 most representative items only, NOT all items.
-        Pick the category whose description best matches the items/purpose.
-        Respond ONLY with JSON: {"description": "...", "category": "..."}
-    """)]
-
-    parts.append(f"## Purchase\nMerchant: {consumo['merchant']}")
-    parts.append(f"Amount: ${consumo['amount']:.2f}")
-    parts.append(f"Account: {consumo['account']}")
+    if transfer_desc:
+        parts = [dedent("""\
+            Classify this bank transfer into a category based on the concepto.
+            IMPORTANT: "adelanto" means advance payment for groceries → Home Food & Supplies, NOT Family Support.
+            Only use Family Support for items bought FOR a family member (gifts, clothes, their personal needs).
+            Respond ONLY with JSON: {"category": "..."}
+        """)]
+        parts.append(f"## Transfer\nDescription: {transfer_desc}")
+        parts.append(f"Amount: ${consumo['amount']:.2f}")
+        concepto = consumo.get("concepto") or consumo.get("merchant") or ""
+        parts.append(f"Concepto: {concepto}")
+    else:
+        parts = [dedent("""\
+            Given a credit card purchase, generate a short description and select a category.
+            Description format: "MERCHANT - item1, item2, item3" (max 3-5 short item names from invoice below).
+            Keep item names SHORT (e.g. "salchicha" not "SALCHICHA HOT DOG PLUMROSE 400 GR").
+            Respond ONLY with JSON: {"description": "...", "category": "..."}
+        """)]
+        parts.append(f"## Purchase\nMerchant: {consumo['merchant']}")
+        parts.append(f"Amount: ${consumo['amount']:.2f}")
+        parts.append(f"Account: {consumo['account']}")
 
     if items:
         sorted_items = sorted(items, key=lambda x: abs(x.get("line_total", 0)), reverse=True)
-        show = sorted_items[:15]
-        parts.append("\n## Invoice items (sorted by cost, highest first):")
+        show = sorted_items[:8]
+        parts.append("\n## Invoice items (top by cost):")
         for item in show:
             qty = f"{item['quantity']:g}x " if item.get("quantity", 1) != 1 else ""
             parts.append(f"- {qty}{item['description']} ${item.get('line_total', 0):.2f}")
-        if len(sorted_items) > 15:
-            parts.append(f"  ...and {len(sorted_items) - 15} more small items")
+        if len(sorted_items) > 8:
+            parts.append(f"  ...and {len(sorted_items) - 8} more small items")
 
     if similar:
-        parts.append("\n## Similar past transactions (follow this style):")
+        parts.append("\n## Similar past transactions (for reference):")
         for s in similar[:8]:
             parts.append(f'- "{s["description"]}" → {s["category"]} (${abs(s["amount"]):.2f})')
 
@@ -176,7 +187,8 @@ def _build_llm_prompt(
         parts.append("\n## IMPORTANT classification rules (these OVERRIDE similar transactions):")
         for hint in hints:
             parts.append(f"- {hint}")
-        parts.append("Apply these rules based on the INVOICE ITEMS, not the similar transaction history.")
+        if items:
+            parts.append("Apply these rules based on the INVOICE ITEMS, not the similar transaction history.")
 
     return "\n".join(parts)
 
@@ -287,7 +299,6 @@ def prepare_one(
     if rules is None:
         rules = load_rules()
     merchant_rules = rules.get("merchant_rules", {})
-    transfer_rules = rules.get("transfer_rules", {})
     llm_model = rules.get("llm_model", "llama3.2:3b")
     hints = rules.get("category_hints", [])
 
@@ -298,14 +309,7 @@ def prepare_one(
                        "parsed_json": parsed_json, "model": model},
         }
 
-    # 1. Cash transfer rules
-    transfer = _match_transfer_rule(consumo, transfer_rules)
-    if transfer:
-        return _result(transfer["desc"], transfer["category"], "transfer_rule",
-                       prompt=f"Matched transfer rule: dest={consumo.get('destination_account')}",
-                       response_raw=json.dumps(transfer))
-
-    # 2. Deterministic merchant rules
+    # 1. Deterministic merchant rules (exact match, short-circuit)
     rule = _match_rule(consumo["merchant"], merchant_rules)
     if rule:
         desc = rule.get("desc", consumo["merchant"])
@@ -314,29 +318,55 @@ def prepare_one(
                        prompt=f"Matched merchant rule: '{matched_pattern}'",
                        response_raw=json.dumps(rule))
 
-    # 3. Get context for LLM or fallback
-    keywords = _extract_keywords(consumo["merchant"])
-    similar = find_similar_transactions(conn, keywords, limit=8) if keywords else []
+    # 2. Skip self-transfers between own accounts
+    ignore_dests = set(rules.get("ignore_destinations", []))
+    dest = consumo.get("destination_account") or ""
+    if consumo.get("account") == "Cash" and dest in ignore_dests:
+        return _result(consumo["merchant"], "_skip", "self_transfer",
+                       prompt=f"Ignored self-transfer to own account {dest}")
 
+    # 3. Detect transfers — description is deterministic, category needs LLM
+    destinations = rules.get("transfer_destinations", {})
+    transfer_desc = _build_transfer_desc(consumo, destinations)
+
+    # 3. Get invoice items if matched
     items = []
     if consumo.get("matched_invoice_number"):
         items = _get_invoice_lines(conn, consumo["matched_invoice_number"])
 
-    # 4. If no LLM, use first similar or fallback
-    if not use_llm:
-        if similar:
-            return _result(consumo["merchant"], similar[0]["category"], "fuzzy_match",
-                           prompt=f"No LLM; matched {len(similar)} similar txns",
-                           response_raw=json.dumps({"first_match": similar[0]["description"]}))
-        return _result(consumo["merchant"], "Others", "fallback",
-                       prompt="No LLM, no similar transactions found")
+    # 4. Get similar transactions for context
+    keywords = _extract_keywords(consumo["merchant"])
+    similar = find_similar_transactions(conn, keywords, limit=8) if keywords else []
 
-    # 5. LLM (for groceries/ambiguous merchants — summarize items + pick category)
-    if similar or items:
+    # 5. Transfer → LLM for category (description already set)
+    if transfer_desc:
+        if not use_llm:
+            cat = similar[0]["category"] if similar else "Home Food & Supplies"
+            return _result(transfer_desc, cat, "transfer_fallback",
+                           prompt="Transfer, no LLM")
+        cats = categories or []
+        prompt = _build_llm_prompt(consumo, items, similar, cats, hints=hints,
+                                   transfer_desc=transfer_desc)
+        result, raw = _call_llm(prompt, llm_model)
+        cat = result.get("category", "Home Food & Supplies")
+        valid_names = {c["name"] for c in cats} if cats else set()
+        if valid_names and cat not in valid_names:
+            cat = similar[0]["category"] if similar else "Home Food & Supplies"
+        return _result(transfer_desc, cat, "transfer_llm", prompt=prompt,
+                       response_raw=raw, parsed_json=result, model=llm_model)
+
+    # 6. Has invoice items → LLM for description + category
+    if items:
+        if not use_llm:
+            cat = similar[0]["category"] if similar else "Others"
+            return _result(consumo["merchant"], cat, "fuzzy_match",
+                           prompt=f"No LLM; has invoice but skipped")
         cats = categories or []
         prompt = _build_llm_prompt(consumo, items, similar, cats, hints=hints)
         result, raw = _call_llm(prompt, llm_model)
         desc = result.get("description", consumo["merchant"])
+        if len(desc) > 80:
+            desc = desc[:77] + "..."
         cat = result.get("category", "Others")
         valid_names = {c["name"] for c in cats} if cats else set()
         if valid_names and cat not in valid_names:
@@ -344,9 +374,13 @@ def prepare_one(
         return _result(desc, cat, "llm", prompt=prompt, response_raw=raw,
                        parsed_json=result, model=llm_model)
 
-    # 6. No context at all
+    # 7. No invoice, no transfer → merchant name only, no LLM
+    if similar:
+        return _result(consumo["merchant"], similar[0]["category"], "fuzzy_match",
+                       prompt=f"No invoice; matched {len(similar)} similar txns",
+                       response_raw=json.dumps({"first_match": similar[0]["description"]}))
     return _result(consumo["merchant"], "Others", "fallback",
-                   prompt="No similar transactions or invoice items found")
+                   prompt="No invoice, no similar transactions")
 
 
 def register_consumos(
@@ -436,6 +470,15 @@ def register_consumos(
         method = prep["method"]
         stats["by_method"][method] = stats["by_method"].get(method, 0) + 1
 
+        if method == "self_transfer":
+            if not dry_run:
+                mark_registered(conn, consumo["id"], -1)
+            else:
+                print(f"  {purchased} {consumo['account']:18} ${consumo['amount']:>7.2f} "
+                      f"[self_transfer  ] SKIP own-account transfer")
+            stats["skipped"] += 1
+            continue
+
         # Log decision
         debug = prep.get("_debug", {})
         try:
@@ -474,6 +517,15 @@ def register_consumos(
             print(f"  {purchased} {consumo['account']:18} ${consumo['amount']:>7.2f} "
                   f"[{method:14}] {prep['category']:20} {prep['description'][:50]}{budget_str}")
             stats["registered"] += 1
+            continue
+
+        # Race condition guard: another process may have registered this consumo
+        already = conn.execute(
+            "SELECT registered_txn_id FROM consumos WHERE id = ? AND registered_txn_id IS NOT NULL",
+            (consumo["id"],),
+        ).fetchone()
+        if already:
+            stats["skipped"] += 1
             continue
 
         inserted_ids = add_transactions(conn, [txn])

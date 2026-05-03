@@ -261,38 +261,32 @@ function RegisterRulesTab() {
 
       <div style={cardStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <div style={labelStyle}>Transfer Rules</div>
+          <div style={labelStyle}>Transfer Destinations</div>
           <button style={btnSecondary} onClick={() => update({
-            transfer_rules: [...current.transfer_rules, { account_suffix: '', category: '', desc_template: '' }],
+            transfer_destinations: [...current.transfer_destinations, { account_suffix: '', name: '' }],
           })}>+ Add</button>
         </div>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead><tr>
             <th style={thStyle}>Account (last 4)</th>
-            <th style={thStyle}>Category</th>
-            <th style={thStyle}>Description Template</th>
+            <th style={thStyle}>Name</th>
             <th style={{ ...thStyle, width: 36 }}></th>
           </tr></thead>
           <tbody>
-            {current.transfer_rules.map((r, i) => (
+            {current.transfer_destinations.map((r, i) => (
               <tr key={i}>
                 <td style={tdStyle}><input style={{ ...inputStyle, maxWidth: 100 }} value={r.account_suffix} onChange={e => {
-                  const rules = [...current.transfer_rules];
-                  rules[i] = { ...r, account_suffix: e.target.value };
-                  update({ transfer_rules: rules });
+                  const dests = [...current.transfer_destinations];
+                  dests[i] = { ...r, account_suffix: e.target.value };
+                  update({ transfer_destinations: dests });
                 }} /></td>
-                <td style={tdStyle}><input style={inputStyle} value={r.category} onChange={e => {
-                  const rules = [...current.transfer_rules];
-                  rules[i] = { ...r, category: e.target.value };
-                  update({ transfer_rules: rules });
-                }} /></td>
-                <td style={tdStyle}><input style={inputStyle} value={r.desc_template} onChange={e => {
-                  const rules = [...current.transfer_rules];
-                  rules[i] = { ...r, desc_template: e.target.value };
-                  update({ transfer_rules: rules });
+                <td style={tdStyle}><input style={inputStyle} value={r.name} onChange={e => {
+                  const dests = [...current.transfer_destinations];
+                  dests[i] = { ...r, name: e.target.value };
+                  update({ transfer_destinations: dests });
                 }} /></td>
                 <td style={tdStyle}><button style={btnDanger} onClick={() => {
-                  update({ transfer_rules: current.transfer_rules.filter((_, j) => j !== i) });
+                  update({ transfer_destinations: current.transfer_destinations.filter((_, j) => j !== i) });
                 }}>x</button></td>
               </tr>
             ))}

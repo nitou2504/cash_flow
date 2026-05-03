@@ -38,15 +38,11 @@ merchant_rules:
   MEDICITY:
     category: "Health"
 
-# Cash transfer rules: match by destination_account last 4 digits.
-# {concepto} is replaced with the transfer's concepto field.
-transfer_rules:
-  "6634":
-    category: "Home Food & Supplies"
-    desc_template: "Transfer to father (6634) - {concepto}"
-  "2210":
-    category: "Personal"
-    desc_template: "Transfer to Ana (2210) - {concepto}"
+# Cash transfer destinations: map account suffix → display name.
+# Category is determined by LLM based on concepto + classification hints.
+transfer_destinations:
+  "6634": "father"
+  "2210": "Ana"
 
 # Category hints and budget map are in classification_hints.yaml (shared with llm/parser.py).
 # They are auto-merged by load_rules() at runtime.

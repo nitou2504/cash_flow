@@ -85,10 +85,9 @@ class MerchantRule(BaseModel):
     desc: str | None = None
 
 
-class TransferRule(BaseModel):
+class TransferDestination(BaseModel):
     account_suffix: str
-    category: str
-    desc_template: str
+    name: str
 
 
 class ItemOverride(BaseModel):
@@ -99,7 +98,7 @@ class ItemOverride(BaseModel):
 class RegisterRulesIn(BaseModel):
     llm_model: str
     merchant_rules: list[MerchantRule]
-    transfer_rules: list[TransferRule]
+    transfer_destinations: list[TransferDestination]
     item_overrides: list[ItemOverride]
 
 
@@ -107,13 +106,13 @@ def _register_rules_to_json(raw: dict) -> dict:
     merchants = []
     for pattern, cfg in (raw.get("merchant_rules") or {}).items():
         merchants.append({"pattern": pattern, "category": cfg["category"], "desc": cfg.get("desc")})
-    transfers = []
-    for suffix, cfg in (raw.get("transfer_rules") or {}).items():
-        transfers.append({"account_suffix": suffix, "category": cfg["category"], "desc_template": cfg["desc_template"]})
+    destinations = []
+    for suffix, name in (raw.get("transfer_destinations") or {}).items():
+        destinations.append({"account_suffix": suffix, "name": name})
     return {
         "llm_model": raw.get("llm_model", ""),
         "merchant_rules": merchants,
-        "transfer_rules": transfers,
+        "transfer_destinations": destinations,
         "item_overrides": raw.get("item_overrides") or [],
     }
 
@@ -125,13 +124,13 @@ def _register_rules_from_json(data: RegisterRulesIn) -> dict:
         if r.desc:
             entry["desc"] = r.desc
         merchant_dict[r.pattern] = entry
-    transfer_dict: dict[str, Any] = {}
-    for r in data.transfer_rules:
-        transfer_dict[r.account_suffix] = {"category": r.category, "desc_template": r.desc_template}
+    dest_dict: dict[str, str] = {}
+    for r in data.transfer_destinations:
+        dest_dict[r.account_suffix] = r.name
     return {
         "llm_model": data.llm_model,
         "merchant_rules": merchant_dict,
-        "transfer_rules": transfer_dict,
+        "transfer_destinations": dest_dict,
         "item_overrides": [{"keywords": o.keywords, "category": o.category} for o in data.item_overrides],
     }
 

@@ -15,9 +15,9 @@ from cashflow.repository import (
 )
 from gmail_sync.parsers import EmailTxn
 from gmail_sync.register_consumos import (
+    _build_transfer_desc,
     _extract_keywords,
     _match_rule,
-    _match_transfer_rule,
     enrich_with_invoices,
     prepare_one,
     register_consumos,
@@ -31,9 +31,9 @@ TEST_RULES = {
         "GOOGLE": {"category": "Personal"},
         "KFC": {"category": "Dining-Snacks"},
     },
-    "transfer_rules": {
-        "6634": {"category": "Home Food & Supplies", "desc_template": "Transfer to father (6634) - {concepto}"},
-        "2210": {"category": "Personal", "desc_template": "Transfer to Ana (2210) - {concepto}"},
+    "transfer_destinations": {
+        "6634": "father",
+        "2210": "Ana",
     },
 }
 
@@ -74,31 +74,31 @@ class TestMerchantRules(unittest.TestCase):
         assert _match_rule("SUPERMAXI EL JARDIN", TEST_RULES["merchant_rules"]) is None
 
 
-class TestTransferRules(unittest.TestCase):
+class TestTransferDesc(unittest.TestCase):
     def test_father(self):
         consumo = {"account": "Cash", "destination_account": "6634",
                     "concepto": "Mercado", "merchant": "Mercado"}
-        r = _match_transfer_rule(consumo, TEST_RULES["transfer_rules"])
-        assert r is not None
-        assert r["category"] == "Home Food & Supplies"
-        assert "6634" in r["desc"]
-        assert "Mercado" in r["desc"]
+        desc = _build_transfer_desc(consumo, TEST_RULES["transfer_destinations"])
+        assert desc is not None
+        assert "father" in desc
+        assert "6634" in desc
+        assert "Mercado" in desc
 
     def test_danna(self):
         consumo = {"account": "Cash", "destination_account": "2210",
                     "concepto": "Velas", "merchant": "Velas"}
-        r = _match_transfer_rule(consumo, TEST_RULES["transfer_rules"])
-        assert r is not None
-        assert r["category"] == "Personal"
+        desc = _build_transfer_desc(consumo, TEST_RULES["transfer_destinations"])
+        assert desc is not None
+        assert "Ana" in desc
 
     def test_cc_not_transfer(self):
         consumo = {"account": "Visa Pichincha", "destination_account": "6634"}
-        assert _match_transfer_rule(consumo, TEST_RULES["transfer_rules"]) is None
+        assert _build_transfer_desc(consumo, TEST_RULES["transfer_destinations"]) is None
 
     def test_unknown_dest(self):
         consumo = {"account": "Cash", "destination_account": "1234",
                     "concepto": "test", "merchant": "test"}
-        assert _match_transfer_rule(consumo, TEST_RULES["transfer_rules"]) is None
+        assert _build_transfer_desc(consumo, TEST_RULES["transfer_destinations"]) is None
 
 
 class TestPrepareOne(unittest.TestCase):
@@ -119,13 +119,14 @@ class TestPrepareOne(unittest.TestCase):
         assert result["method"] == "merchant_rule"
         assert result["category"] == "Family Support"
 
-    def test_transfer_rule(self):
+    def test_transfer_fallback(self):
         consumo = {"merchant": "Mercado", "amount": 20.0, "account": "Cash",
                     "destination_account": "6634", "concepto": "Mercado",
                     "purchased_at": "2026-04-20"}
         result = prepare_one(consumo, self.cf_conn, use_llm=False, rules=TEST_RULES)
-        assert result["method"] == "transfer_rule"
+        assert result["method"] == "transfer_fallback"
         assert "6634" in result["description"]
+        assert "father" in result["description"]
 
     def test_fuzzy_match(self):
         consumo = {"merchant": "CORAL CARAPUNGO", "amount": 25.0,
