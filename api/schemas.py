@@ -240,3 +240,10 @@ class TransactionUpdate(BaseModel):
     status: Optional[str] = None
     account: Optional[str] = None
     needs_review: Optional[int] = None
+
+
+class SearchResponse(BaseModel):
+    results: list[TimelineTransaction]
+    total: int
+    limit: int
+    offset: int

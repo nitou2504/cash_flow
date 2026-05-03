@@ -10,8 +10,8 @@ from fastapi.responses import StreamingResponse
 
 from api.deps import get_db, get_current_user
 from api.schemas import (
-    BalancePoint, BudgetExpensesResponse, MonthGroup, TimelineResponse,
-    TimelineStats, TimelineTransaction, TransactionCreate,
+    BalancePoint, BudgetExpensesResponse, MonthGroup, SearchResponse,
+    TimelineResponse, TimelineStats, TimelineTransaction, TransactionCreate,
     TransactionCreateResponse, TransactionOut, TransactionUpdate,
 )
 from cashflow import controller, repository
@@ -85,6 +85,45 @@ def list_transactions(
     if not include_planning:
         txns = [t for t in txns if t["status"] != "planning"]
     return [_txn_to_out(t) for t in txns]
+
+
+# ── Search ──
+
+@router.get("/search", response_model=SearchResponse)
+def search_transactions(
+    q: Optional[str] = None,
+    account: Optional[str] = None,
+    category: Optional[str] = None,
+    status: Optional[str] = None,
+    budget: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    min_amount: Optional[float] = None,
+    max_amount: Optional[float] = None,
+    date_field: str = Query("date_payed", pattern="^(date_payed|date_created)$"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    rows, total = repository.search_transactions(
+        conn, query=q, account=account, category=category, status=status,
+        budget=budget, from_date=from_date, to_date=to_date,
+        min_amount=min_amount, max_amount=max_amount,
+        date_field=date_field, limit=limit, offset=offset,
+    )
+
+    budgets = repository.get_all_budgets(conn)
+    budget_ids = {b["id"] for b in budgets}
+
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT DISTINCT registered_txn_id FROM consumos "
+        "WHERE registered_txn_id IS NOT NULL AND matched_invoice_number IS NOT NULL"
+    )
+    invoice_txn_ids = {row[0] for row in cursor.fetchall()}
+
+    results = [_txn_to_timeline(t, budget_ids, invoice_txn_ids) for t in rows]
+    return SearchResponse(results=results, total=total, limit=limit, offset=offset)
 
 
 # ── Timeline ──

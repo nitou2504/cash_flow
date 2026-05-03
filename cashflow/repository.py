@@ -723,3 +723,72 @@ def find_matching_transaction(
     """, (account, amount, tolerance, purchase_date, date_window, purchase_date))
     row = cursor.fetchone()
     return dict(row) if row else None
+
+
+def search_transactions(
+    conn: Connection,
+    query: str = None,
+    account: str = None,
+    category: str = None,
+    status: str = None,
+    budget: str = None,
+    from_date: str = None,
+    to_date: str = None,
+    min_amount: float = None,
+    max_amount: float = None,
+    date_field: str = "date_payed",
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple:
+    if date_field not in ("date_payed", "date_created"):
+        date_field = "date_payed"
+
+    conditions = []
+    params = []
+
+    if query:
+        for kw in query.split():
+            conditions.append("description LIKE ?")
+            params.append(f"%{kw}%")
+    if account:
+        conditions.append("account = ?")
+        params.append(account)
+    if category:
+        conditions.append("category = ?")
+        params.append(category)
+    if status:
+        parts = [s.strip() for s in status.split(",") if s.strip()]
+        if len(parts) == 1:
+            conditions.append("status = ?")
+            params.append(parts[0])
+        elif parts:
+            placeholders = ",".join("?" for _ in parts)
+            conditions.append(f"status IN ({placeholders})")
+            params.extend(parts)
+    if budget:
+        conditions.append("budget = ?")
+        params.append(budget)
+    if from_date:
+        conditions.append(f"{date_field} >= ?")
+        params.append(from_date)
+    if to_date:
+        conditions.append(f"{date_field} <= ?")
+        params.append(to_date)
+    if min_amount is not None:
+        conditions.append("ABS(amount) >= ?")
+        params.append(min_amount)
+    if max_amount is not None:
+        conditions.append("ABS(amount) <= ?")
+        params.append(max_amount)
+
+    where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+
+    cursor = conn.cursor()
+    cursor.execute(f"SELECT COUNT(*) FROM transactions{where}", params)
+    total = cursor.fetchone()[0]
+
+    cursor.execute(
+        f"SELECT * FROM transactions{where} ORDER BY date_payed DESC, id DESC LIMIT ? OFFSET ?",
+        params + [limit, offset],
+    )
+    return [dict(row) for row in cursor.fetchall()], total
