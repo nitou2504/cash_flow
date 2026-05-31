@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type {
+  GmailStatus,
   SyncStatus,
   RegisterRules,
   ClassificationHints,
@@ -104,6 +105,223 @@ function useToast() {
   return { toast, show };
 }
 
+// ── Gmail Connection ──────────────────────────────────────────
+
+function GmailConnectionCard() {
+  const queryClient = useQueryClient();
+  const { toast, show } = useToast();
+  const { data: status, refetch } = useQuery<GmailStatus>({
+    queryKey: ['gmail-status'],
+    queryFn: () => api.gmailStatus(),
+    refetchInterval: 60_000,
+  });
+
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('gmail') === 'connected') {
+      show('Gmail connected', 'ok');
+      window.history.replaceState({}, '', '/settings');
+      refetch();
+    }
+  }, []);
+
+  const saveMut = useMutation({
+    mutationFn: () => api.gmailSaveCredentials({ client_id: clientId, client_secret: clientSecret }),
+    onSuccess: () => { show('Credentials saved', 'ok'); refetch(); setClientId(''); setClientSecret(''); },
+    onError: (e: Error) => show(e.message, 'err'),
+  });
+
+  const disconnectMut = useMutation({
+    mutationFn: () => api.gmailDisconnect(),
+    onSuccess: () => { show('Disconnected', 'ok'); queryClient.invalidateQueries({ queryKey: ['gmail-status'] }); },
+    onError: (e: Error) => show(e.message, 'err'),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: () => api.gmailDeleteCredentials(),
+    onSuccess: () => { show('Credentials removed', 'ok'); refetch(); },
+    onError: (e: Error) => show(e.message, 'err'),
+  });
+
+  const handleConnect = async () => {
+    try {
+      const { auth_url } = await api.gmailAuthUrl();
+      window.location.href = auth_url;
+    } catch (e: unknown) {
+      show(e instanceof Error ? e.message : 'Failed', 'err');
+    }
+  };
+
+  if (!status) return null;
+
+  // State: connected
+  if (status.connected) {
+    return (
+      <div style={cardStyle}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={labelStyle}>Gmail Connection</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+              <span style={{
+                width: 8, height: 8, borderRadius: '50%',
+                background: status.valid ? 'var(--pos)' : 'var(--neg)',
+                display: 'inline-block',
+              }} />
+              <span style={{ fontSize: 13, color: 'var(--fg)' }}>
+                {status.valid ? 'Connected' : status.expired ? 'Token expired' : 'Invalid'}
+              </span>
+            </div>
+            {status.expiry && (
+              <div style={{ fontSize: 12, color: 'var(--fg-faint)', marginTop: 2 }}>
+                Expires: {new Date(status.expiry).toLocaleString()}
+              </div>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {(status.expired || !status.valid) && (
+              <button onClick={handleConnect} style={btnPrimary}>Reconnect</button>
+            )}
+            <button onClick={() => disconnectMut.mutate()} style={btnDanger}>Disconnect</button>
+          </div>
+        </div>
+        {toast && <Toast {...toast} />}
+      </div>
+    );
+  }
+
+  // State: has credentials but not connected
+  if (status.has_credentials) {
+    return (
+      <div style={cardStyle}>
+        <div style={labelStyle}>Gmail Connection</div>
+        <p style={{ fontSize: 13, color: 'var(--fg-muted)', margin: '8px 0 12px' }}>
+          OAuth credentials configured. Connect to authorize Gmail access.
+        </p>
+        {status.redirect_uri && (
+          <div style={{
+            fontSize: 12, color: 'var(--fg-faint)', marginBottom: 12,
+            background: 'var(--bg-sunken)', padding: '8px 10px', borderRadius: 'var(--r-sm)',
+            fontFamily: 'monospace', wordBreak: 'break-all',
+          }}>
+            Redirect URI (add to Google Cloud Console):<br />{status.redirect_uri}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={handleConnect} style={btnPrimary}>Connect Gmail</button>
+          <button onClick={() => deleteMut.mutate()} style={btnDanger}>Remove Credentials</button>
+        </div>
+        {toast && <Toast {...toast} />}
+      </div>
+    );
+  }
+
+  // State: no credentials
+  return (
+    <div style={cardStyle}>
+      <div style={labelStyle}>Gmail Connection</div>
+      <p style={{ fontSize: 13, color: 'var(--fg-muted)', margin: '8px 0 12px' }}>
+        Create a <strong>Web Application</strong> OAuth 2.0 client in Google Cloud Console, add the
+        redirect URI below to it, then enter the client credentials.
+      </p>
+      {status.redirect_uri && (
+        <div style={{
+          fontSize: 12, color: 'var(--fg-faint)', marginBottom: 12,
+          background: 'var(--bg-sunken)', padding: '8px 10px', borderRadius: 'var(--r-sm)',
+          fontFamily: 'monospace', wordBreak: 'break-all',
+        }}>
+          Authorized redirect URI (paste into Google Cloud Console):<br />{status.redirect_uri}
+        </div>
+      )}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+        <div>
+          <label style={{ fontSize: 11, color: 'var(--fg-faint)' }}>Client ID</label>
+          <input style={inputStyle} value={clientId} onChange={e => setClientId(e.target.value)} placeholder="xxx.apps.googleusercontent.com" />
+        </div>
+        <div>
+          <label style={{ fontSize: 11, color: 'var(--fg-faint)' }}>Client Secret</label>
+          <input style={inputStyle} type="password" value={clientSecret} onChange={e => setClientSecret(e.target.value)} placeholder="GOCSPX-..." />
+        </div>
+      </div>
+      <button
+        onClick={() => saveMut.mutate()}
+        disabled={!clientId || !clientSecret || saveMut.isPending}
+        style={{ ...btnPrimary, opacity: !clientId || !clientSecret ? 0.5 : 1 }}
+      >Save Credentials</button>
+      {toast && <Toast {...toast} />}
+    </div>
+  );
+}
+
+// ── Unparsed Emails Card ───────────────────────────────────────
+
+function reasonStyle(reason: string): { bg: string; fg: string; benign: boolean } {
+  // reversal / foreign_currency are expected skips, not failures
+  const benign = reason === 'reversal' || reason.startsWith('foreign_currency');
+  return benign
+    ? { bg: 'var(--bg-sunken)', fg: 'var(--fg-muted)', benign: true }
+    : { bg: 'var(--bg-sunken)', fg: 'var(--neg)', benign: false };
+}
+
+function UnparsedCard() {
+  const { data } = useQuery<import('../api/types').UnparsedResponse>({
+    queryKey: ['sync-unparsed'],
+    queryFn: () => api.syncUnparsed(),
+    refetchInterval: 60_000,
+  });
+
+  if (!data || data.count === 0) return null;
+
+  const failures = data.items.filter(i => !reasonStyle(i.reason).benign);
+
+  return (
+    <div style={cardStyle}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <div style={labelStyle}>Unparsed Emails</div>
+        {failures.length > 0 && (
+          <span style={{
+            fontSize: 11, fontWeight: 600, color: 'var(--neg)',
+            background: 'var(--bg-sunken)', padding: '2px 8px', borderRadius: 999,
+          }}>
+            {failures.length} need{failures.length === 1 ? 's' : ''} attention
+          </span>
+        )}
+      </div>
+      <p style={{ fontSize: 12, color: 'var(--fg-muted)', margin: '0 0 12px' }}>
+        Emails the parser skipped. Reversals & foreign-currency are expected; other reasons may mean a format change.
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {data.items.map(item => {
+          const rs = reasonStyle(item.reason);
+          return (
+            <div key={item.id} style={{
+              display: 'grid', gridTemplateColumns: '90px 150px 1fr 90px', gap: 8,
+              alignItems: 'center', fontSize: 12, padding: '6px 10px',
+              background: 'var(--bg-sunken)', borderRadius: 'var(--r-sm)',
+              borderLeft: `2px solid ${rs.benign ? 'var(--border)' : 'var(--neg)'}`,
+            }}>
+              <span style={{ color: rs.fg, fontWeight: 500, fontFamily: 'monospace', fontSize: 11 }}>
+                {item.reason}
+              </span>
+              <span style={{ color: 'var(--fg-faint)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {item.label.replace('Consumos/', '')}
+              </span>
+              <span style={{ color: 'var(--fg-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {item.subject || '—'}
+              </span>
+              <span style={{ color: 'var(--fg-faint)', fontSize: 11, textAlign: 'right' }}>
+                {item.received_at ? new Date(item.received_at).toLocaleDateString() : ''}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Sync Tab ───────────────────────────────────────────────────
 
 function SyncTab() {
@@ -116,7 +334,11 @@ function SyncTab() {
 
   const triggerMut = useMutation({
     mutationFn: () => api.syncTrigger(),
-    onSuccess: () => show('Sync complete', 'ok'),
+    onSuccess: (res) => {
+      const errs = res?.errors ?? [];
+      if (errs.length) show(`Sync finished with ${errs.length} error${errs.length > 1 ? 's' : ''}`, 'err');
+      else show('Sync complete', 'ok');
+    },
     onError: (e: Error) => show(e.message, 'err'),
   });
 
@@ -124,6 +346,7 @@ function SyncTab() {
 
   return (
     <>
+      <GmailConnectionCard />
       <div style={cardStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <div>
@@ -168,6 +391,7 @@ function SyncTab() {
           </div>
         ) : null}
       </div>
+      <UnparsedCard />
       {toast && <Toast {...toast} />}
     </>
   );

@@ -247,6 +247,17 @@ export interface SearchResponse {
   offset: number;
 }
 
+// Gmail
+
+export interface GmailStatus {
+  has_credentials: boolean;
+  connected: boolean;
+  valid?: boolean;
+  expired?: boolean;
+  expiry?: string;
+  redirect_uri?: string;
+}
+
 // Settings
 
 export interface SyncSummary {
@@ -264,6 +275,22 @@ export interface SyncStatus {
   summary: SyncSummary | null;
   running: boolean;
   next_run: string | null;
+}
+
+export interface UnparsedItem {
+  id: number;
+  msg_id: string;
+  label: string;
+  subject: string | null;
+  received_at: string | null;
+  reason: string;
+  from_addr: string | null;
+  resolved: number;
+}
+
+export interface UnparsedResponse {
+  count: number;
+  items: UnparsedItem[];
 }
 
 export interface MerchantRule {

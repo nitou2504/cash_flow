@@ -187,11 +187,32 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  gmailStatus: () =>
+    request<import('./types').GmailStatus>('/gmail/status'),
+
+  gmailSaveCredentials: (body: { client_id: string; client_secret: string; project_id?: string }) =>
+    request<{ ok: boolean }>('/gmail/credentials', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  gmailDeleteCredentials: () =>
+    request<{ ok: boolean }>('/gmail/credentials', { method: 'DELETE' }),
+
+  gmailAuthUrl: () =>
+    request<{ auth_url: string }>('/gmail/auth-url'),
+
+  gmailDisconnect: () =>
+    request<{ ok: boolean }>('/gmail/disconnect', { method: 'POST' }),
+
   syncStatus: () =>
     request<import('./types').SyncStatus>('/sync/status'),
 
   syncTrigger: () =>
     request<import('./types').SyncSummary>('/sync/trigger', { method: 'POST' }),
+
+  syncUnparsed: () =>
+    request<import('./types').UnparsedResponse>('/sync/unparsed'),
 
   registerRulesGet: () =>
     request<import('./types').RegisterRules>('/settings/register-rules'),
