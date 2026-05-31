@@ -76,6 +76,14 @@ async def sync_trigger():
     return summary
 
 
+@router.get("/api/sync/unparsed", dependencies=[Depends(get_current_user)])
+def sync_unparsed(conn=Depends(get_db)):
+    """Emails the parsers could not handle (format changes, foreign currency, etc.)."""
+    from cashflow.consumo_repository import list_unparsed
+    rows = list_unparsed(conn)
+    return {"count": len(rows), "items": rows}
+
+
 # ── Register Rules ──────────────────────────────────────────────────
 
 
