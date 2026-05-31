@@ -1,6 +1,10 @@
 .env
+.claude/
 __pycache__/
 *.db
+*.db-shm
+*.db-wal
+*.db.migrated
 *.sqlite3
 *.csv*
 *.bk*
@@ -11,3 +15,6 @@ extra/
 backups/
 credentials.json
 token.json
+*.bak
+credentials.json.*
+token.json.*

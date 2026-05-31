@@ -14,5 +14,6 @@ services:
     environment:
       - WEB_DEV_MODE=true
       - LLM_OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - GMAIL_REDIRECT_BASE_URL=https://g3.tail3e401.ts.net:8443
     extra_hosts:
       - "host.docker.internal:host-gateway"
