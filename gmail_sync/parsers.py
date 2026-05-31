@@ -210,34 +210,67 @@ def parse_produbanco(msg_id: str, subject: str, text: str) -> EmailTxn | None:
 
 # --- Cash transfer parser (Pichincha bank transfers from account 1057) ---
 
+# Old format (labelled fields, one per line)
 _CASH_DEST_RE = re.compile(r"Cuenta acreditada:\s*(?:\*{6}|X{6})(\d{4})")
 _CASH_AMOUNT_RE = re.compile(r"Monto:\s*USD\s*([\d.,]+)", re.IGNORECASE)
-_CASH_DATE_RE = re.compile(r"Fecha:\s*(\d{2}/\d{2}/\d{4})")
+# Date tolerates an optional preceding "Documento" number (new format inlines it)
+_CASH_DATE_RE = re.compile(r"Fecha:\s*(?:\d+\s+)?(\d{2}/\d{2}/\d{4})")
 _CASH_CONCEPTO_RE = re.compile(r"Concepto:\s*([^\n\xa0]+)")
 _CASH_BENEFICIARY_RE = re.compile(r"Nombre del beneficiario:\s*([^\n\xa0]+)")
 
+# New format (mid-2026 Pichincha redesign): table headers and values are
+# flattened, so labels and values interleave on one line. Example:
+#   "Monto: Concepto 5.00 Pescado frutillas y tomate"
+#   "Cuenta destino Nombre: Número de cuenta: PEREZ CASTRO ... ******6634"
+#   "Documento: Fecha: 72788795 31/05/2026"
+_CASH_AMOUNT_NEW_RE = re.compile(
+    r"Monto:\s*Concepto\s+([\d.,]+)\s+(.*?)\s*(?:\xa0|Cuenta\s+de\s+origen)",
+    re.IGNORECASE | re.DOTALL,
+)
+_CASH_DEST_NEW_RE = re.compile(
+    r"Cuenta\s+destino.*?N[úu]mero\s+de\s+cuenta:\s*(.+?)\s*(?:\*{6}|X{6})(\d{4})",
+    re.IGNORECASE | re.DOTALL,
+)
+
 
 def parse_cash(msg_id: str, subject: str, text: str) -> EmailTxn | None:
-    amount_m = _CASH_AMOUNT_RE.search(text)
     date_m = _CASH_DATE_RE.search(text)
-    if not (amount_m and date_m):
+    if not date_m:
         return None
     dt = datetime.strptime(date_m.group(1), "%d/%m/%Y")
-    dest_m = _CASH_DEST_RE.search(text)
-    concepto_m = _CASH_CONCEPTO_RE.search(text)
-    benef_m = _CASH_BENEFICIARY_RE.search(text)
-    concepto = concepto_m.group(1).strip() if concepto_m else ""
+
+    # Old format first
+    amount_m = _CASH_AMOUNT_RE.search(text)
+    if amount_m:
+        amount = _parse_amount(amount_m.group(1))
+        dest_m = _CASH_DEST_RE.search(text)
+        concepto_m = _CASH_CONCEPTO_RE.search(text)
+        benef_m = _CASH_BENEFICIARY_RE.search(text)
+        concepto = concepto_m.group(1).strip() if concepto_m else ""
+        beneficiary = benef_m.group(1).strip() if benef_m else None
+        destination = dest_m.group(1).strip() if dest_m else None
+    else:
+        # New flattened format
+        new_m = _CASH_AMOUNT_NEW_RE.search(text)
+        if not new_m:
+            return None
+        amount = _parse_amount(new_m.group(1))
+        concepto = new_m.group(2).strip()
+        dest_m = _CASH_DEST_NEW_RE.search(text)
+        beneficiary = dest_m.group(1).strip() if dest_m else None
+        destination = dest_m.group(2).strip() if dest_m else None
+
     return EmailTxn(
         msg_id=msg_id,
         bank="Pichincha",
         account="Cash",
         purchased_at=dt,
-        amount=_parse_amount(amount_m.group(1)),
+        amount=amount,
         merchant=concepto,
         card_last="",
         subject=subject,
-        beneficiary=benef_m.group(1).strip() if benef_m else None,
-        destination_account=dest_m.group(1).strip() if dest_m else None,
+        beneficiary=beneficiary,
+        destination_account=destination,
         concepto=concepto,
     )
 
