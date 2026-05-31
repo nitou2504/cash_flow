@@ -489,7 +489,7 @@ function ReviewRow({ txn, budgetName, selected, checked, onCheck, onClick, onApp
       </div>
 
       <div className="num" style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
-        {fmtDate(txn.date_payed)}
+        {fmtDate(txn.date_created)}
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
