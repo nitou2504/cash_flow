@@ -53,8 +53,14 @@ export default function Review() {
 
   const approveMut = useMutation({
     mutationFn: (id: number) => api.approveReview(id),
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
       invalidateAll();
+      setChecked(prev => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
       if (selectedId && txns) {
         const idx = txns.findIndex(t => t.id === selectedId);
         const next = txns[idx + 1] || txns[idx - 1];
@@ -76,8 +82,14 @@ export default function Review() {
 
   const deleteMut = useMutation({
     mutationFn: (id: number) => api.deleteTransaction(id),
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
       invalidateAll();
+      setChecked(prev => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
       if (selectedId && txns) {
         const idx = txns.findIndex(t => t.id === selectedId);
         const next = txns[idx + 1] || txns[idx - 1];
