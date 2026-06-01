@@ -9,6 +9,7 @@ const NAV_ITEMS = [
 ];
 
 const MANAGE_ITEMS = [
+  { to: '/subscriptions', label: 'Subscriptions', icon: IconWallet },
   { to: '/accounts', label: 'Accounts', icon: IconWallet },
   { to: '/categories', label: 'Categories', icon: IconTag },
 ];

@@ -6,6 +6,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Transactions from './pages/Transactions';
 import Review from './pages/Review';
+import Subscriptions from './pages/Subscriptions';
 import Settings from './pages/Settings';
 import { api } from './api/client';
 
@@ -37,6 +38,7 @@ export default function App() {
             <Route index element={<Dashboard />} />
             <Route path="transactions" element={<Transactions />} />
             <Route path="review" element={<Review />} />
+            <Route path="subscriptions" element={<Subscriptions />} />
             <Route path="accounts" element={<Placeholder title="Accounts" />} />
             <Route path="categories" element={<Placeholder title="Categories" />} />
             <Route path="settings" element={<Settings />} />

@@ -54,6 +54,40 @@ class SubscriptionOut(BaseModel):
         return str(v)
 
 
+class SubscriptionCreate(BaseModel):
+    name: str
+    category: str
+    monthly_amount: float
+    payment_account_id: str
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    is_budget: bool = False
+    is_income: bool = False
+    underspend_behavior: str = "keep"
+
+
+class SubscriptionUpdate(BaseModel):
+    name: Optional[str] = None
+    category: Optional[str] = None
+    monthly_amount: Optional[float] = None
+    payment_account_id: Optional[str] = None
+    end_date: Optional[str] = None  # "none" string clears it
+    underspend_behavior: Optional[str] = None
+    retroactive: bool = False
+
+
+class BalanceFixIn(BaseModel):
+    actual_balance: float
+    account: str = "Cash"
+    as_of_date: Optional[str] = None  # reconcile basis; defaults to today
+
+
+class StatementFixIn(BaseModel):
+    account: str
+    statement_amount: float
+    month: Optional[str] = None  # YYYY-MM; auto-detected if omitted
+
+
 class BudgetSpending(BaseModel):
     id: str
     name: str
