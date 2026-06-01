@@ -569,7 +569,7 @@ def process_budget_deletion(conn: sqlite3.Connection, budget_id: str):
     print(f"Successfully deleted budget '{budget['name']}'")
 
 
-def process_balance_adjustment(conn: sqlite3.Connection, actual_balance: float, account_id: str = "Cash"):
+def process_balance_adjustment(conn: sqlite3.Connection, actual_balance: float, account_id: str = "Cash", as_of: date = None):
     """
     Creates an adjustment transaction to reconcile the calculated balance with the actual balance.
 
@@ -579,6 +579,10 @@ def process_balance_adjustment(conn: sqlite3.Connection, actual_balance: float, 
     Args:
         actual_balance: The actual total balance the user has right now
         account_id: The account to apply the adjustment to (default: Cash)
+        as_of: Reconcile basis date — the running balance is computed up to this
+            date and the adjustment is stamped here. Defaults to today. Use this
+            to reconcile to a point where some forecast bills have already paid
+            (e.g. "I've paid everything up to Jun 4, and have $170").
 
     Returns:
         The difference that was adjusted (positive if added money, negative if removed)
@@ -591,12 +595,12 @@ def process_balance_adjustment(conn: sqlite3.Connection, actual_balance: float, 
     # Calculate current system balance using the same logic as the view
     # This matches what the user sees in their running balance
     transactions_with_balance = repository.get_transactions_with_running_balance(conn)
-    today = date.today()
+    ref_date = as_of or date.today()
     calculated_balance = 0.0
 
-    # Find the running balance as of today (last transaction on or before today)
+    # Find the running balance as of the reference date (last txn on or before it)
     for t in transactions_with_balance:
-        if t['date_payed'] <= today:
+        if t['date_payed'] <= ref_date:
             calculated_balance = t['running_balance']
         else:
             break  # Stop at future transactions
@@ -611,8 +615,8 @@ def process_balance_adjustment(conn: sqlite3.Connection, actual_balance: float, 
 
     # Create adjustment transaction
     adjustment_transaction = {
-        "date_created": date.today(),
-        "date_payed": date.today(),
+        "date_created": ref_date,
+        "date_payed": ref_date,
         "description": f"Balance Adjustment - {account_id}",
         "account": account_id,
         "amount": difference,

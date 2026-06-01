@@ -74,6 +74,41 @@ export const api = {
   budgets: () =>
     request<import('./types').Subscription[]>('/budgets'),
 
+  subscriptions: () =>
+    request<import('./types').Subscription[]>('/subscriptions'),
+
+  createSubscription: (body: import('./types').SubscriptionCreate) =>
+    request<import('./types').Subscription>('/subscriptions', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  updateSubscription: (id: string, body: import('./types').SubscriptionUpdate) =>
+    request<import('./types').Subscription>(`/subscriptions/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+
+  deleteSubscription: (id: string) =>
+    request<{ ok: boolean }>(`/subscriptions/${id}`, { method: 'DELETE' }),
+
+  balancePreview: (account: string, asOfDate?: string) =>
+    request<import('./types').BalancePreview>(
+      `/fixes/balance-preview?account=${encodeURIComponent(account)}${asOfDate ? `&as_of_date=${asOfDate}` : ''}`,
+    ),
+
+  fixBalance: (body: { actual_balance: number; account: string; as_of_date?: string }) =>
+    request<{ ok: boolean; adjustment: number }>('/fixes/balance', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  fixStatement: (body: { account: string; statement_amount: number; month?: string }) =>
+    request<import('./types').StatementFixResult>('/fixes/statement', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
   budgetSpending: (month?: string) => {
     const qs = month ? `?month=${month}` : '';
     return request<import('./types').BudgetSpending[]>(`/budgets/spending${qs}`);

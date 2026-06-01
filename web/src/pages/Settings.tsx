@@ -7,9 +7,10 @@ import type {
   RegisterRules,
   ClassificationHints,
   LLMConfig,
+  Account,
 } from '../api/types';
 
-const TABS = ['Sync', 'Register Rules', 'Classification', 'LLM Config'] as const;
+const TABS = ['Sync', 'Reconcile', 'Register Rules', 'Classification', 'LLM Config'] as const;
 type Tab = typeof TABS[number];
 
 export default function Settings() {
@@ -30,6 +31,7 @@ export default function Settings() {
         ))}
       </div>
       {tab === 'Sync' && <SyncTab />}
+      {tab === 'Reconcile' && <ReconcileTab />}
       {tab === 'Register Rules' && <RegisterRulesTab />}
       {tab === 'Classification' && <ClassificationTab />}
       {tab === 'LLM Config' && <LLMConfigTab />}
@@ -319,6 +321,142 @@ function UnparsedCard() {
         })}
       </div>
     </div>
+  );
+}
+
+// ── Reconcile Tab ──────────────────────────────────────────────
+
+function ReconcileTab() {
+  const { toast, show } = useToast();
+  const queryClient = useQueryClient();
+  const { data: accounts } = useQuery<Account[]>({ queryKey: ['accounts'], queryFn: api.accounts });
+
+  // Balance fix
+  const [balAccount, setBalAccount] = useState('Cash');
+  const [asOf, setAsOf] = useState('');
+  const [actual, setActual] = useState('');
+
+  const { data: preview, refetch: refetchPreview } = useQuery({
+    queryKey: ['balance-preview', balAccount, asOf],
+    queryFn: () => api.balancePreview(balAccount, asOf || undefined),
+  });
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    queryClient.invalidateQueries({ queryKey: ['timeline'] });
+    queryClient.invalidateQueries({ queryKey: ['balance-preview'] });
+  };
+
+  const balMut = useMutation({
+    mutationFn: () => api.fixBalance({
+      actual_balance: parseFloat(actual), account: balAccount, as_of_date: asOf || undefined,
+    }),
+    onSuccess: (r) => {
+      show(`Adjusted ${r.adjustment >= 0 ? '+' : ''}${r.adjustment.toFixed(2)}`, 'ok');
+      invalidate(); refetchPreview(); setActual('');
+    },
+    onError: (e: Error) => show(e.message, 'err'),
+  });
+
+  // Statement fix
+  const [stmtAccount, setStmtAccount] = useState('');
+  const [stmtMonth, setStmtMonth] = useState('');
+  const [stmtAmount, setStmtAmount] = useState('');
+
+  const stmtMut = useMutation({
+    mutationFn: () => api.fixStatement({
+      account: stmtAccount, statement_amount: parseFloat(stmtAmount), month: stmtMonth || undefined,
+    }),
+    onSuccess: (r) => {
+      show(r.adjustment === 0 ? 'Already matches' : `Adjusted ${r.adjustment >= 0 ? '+' : ''}${r.adjustment.toFixed(2)}`, 'ok');
+      invalidate(); setStmtAmount('');
+    },
+    onError: (e: Error) => show(e.message, 'err'),
+  });
+
+  const calc = preview?.calculated_balance;
+  const actualNum = parseFloat(actual);
+  const delta = (!isNaN(actualNum) && calc != null) ? actualNum - calc : null;
+
+  const ccAccounts = (accounts ?? []).filter(a => a.account_type === 'credit_card');
+
+  return (
+    <>
+      {/* Balance reconcile */}
+      <div style={cardStyle}>
+        <div style={labelStyle}>Reconcile Cash Balance</div>
+        <p style={{ fontSize: 13, color: 'var(--fg-muted)', margin: '8px 0 14px' }}>
+          Set your real balance; an adjustment transaction makes the app match.
+          Use the as-of date to reconcile to a point where forecast bills already paid
+          (e.g. "paid everything up to Jun 4, have $170").
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+          <div>
+            <label style={{ fontSize: 11, color: 'var(--fg-faint)' }}>Account</label>
+            <select style={inputStyle} value={balAccount} onChange={e => setBalAccount(e.target.value)}>
+              {(accounts ?? []).map(a => <option key={a.account_id} value={a.account_id}>{a.account_id}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: 'var(--fg-faint)' }}>As-of date (optional)</label>
+            <input style={inputStyle} type="date" value={asOf} onChange={e => setAsOf(e.target.value)} />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: 'var(--fg-faint)' }}>Your actual balance</label>
+            <input style={inputStyle} type="number" step="0.01" value={actual}
+              onChange={e => setActual(e.target.value)} placeholder="170.00" />
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, fontSize: 13 }}>
+          <span style={{ color: 'var(--fg-muted)' }}>
+            App calculates: <strong style={{ color: 'var(--fg)' }}>{calc != null ? `$${calc.toFixed(2)}` : '…'}</strong>
+          </span>
+          {delta != null && (
+            <span style={{ color: Math.abs(delta) < 0.01 ? 'var(--pos)' : 'var(--accent)' }}>
+              Adjustment: {delta >= 0 ? '+' : ''}{delta.toFixed(2)}
+            </span>
+          )}
+          <button
+            onClick={() => balMut.mutate()}
+            disabled={isNaN(actualNum) || balMut.isPending}
+            style={{ ...btnPrimary, marginLeft: 'auto', opacity: isNaN(actualNum) ? 0.5 : 1 }}
+          >Apply</button>
+        </div>
+      </div>
+
+      {/* Statement reconcile */}
+      <div style={cardStyle}>
+        <div style={labelStyle}>Reconcile CC Statement</div>
+        <p style={{ fontSize: 13, color: 'var(--fg-muted)', margin: '8px 0 14px' }}>
+          Match a card's payment-date total to the statement. Adds an adjustment on the payment date.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+          <div>
+            <label style={{ fontSize: 11, color: 'var(--fg-faint)' }}>Card</label>
+            <select style={inputStyle} value={stmtAccount} onChange={e => setStmtAccount(e.target.value)}>
+              <option value="">Select…</option>
+              {ccAccounts.map(a => <option key={a.account_id} value={a.account_id}>{a.account_id}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: 'var(--fg-faint)' }}>Month (optional)</label>
+            <input style={inputStyle} type="month" value={stmtMonth} onChange={e => setStmtMonth(e.target.value)} />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: 'var(--fg-faint)' }}>Statement total</label>
+            <input style={inputStyle} type="number" step="0.01" value={stmtAmount}
+              onChange={e => setStmtAmount(e.target.value)} placeholder="432.70" />
+          </div>
+        </div>
+        <button
+          onClick={() => stmtMut.mutate()}
+          disabled={!stmtAccount || isNaN(parseFloat(stmtAmount)) || stmtMut.isPending}
+          style={{ ...btnPrimary, opacity: (!stmtAccount || isNaN(parseFloat(stmtAmount))) ? 0.5 : 1 }}
+        >Reconcile</button>
+      </div>
+
+      {toast && <Toast {...toast} />}
+    </>
   );
 }
 

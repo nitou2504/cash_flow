@@ -21,6 +21,7 @@ from api.routers.review import router as review_router
 from api.routers.invoices import router as invoices_router
 from api.routers.settings import router as settings_router
 from api.routers.gmail import router as gmail_router
+from api.routers.fixes import router as fixes_router
 
 
 @asynccontextmanager
@@ -57,6 +58,7 @@ app.include_router(review_router)
 app.include_router(invoices_router)
 app.include_router(settings_router)
 app.include_router(gmail_router)
+app.include_router(fixes_router)
 
 static_dir = Path(__file__).resolve().parent.parent / "static"
 if static_dir.is_dir():

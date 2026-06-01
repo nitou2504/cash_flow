@@ -60,10 +60,49 @@ export interface Subscription {
   category: string;
   monthly_amount: number;
   payment_account_id: string;
+  start_date?: string;
+  end_date?: string | null;
   is_budget: boolean;
   is_income: boolean;
   underspend_behavior: string;
   status: string | null;
+}
+
+export interface SubscriptionCreate {
+  name: string;
+  category: string;
+  monthly_amount: number;
+  payment_account_id: string;
+  start_date?: string;
+  end_date?: string | null;
+  is_budget: boolean;
+  is_income: boolean;
+  underspend_behavior: string;
+}
+
+export interface SubscriptionUpdate {
+  name?: string;
+  category?: string;
+  monthly_amount?: number;
+  payment_account_id?: string;
+  end_date?: string | null;
+  underspend_behavior?: string;
+  retroactive?: boolean;
+}
+
+export interface BalancePreview {
+  account: string;
+  as_of_date: string;
+  calculated_balance: number;
+}
+
+export interface StatementFixResult {
+  ok: boolean;
+  account: string;
+  payment_date: string;
+  current_total: number;
+  statement_amount: number;
+  adjustment: number;
 }
 
 export interface CCCard {
