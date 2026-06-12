@@ -36,6 +36,13 @@ class InvoiceTax:
 
 
 @dataclass
+class InvoicePago:
+    """One <pago> entry — invoices can split payment across methods."""
+    forma_pago: int        # SRI formaPago code
+    total: float
+
+
+@dataclass
 class InvoiceLine:
     description: str
     quantity: float
@@ -77,7 +84,8 @@ class Invoice:
     merchant_name: str = ""              # campoAdicional "Lugar Venta" / synonyms
     establishment_code: str = ""         # <estab> (e.g. 042 = Coral; 031/198 = Favorita stores)
     store_address: str = ""              # <dirEstablecimiento>
-    forma_pago: int = 0                  # SRI code; 0 = unknown / not present
+    forma_pago: int = 0                  # SRI code of first pago; 0 = unknown
+    pagos: list[InvoicePago] = field(default_factory=list)  # full payment split
     deducible_alimentacion: float = 0.0  # campoAdicional — Ecuadorian IRS meal deduction
     # Email metadata populated at ingest time
     email_subject: str = ""
@@ -246,6 +254,22 @@ def _extract_first_forma_pago(info_fact) -> int:
     return _to_int(_text(_find_local(first, "formaPago")))
 
 
+def _extract_pagos(info_fact) -> list[InvoicePago]:
+    """All <pago> entries — captures split payments (e.g. debit + credit)."""
+    pagos_el = _find_local(info_fact, "pagos")
+    if pagos_el is None:
+        return []
+    result = []
+    for pago in pagos_el:
+        if not pago.tag.endswith("pago"):
+            continue
+        result.append(InvoicePago(
+            forma_pago=_to_int(_text(_find_local(pago, "formaPago"))),
+            total=_to_float(_text(_find_local(pago, "total"))),
+        ))
+    return result
+
+
 # --- Unwrap: descend through SOAP/autorizacion wrappers --------------------
 
 def _unwrap_to_root(xml_bytes: bytes) -> ET.Element | None:
@@ -406,6 +430,7 @@ def _parse_factura(factura: ET.Element) -> Invoice | None:
         establishment_code=trib["estab"],
         store_address=_text(_find_local(info_fact, "dirEstablecimiento")),
         forma_pago=_extract_first_forma_pago(info_fact),
+        pagos=_extract_pagos(info_fact),
         deducible_alimentacion=_extract_deducible(campos),
     )
 

@@ -60,6 +60,7 @@ def upsert_invoice(
         ))
         cursor.execute("DELETE FROM invoice_lines WHERE invoice_id = ?", (invoice_id,))
         cursor.execute("DELETE FROM invoice_taxes WHERE invoice_id = ?", (invoice_id,))
+        cursor.execute("DELETE FROM invoice_pagos WHERE invoice_id = ?", (invoice_id,))
     else:
         cursor.execute("""
             INSERT INTO invoices (
@@ -111,6 +112,12 @@ def upsert_invoice(
             invoice_id, tax.tax_code, tax.rate_code, tax.rate_pct,
             tax.base_imponible, tax.tax_value,
         ))
+
+    for pago in getattr(invoice, "pagos", []) or []:
+        cursor.execute("""
+            INSERT INTO invoice_pagos (invoice_id, forma_pago, total)
+            VALUES (?, ?, ?)
+        """, (invoice_id, pago.forma_pago, pago.total))
 
     # If this msg_id was previously flagged as unparsed, clear it.
     if invoice.msg_id:

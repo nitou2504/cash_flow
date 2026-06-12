@@ -164,6 +164,11 @@ class InvoiceTaxOut(BaseModel):
     tax_value: float
 
 
+class InvoicePagoOut(BaseModel):
+    forma_pago: int
+    total: float
+
+
 class InvoiceOut(BaseModel):
     id: int
     invoice_number: str
@@ -182,6 +187,7 @@ class InvoiceOut(BaseModel):
     store_address: Optional[str] = None
     lines: list[InvoiceLineOut] = []
     taxes: list[InvoiceTaxOut] = []
+    pagos: list[InvoicePagoOut] = []
 
 
 class ConsumoOut(BaseModel):

@@ -159,6 +159,15 @@ def create_tables(conn: Connection):
             tax_value       REAL NOT NULL
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS invoice_pagos (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            invoice_id      INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+            forma_pago      INTEGER NOT NULL,
+            total           REAL NOT NULL
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_pagos_invoice   ON invoice_pagos(invoice_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_invoices_date   ON invoices(issue_date)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_invoices_vendor ON invoices(vendor)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_invoices_ruc    ON invoices(ruc)")

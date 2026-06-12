@@ -4,7 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.deps import get_db, get_current_user
-from api.schemas import InvoiceOut, InvoiceLineOut, InvoiceTaxOut, ConsumoOut, InvoiceLinkIn
+from api.schemas import InvoiceOut, InvoiceLineOut, InvoiceTaxOut, InvoicePagoOut, ConsumoOut, InvoiceLinkIn
 from cashflow import consumo_repository, controller
 
 router = APIRouter(prefix="/api/invoices", tags=["invoices"], dependencies=[Depends(get_current_user)])
@@ -17,6 +17,9 @@ def _build_invoice(inv: dict, cursor: sqlite3.Cursor) -> InvoiceOut:
     cursor.execute("SELECT * FROM invoice_taxes WHERE invoice_id = ?", (inv["id"],))
     taxes = [InvoiceTaxOut(**dict(r)) for r in cursor.fetchall()]
 
+    cursor.execute("SELECT forma_pago, total FROM invoice_pagos WHERE invoice_id = ?", (inv["id"],))
+    pagos = [InvoicePagoOut(**dict(r)) for r in cursor.fetchall()]
+
     return InvoiceOut(
         id=inv["id"], invoice_number=inv["invoice_number"], doc_type=inv["doc_type"],
         ruc=inv["ruc"], vendor=inv["vendor"], vendor_trade_name=inv.get("vendor_trade_name"),
@@ -26,7 +29,7 @@ def _build_invoice(inv: dict, cursor: sqlite3.Cursor) -> InvoiceOut:
         total=inv["total"], currency=inv.get("currency", "USD"),
         forma_pago=inv.get("forma_pago"), merchant_name=inv.get("merchant_name"),
         store_address=inv.get("store_address"),
-        lines=lines, taxes=taxes,
+        lines=lines, taxes=taxes, pagos=pagos,
     )
 
 
