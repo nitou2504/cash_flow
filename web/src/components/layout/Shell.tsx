@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import type { ReactNode } from 'react';
+import { useTheme } from '../../hooks/useTheme';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: IconDashboard },
@@ -78,9 +79,53 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
       <div style={{ flex: 1 }} />
 
       <nav style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+        <ThemeToggle collapsed={collapsed} />
         {BOTTOM_ITEMS.map(item => <SidebarLink key={item.to} {...item} collapsed={collapsed} />)}
       </nav>
     </aside>
+  );
+}
+
+function ThemeToggle({ collapsed }: { collapsed: boolean }) {
+  const { theme, toggle } = useTheme();
+  const dark = theme === 'dark';
+  return (
+    <button
+      onClick={toggle}
+      title={collapsed ? (dark ? 'Light mode' : 'Dark mode') : undefined}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+        padding: '7px 10px', border: 'none', background: 'transparent',
+        justifyContent: collapsed ? 'center' : 'flex-start',
+        color: 'var(--fg-muted)', borderRadius: 8, fontSize: 13.5,
+        fontWeight: 450, cursor: 'pointer', fontFamily: 'inherit',
+      }}
+    >
+      <span style={{ color: 'var(--fg-faint)', display: 'grid', placeItems: 'center' }}>
+        {dark ? <IconSun /> : <IconMoon />}
+      </span>
+      {!collapsed && <span>{dark ? 'Light mode' : 'Dark mode'}</span>}
+    </button>
+  );
+}
+
+function IconMoon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    </svg>
+  );
+}
+
+function IconSun() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="4"/>
+      <line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+      <line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+    </svg>
   );
 }
 

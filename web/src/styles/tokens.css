@@ -55,9 +55,12 @@
   /* Density */
   --row-h: 44px;
   --row-px: 16px;
+
+  color-scheme: light;
 }
 
 [data-theme='dark'] {
+  color-scheme: dark;
   --bg: oklch(0.18 0.01 250);
   --bg-elev: oklch(0.22 0.012 250);
   --bg-sunken: oklch(0.16 0.01 250);
