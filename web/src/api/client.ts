@@ -143,8 +143,8 @@ export const api = {
   invoiceByTransaction: (txnId: number) =>
     request<import('./types').Invoice>(`/invoices/by-transaction/${txnId}`),
 
-  unmatchedInvoices: (cardOnly?: boolean) =>
-    request<import('./types').Invoice[]>(`/invoices/unmatched${cardOnly ? '?card_only=true' : ''}`),
+  unmatchedInvoices: (fromDate?: string) =>
+    request<import('./types').Invoice[]>(`/invoices/unmatched${fromDate ? `?from_date=${fromDate}` : ''}`),
 
   invoiceCandidates: (invoiceId: number, windowDays?: number) =>
     request<import('./types').Consumo[]>(

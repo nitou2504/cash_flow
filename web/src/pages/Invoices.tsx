@@ -3,18 +3,24 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { Invoice, Consumo } from '../api/types';
 import { fmtMoney, fmtDate, fmtDateLong } from '../utils/format';
-import Segmented from '../components/primitives/Segmented';
-import { FORMA_PAGO } from '../components/transactions/InvoiceDrawer';
+import { FORMA_PAGO, InvoiceBody } from '../components/transactions/InvoiceDrawer';
+
+function twoMonthsAgo(): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 2);
+  return d.toISOString().slice(0, 10);
+}
 
 export default function Invoices() {
   const queryClient = useQueryClient();
-  const [filter, setFilter] = useState('card');
+  const [showOld, setShowOld] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [showInvoice, setShowInvoice] = useState(false);
 
-  const cardOnly = filter === 'card';
+  const fromDate = showOld ? undefined : twoMonthsAgo();
   const { data: invoices, isLoading } = useQuery<Invoice[]>({
-    queryKey: ['unmatched-invoices', cardOnly],
-    queryFn: () => api.unmatchedInvoices(cardOnly),
+    queryKey: ['unmatched-invoices', fromDate],
+    queryFn: () => api.unmatchedInvoices(fromDate),
     refetchOnMount: 'always',
     staleTime: 0,
   });
@@ -44,10 +50,12 @@ export default function Invoices() {
             Email invoices with no card transaction linked
           </div>
         </div>
-        <Segmented value={filter} onChange={v => { setFilter(v); setSelectedId(null); }} size="sm" options={[
-          { value: 'card', label: 'Card-paid' },
-          { value: 'all', label: 'All' },
-        ]} />
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--fg-muted)', cursor: 'pointer' }}>
+          <input type="checkbox" checked={showOld}
+            onChange={e => { setShowOld(e.target.checked); setSelectedId(null); }}
+            style={{ accentColor: 'var(--accent)' }} />
+          Show older than 2 months
+        </label>
       </div>
 
       {/* Split view */}
@@ -72,7 +80,7 @@ export default function Invoices() {
           {invoices?.map(inv => (
             <div
               key={inv.id}
-              onClick={() => setSelectedId(inv.id)}
+              onClick={() => { setSelectedId(inv.id); setShowInvoice(false); }}
               style={{
                 display: 'grid',
                 gridTemplateColumns: '78px 1fr 170px 90px',
@@ -114,17 +122,53 @@ export default function Invoices() {
           )}
         </div>
 
+        {/* Full invoice pane (left of detail, like Review tab) */}
+        {showInvoice && selected && (
+          <div style={{
+            width: 460, borderLeft: '1px solid var(--border)',
+            overflow: 'auto', background: 'var(--bg-elev)',
+            display: 'flex', flexDirection: 'column',
+          }}>
+            <header style={{
+              padding: '14px 18px', borderBottom: '1px solid var(--border)',
+              display: 'flex', alignItems: 'center', gap: 10, background: 'var(--bg)',
+              flexShrink: 0,
+            }}>
+              <div style={{ flex: 1, lineHeight: 1.2 }}>
+                <div style={{ fontSize: 11, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+                  Factura
+                </div>
+                <div className="num" style={{ fontSize: 13, fontWeight: 600 }}>{selected.invoice_number}</div>
+              </div>
+              <button onClick={() => setShowInvoice(false)} style={{
+                width: 28, height: 28, borderRadius: 7,
+                background: 'transparent', border: '1px solid var(--border)',
+                color: 'var(--fg-muted)', display: 'grid', placeItems: 'center', cursor: 'pointer',
+              }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </header>
+            <div style={{ flex: 1, overflow: 'auto', padding: '18px 18px 80px' }}>
+              <InvoiceBody invoice={selected} />
+            </div>
+          </div>
+        )}
+
         {/* Right: detail + candidates */}
         {selected && (
           <DetailPanel
             invoice={selected}
+            onViewInvoice={() => setShowInvoice(v => !v)}
             onLinked={() => {
               queryClient.invalidateQueries({ queryKey: ['unmatched-invoices'] });
               queryClient.invalidateQueries({ queryKey: ['invoice-candidates'] });
               queryClient.invalidateQueries({ queryKey: ['review'] });
               setSelectedId(null);
+              setShowInvoice(false);
             }}
-            onClose={() => setSelectedId(null)}
+            onClose={() => { setSelectedId(null); setShowInvoice(false); }}
           />
         )}
       </div>
@@ -134,12 +178,13 @@ export default function Invoices() {
 
 /* ── Detail Panel ── */
 
-function DetailPanel({ invoice, onLinked, onClose }: {
+function DetailPanel({ invoice, onViewInvoice, onLinked, onClose }: {
   invoice: Invoice;
+  onViewInvoice: () => void;
   onLinked: () => void;
   onClose: () => void;
 }) {
-  const [windowDays, setWindowDays] = useState(7);
+  const [windowDays, setWindowDays] = useState(1);
 
   const { data: candidates, isLoading } = useQuery<Consumo[]>({
     queryKey: ['invoice-candidates', invoice.id, windowDays],
@@ -214,32 +259,11 @@ function DetailPanel({ invoice, onLinked, onClose }: {
           )}
         </div>
 
-        {/* Line items (compact) */}
-        {lines.length > 0 && (
-          <details style={{ marginBottom: 18 }}>
-            <summary style={{
-              fontSize: 11, fontWeight: 600, color: 'var(--fg-muted)',
-              letterSpacing: '0.06em', textTransform: 'uppercase',
-              cursor: 'pointer', marginBottom: 8,
-            }}>
-              Line items &middot; {lines.length}
-            </summary>
-            <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
-              {lines.map((it, i) => (
-                <div key={i} style={{
-                  display: 'flex', gap: 10, padding: '7px 12px', fontSize: 12,
-                  borderTop: i === 0 ? 'none' : '1px solid var(--border)',
-                  alignItems: 'baseline',
-                }}>
-                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {Number.isInteger(it.quantity) ? it.quantity : it.quantity.toFixed(2)}&times; {it.description}
-                  </span>
-                  <span className="num" style={{ fontWeight: 600 }}>${it.line_total.toFixed(2)}</span>
-                </div>
-              ))}
-            </div>
-          </details>
-        )}
+        <button onClick={onViewInvoice} style={{
+          marginBottom: 18, width: '100%', padding: '8px 0', borderRadius: 8,
+          background: 'transparent', border: '1px solid var(--border)',
+          color: 'var(--fg-muted)', fontSize: 12, fontWeight: 550, cursor: 'pointer',
+        }}>View full invoice{lines.length > 0 ? ` · ${lines.length} items` : ''}</button>
 
         {/* Candidates */}
         <div style={{
@@ -253,6 +277,7 @@ function DetailPanel({ invoice, onLinked, onClose }: {
             padding: '3px 8px', border: '1px solid var(--border)', borderRadius: 6,
             background: 'var(--bg-elev)', color: 'var(--fg-muted)', fontSize: 11, outline: 'none',
           }}>
+            <option value={1}>&plusmn;1 day</option>
             <option value={3}>&plusmn;3 days</option>
             <option value={7}>&plusmn;7 days</option>
             <option value={15}>&plusmn;15 days</option>
@@ -262,8 +287,12 @@ function DetailPanel({ invoice, onLinked, onClose }: {
 
         {isLoading && <div style={{ padding: 12, color: 'var(--fg-muted)', fontSize: 13 }}>Loading...</div>}
 
-        {candidates?.map(c => {
-          // match against the full total or any single pago of a split payment
+        {candidates && [...candidates].sort((a, b) => {
+          // rank by closest amount to the total or any pago of a split payment
+          const targets = [invoice.total, ...(invoice.pagos?.map(p => p.total) || [])];
+          const best = (c: Consumo) => Math.min(...targets.map(t => Math.abs(c.amount - t)));
+          return best(a) - best(b);
+        }).map(c => {
           const targets = [invoice.total, ...(invoice.pagos?.map(p => p.total) || [])];
           const bestTarget = targets.reduce((a, b) => Math.abs(c.amount - b) < Math.abs(c.amount - a) ? b : a);
           const diff = c.amount - bestTarget;

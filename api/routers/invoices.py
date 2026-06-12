@@ -127,7 +127,7 @@ def list_unmatched_invoices(
 @router.get("/{invoice_id}/candidates", response_model=list[ConsumoOut])
 def invoice_link_candidates(
     invoice_id: int,
-    window_days: int = Query(7, ge=1, le=60),
+    window_days: int = Query(1, ge=1, le=60),
     conn: sqlite3.Connection = Depends(get_db),
 ):
     """Unmatched consumos near the invoice issue date, closest amount first."""

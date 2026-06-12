@@ -88,7 +88,7 @@ export default function InvoiceDrawer({ txn, onClose }: Props) {
   );
 }
 
-export function InvoiceBody({ txn, invoice }: { txn: TimelineTransaction; invoice: Invoice }) {
+export function InvoiceBody({ txn, invoice }: { txn?: TimelineTransaction; invoice: Invoice }) {
   const lines = invoice.lines || [];
   const taxes = invoice.taxes || [];
 
@@ -119,8 +119,8 @@ export function InvoiceBody({ txn, invoice }: { txn: TimelineTransaction; invoic
             {invoice.doc_type === 'nota_credito' ? 'Nota de crédito' : 'Factura'}
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--fg-faint)', marginTop: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <span className="num">Bought {fmtDateLong(txn.date_created)}</span>
-            {txn.date_created !== txn.date_payed && (
+            {txn && <span className="num">Bought {fmtDateLong(txn.date_created)}</span>}
+            {txn && txn.date_created !== txn.date_payed && (
               <span className="num">Pays {fmtDateLong(txn.date_payed)}</span>
             )}
             <span className="num">Issued {invoice.issue_date}</span>
@@ -129,27 +129,29 @@ export function InvoiceBody({ txn, invoice }: { txn: TimelineTransaction; invoic
       </div>
 
       {/* Linked transaction */}
-      <div style={{
-        border: '1px solid var(--border)', borderRadius: 12,
-        background: 'var(--bg-sunken)', padding: '10px 14px', marginBottom: 18,
-        display: 'flex', alignItems: 'center', gap: 12,
-      }}>
-        <CatSwatch cat={txn.category} size={26} />
-        <div style={{ flex: 1, lineHeight: 1.3, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 550 }}>{txn.description}</div>
-          <div style={{ fontSize: 11.5, color: 'var(--fg-faint)', display: 'flex', gap: 8 }}>
-            <span>{txn.account}</span>
-            <span>&middot;</span>
-            <span className="num">pays {fmtDateLong(txn.date_payed)}</span>
+      {txn && (
+        <div style={{
+          border: '1px solid var(--border)', borderRadius: 12,
+          background: 'var(--bg-sunken)', padding: '10px 14px', marginBottom: 18,
+          display: 'flex', alignItems: 'center', gap: 12,
+        }}>
+          <CatSwatch cat={txn.category} size={26} />
+          <div style={{ flex: 1, lineHeight: 1.3, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 550 }}>{txn.description}</div>
+            <div style={{ fontSize: 11.5, color: 'var(--fg-faint)', display: 'flex', gap: 8 }}>
+              <span>{txn.account}</span>
+              <span>&middot;</span>
+              <span className="num">pays {fmtDateLong(txn.date_payed)}</span>
+            </div>
+          </div>
+          <div className="num" style={{
+            fontSize: 14.5, fontWeight: 600,
+            color: txn.amount > 0 ? 'var(--pos)' : 'var(--fg)',
+          }}>
+            {fmtMoney(txn.amount)}
           </div>
         </div>
-        <div className="num" style={{
-          fontSize: 14.5, fontWeight: 600,
-          color: txn.amount > 0 ? 'var(--pos)' : 'var(--fg)',
-        }}>
-          {fmtMoney(txn.amount)}
-        </div>
-      </div>
+      )}
 
       {/* Line items */}
       {lines.length > 0 && (
