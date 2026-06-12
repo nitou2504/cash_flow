@@ -221,12 +221,25 @@ export function InvoiceBody({ txn, invoice }: { txn: TimelineTransaction; invoic
         <TotalRow k="Total" v={`$${invoice.total.toFixed(2)}`} big />
       </div>
 
-      {/* Payment */}
-      {invoice.forma_pago != null && (
-        <Block label="Payment">
-          <div style={{ fontSize: 12.5, fontWeight: 550 }}>
-            {FORMA_PAGO[invoice.forma_pago] || `Code ${invoice.forma_pago}`}
-          </div>
+      {/* Payment — show full split when the invoice was paid with multiple methods */}
+      {(invoice.pagos?.length || invoice.forma_pago != null) && (
+        <Block label={invoice.pagos && invoice.pagos.length > 1 ? 'Payment · split' : 'Payment'}>
+          {invoice.pagos && invoice.pagos.length > 0 ? (
+            invoice.pagos.map((p, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'baseline', padding: '2px 0' }}>
+                <span style={{ flex: 1, fontSize: 12.5, fontWeight: 550 }}>
+                  {FORMA_PAGO[p.forma_pago] || `Code ${p.forma_pago}`}
+                </span>
+                <span className="num" style={{ fontSize: 12.5, fontWeight: 600 }}>
+                  ${p.total.toFixed(2)}
+                </span>
+              </div>
+            ))
+          ) : (
+            <div style={{ fontSize: 12.5, fontWeight: 550 }}>
+              {FORMA_PAGO[invoice.forma_pago!] || `Code ${invoice.forma_pago}`}
+            </div>
+          )}
         </Block>
       )}
     </>

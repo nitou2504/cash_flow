@@ -202,6 +202,16 @@ function DetailPanel({ invoice, onLinked, onClose }: {
               ${invoice.total.toFixed(2)}
             </span>
           </div>
+          {invoice.pagos && invoice.pagos.length > 1 && (
+            <div style={{
+              marginTop: 8, padding: '6px 10px', borderRadius: 8,
+              background: 'var(--warn-soft)', fontSize: 11.5, color: 'var(--warn)', fontWeight: 600,
+            }}>
+              Split payment: {invoice.pagos.map(p =>
+                `${FORMA_PAGO[p.forma_pago] || `code ${p.forma_pago}`} $${p.total.toFixed(2)}`
+              ).join(' + ')}
+            </div>
+          )}
         </div>
 
         {/* Line items (compact) */}
@@ -253,8 +263,12 @@ function DetailPanel({ invoice, onLinked, onClose }: {
         {isLoading && <div style={{ padding: 12, color: 'var(--fg-muted)', fontSize: 13 }}>Loading...</div>}
 
         {candidates?.map(c => {
-          const diff = c.amount - invoice.total;
+          // match against the full total or any single pago of a split payment
+          const targets = [invoice.total, ...(invoice.pagos?.map(p => p.total) || [])];
+          const bestTarget = targets.reduce((a, b) => Math.abs(c.amount - b) < Math.abs(c.amount - a) ? b : a);
+          const diff = c.amount - bestTarget;
           const exact = Math.abs(diff) < 0.01;
+          const partial = bestTarget !== invoice.total;
           return (
             <div key={c.id} style={{
               border: '1px solid var(--border)', borderRadius: 10,
@@ -277,7 +291,9 @@ function DetailPanel({ invoice, onLinked, onClose }: {
                   fontSize: 10.5, fontWeight: 600,
                   color: exact ? 'var(--pos)' : 'var(--warn)',
                 }}>
-                  {exact ? 'exact' : `${diff > 0 ? '+' : '−'}$${Math.abs(diff).toFixed(2)}`}
+                  {exact
+                    ? (partial ? `= $${bestTarget.toFixed(2)} part` : 'exact')
+                    : `${diff > 0 ? '+' : '−'}$${Math.abs(diff).toFixed(2)}`}
                 </div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>

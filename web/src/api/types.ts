@@ -171,6 +171,12 @@ export interface Invoice {
   store_address?: string | null;
   lines?: InvoiceLine[];
   taxes?: InvoiceTax[];
+  pagos?: InvoicePago[];
+}
+
+export interface InvoicePago {
+  forma_pago: number;
+  total: number;
 }
 
 export interface Consumo {
