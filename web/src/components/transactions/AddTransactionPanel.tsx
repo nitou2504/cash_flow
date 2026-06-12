@@ -462,7 +462,13 @@ function FormMode({ onClose, queryClient, initial, footerContainer }: { onClose:
 
       <div style={{ display: 'flex', gap: 16, marginBottom: 14 }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--fg-muted)', cursor: 'pointer' }}>
-          <input type="checkbox" checked={isIncome} onChange={e => setIsIncome(e.target.checked)} style={{ accentColor: 'var(--accent)' }} />
+          <input type="checkbox" checked={isIncome} onChange={e => {
+            const checked = e.target.checked;
+            setIsIncome(checked);
+            const incomeCat = categories?.find(c => c.name.toLowerCase() === 'income')?.name;
+            if (checked && incomeCat) setCategory(incomeCat);
+            else if (!checked && incomeCat && category === incomeCat) setCategory('');
+          }} style={{ accentColor: 'var(--accent)' }} />
           This is income
         </label>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--fg-muted)', cursor: 'pointer' }}>
