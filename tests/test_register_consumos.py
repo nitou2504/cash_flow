@@ -1,13 +1,15 @@
 """Tests for gmail_sync.register_consumos — deterministic rules and registration flow."""
 import unittest
-from datetime import datetime
+from datetime import date, datetime
 from unittest.mock import patch
 
 from cashflow.consumo_repository import upsert_consumo, find_unregistered, mark_registered
 from cashflow.database import create_test_db
 from cashflow.repository import (
+    add_subscription,
     add_transactions,
     find_matching_forecast,
+    get_budget_allocation_for_month,
     get_transaction_link,
     get_transactions_needing_review,
     find_similar_transactions,
@@ -353,6 +355,42 @@ class TestEnrichWithInvoices(unittest.TestCase):
             use_llm=False, rules=TEST_RULES,
         )
         assert stats["enriched"] == 0
+
+
+class TestRegisterBudgetAbsorption(unittest.TestCase):
+    """Auto-registered transactions with a budget must shrink the envelope."""
+
+    def setUp(self):
+        self.cf_conn = create_test_db()
+        self.cf_conn.execute(
+            "INSERT OR IGNORE INTO accounts VALUES (?, ?, ?, ?)",
+            ("Visa Pichincha", "credit_card", 13, 1),
+        )
+        add_subscription(self.cf_conn, {
+            "id": "budget_dining", "name": "Dining Budget", "category": "Dining-Snacks",
+            "monthly_amount": 100.00, "payment_account_id": "Visa Pichincha",
+            "start_date": date(2026, 1, 1), "is_budget": True,
+        })
+        # Purchase Apr 22 on Visa Pichincha (cut-off 13) pays Jun 1
+        self.payment_month = date(2026, 6, 1)
+        add_transactions(self.cf_conn, [{
+            "date_created": self.payment_month, "date_payed": self.payment_month,
+            "description": "Dining Budget", "account": "Visa Pichincha", "amount": -100.00,
+            "category": "Dining-Snacks", "budget": "budget_dining", "status": "forecast",
+            "origin_id": "budget_dining",
+        }])
+        self.cf_conn.commit()
+
+    def test_registered_expense_absorbed_by_envelope(self):
+        rules = dict(TEST_RULES)
+        rules["category_budget_map"] = {"Dining-Snacks": "budget_dining"}
+        upsert_consumo(self.cf_conn, _make_txn("m1", "KFC CCI", 25.0), "Consumos/Pichincha")
+        register_consumos(self.cf_conn, use_llm=False, rules=rules)
+
+        review = get_transactions_needing_review(self.cf_conn, source="gmail")
+        assert review[0]["budget"] == "budget_dining"
+        allocation = get_budget_allocation_for_month(self.cf_conn, "budget_dining", self.payment_month)
+        assert allocation["amount"] == -75.00
 
 
 if __name__ == "__main__":

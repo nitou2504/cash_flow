@@ -34,6 +34,7 @@ from cashflow.repository import (
     link_transaction,
 )
 from cashflow.transactions import create_single_transaction
+from cashflow import controller
 
 _BASE_DIR = Path(__file__).resolve().parent.parent
 RULES_PATH = _BASE_DIR / "register_rules.yaml"
@@ -530,6 +531,7 @@ def register_consumos(
 
         inserted_ids = add_transactions(conn, [txn])
         tid = inserted_ids[0]
+        controller._apply_expense_to_budget(conn, txn)
 
         link_transaction(
             conn, tid,
