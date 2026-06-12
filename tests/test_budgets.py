@@ -208,5 +208,56 @@ class TestRolloverBudgetReconciliation(unittest.TestCase):
         self.assertEqual(len(releases), 1)
 
 
+class TestRolloverHealsEnvelopeDrift(unittest.TestCase):
+    """Budget assignments made outside the controller (scripts, direct SQL)
+    leave the allocation stale; rollover must recompute it."""
+
+    def setUp(self):
+        self.conn = create_test_db()
+        self.month_start = date.today().replace(day=1)
+        add_subscription(self.conn, {
+            "id": "budget_food", "name": "Food Budget", "category": "Home Food & Supplies",
+            "monthly_amount": 300.00, "payment_account_id": "Cash",
+            "start_date": date(2025, 1, 1), "is_budget": True,
+        })
+        add_transactions(self.conn, [{
+            "date_created": self.month_start, "date_payed": self.month_start,
+            "description": "Food Budget", "account": "Cash", "amount": -300.00,
+            "category": "Home Food & Supplies", "budget": "budget_food", "status": "committed",
+            "origin_id": "budget_food",
+        }])
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_rollover_recomputes_stale_allocation(self):
+        # Expense inserted directly (bypassing absorption) — envelope stays -300
+        add_transactions(self.conn, [{
+            "date_created": self.month_start, "date_payed": self.month_start,
+            "description": "Groceries", "account": "Cash", "amount": -80.00,
+            "category": "Home Food & Supplies", "budget": "budget_food", "status": "committed",
+            "origin_id": None,
+        }])
+        allocation = get_budget_allocation_for_month(self.conn, "budget_food", self.month_start)
+        self.assertEqual(allocation["amount"], -300.00)
+
+        run_monthly_rollover(self.conn, date.today())
+
+        allocation = get_budget_allocation_for_month(self.conn, "budget_food", self.month_start)
+        self.assertEqual(allocation["amount"], -220.00)
+
+    def test_rollover_caps_overspent_allocation_at_zero(self):
+        add_transactions(self.conn, [{
+            "date_created": self.month_start, "date_payed": self.month_start,
+            "description": "Groceries", "account": "Cash", "amount": -350.00,
+            "category": "Home Food & Supplies", "budget": "budget_food", "status": "committed",
+            "origin_id": None,
+        }])
+        run_monthly_rollover(self.conn, date.today())
+
+        allocation = get_budget_allocation_for_month(self.conn, "budget_food", self.month_start)
+        self.assertEqual(allocation["amount"], 0.00)
+
+
 if __name__ == "__main__":
     unittest.main()

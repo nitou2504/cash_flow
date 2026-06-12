@@ -199,6 +199,23 @@ def get_budget_allocation_for_month(
         return dict(allocation)
     return None
 
+def get_budget_allocation_months(
+    conn: Connection, from_month: date
+) -> List[tuple]:
+    """
+    Returns (budget_id, date_payed) for every budget allocation transaction
+    from the given month onward. Used to heal envelope drift.
+    """
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT origin_id, date_payed FROM transactions
+        WHERE origin_id IN (SELECT id FROM subscriptions WHERE is_budget = 1)
+          AND budget = origin_id
+          AND date(date_payed) >= ?
+    """, (from_month.replace(day=1),))
+    return [(row[0], row[1]) for row in cursor.fetchall()]
+
+
 def get_expenses_for_budget_in_month(
     conn: Connection, budget_id: str, month_date: date
 ) -> List[Dict[str, Any]]:

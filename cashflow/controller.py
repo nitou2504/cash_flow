@@ -926,6 +926,12 @@ def run_monthly_rollover(conn: sqlite3.Connection, process_date: date):
     # 4. Commit forecasts for the given month
     repository.commit_past_and_current_forecasts(conn, process_date)
 
+    # 5. Heal envelope drift: recompute every allocation from the current month
+    # onward, so budget assignments made outside the controller (scripts,
+    # direct SQL) can never leave a stale envelope double-counting cash.
+    for budget_id, month_date in repository.get_budget_allocation_months(conn, current_month_start):
+        _recalculate_and_update_budget(conn, budget_id, month_date)
+
 
 def process_transaction_date_update(conn: sqlite3.Connection, transaction_id: int, new_date: date, updates: Dict[str, Any] = None):
     """
