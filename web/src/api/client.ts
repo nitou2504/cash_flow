@@ -143,6 +143,19 @@ export const api = {
   invoiceByTransaction: (txnId: number) =>
     request<import('./types').Invoice>(`/invoices/by-transaction/${txnId}`),
 
+  unmatchedInvoices: (cardOnly?: boolean) =>
+    request<import('./types').Invoice[]>(`/invoices/unmatched${cardOnly ? '?card_only=true' : ''}`),
+
+  invoiceCandidates: (invoiceId: number, windowDays?: number) =>
+    request<import('./types').Consumo[]>(
+      `/invoices/${invoiceId}/candidates${windowDays ? `?window_days=${windowDays}` : ''}`),
+
+  linkInvoice: (invoiceId: number, consumoId: number) =>
+    request<{ ok: boolean }>(`/invoices/${invoiceId}/link`, {
+      method: 'POST',
+      body: JSON.stringify({ consumo_id: consumoId }),
+    }),
+
   timeline: (params?: Record<string, string>) => {
     const qs = params ? '?' + new URLSearchParams(params).toString() : '';
     return request<import('./types').TimelineResponse>(`/transactions/timeline${qs}`);

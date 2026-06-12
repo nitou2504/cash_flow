@@ -233,7 +233,7 @@ export function InvoiceBody({ txn, invoice }: { txn: TimelineTransaction; invoic
   );
 }
 
-const FORMA_PAGO: Record<number, string> = {
+export const FORMA_PAGO: Record<number, string> = {
   1: 'Sin utilización del sistema financiero',
   15: 'Compensación de deudas',
   16: 'Tarjeta de débito',

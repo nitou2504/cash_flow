@@ -197,6 +197,10 @@ class ConsumoOut(BaseModel):
     registered_txn_id: Optional[int] = None
 
 
+class InvoiceLinkIn(BaseModel):
+    consumo_id: int
+
+
 class ReviewItemOut(BaseModel):
     transaction: TransactionOut
     consumo: Optional[ConsumoOut] = None

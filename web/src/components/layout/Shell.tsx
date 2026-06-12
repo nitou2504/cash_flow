@@ -6,6 +6,7 @@ const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: IconDashboard },
   { to: '/transactions', label: 'Transactions', icon: IconList },
   { to: '/review', label: 'Review', icon: IconInbox },
+  { to: '/invoices', label: 'Invoices', icon: IconReceipt },
 ];
 
 const MANAGE_ITEMS = [
@@ -142,6 +143,15 @@ function IconTag() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
       <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7" cy="7" r="1.2" fill="currentColor"/>
+    </svg>
+  );
+}
+
+function IconReceipt() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 2v20l3-2 3 2 3-2 3 2 3-2 3 2V2l-3 2-3-2-3 2-3-2-3 2z"/>
+      <line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="15" y2="13"/>
     </svg>
   );
 }
