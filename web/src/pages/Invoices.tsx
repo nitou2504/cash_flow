@@ -148,7 +148,8 @@ function DetailPanel({ invoice, onLinked, onClose }: {
   });
 
   const linkMut = useMutation({
-    mutationFn: (consumoId: number) => api.linkInvoice(invoice.id, consumoId),
+    mutationFn: ({ consumoId, useInvoiceAmount }: { consumoId: number; useInvoiceAmount?: boolean }) =>
+      api.linkInvoice(invoice.id, consumoId, useInvoiceAmount),
     onSuccess: onLinked,
   });
 
@@ -279,17 +280,33 @@ function DetailPanel({ invoice, onLinked, onClose }: {
                   {exact ? 'exact' : `${diff > 0 ? '+' : '−'}$${Math.abs(diff).toFixed(2)}`}
                 </div>
               </div>
-              <button
-                onClick={() => linkMut.mutate(c.id)}
-                disabled={linkMut.isPending}
-                style={{
-                  padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600,
-                  background: exact ? 'var(--pos)' : 'transparent',
-                  border: exact ? 'none' : '1px solid var(--accent)',
-                  color: exact ? 'white' : 'var(--accent)',
-                  cursor: 'pointer', opacity: linkMut.isPending ? 0.6 : 1,
-                }}
-              >Link</button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <button
+                  onClick={() => linkMut.mutate({ consumoId: c.id })}
+                  disabled={linkMut.isPending}
+                  title={exact ? undefined : `Keep card amount ${fmtMoney(-c.amount)}`}
+                  style={{
+                    padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600,
+                    background: exact ? 'var(--pos)' : 'transparent',
+                    border: exact ? 'none' : '1px solid var(--accent)',
+                    color: exact ? 'white' : 'var(--accent)',
+                    cursor: 'pointer', opacity: linkMut.isPending ? 0.6 : 1,
+                  }}
+                >Link</button>
+                {!exact && c.registered_txn_id != null && (
+                  <button
+                    onClick={() => linkMut.mutate({ consumoId: c.id, useInvoiceAmount: true })}
+                    disabled={linkMut.isPending}
+                    title="Link and set the transaction amount to the invoice total"
+                    style={{
+                      padding: '4px 8px', borderRadius: 6, fontSize: 10.5, fontWeight: 600,
+                      background: 'transparent', border: '1px solid var(--border)',
+                      color: 'var(--fg-muted)', cursor: 'pointer',
+                      opacity: linkMut.isPending ? 0.6 : 1, whiteSpace: 'nowrap',
+                    }}
+                  >use ${invoice.total.toFixed(2)}</button>
+                )}
+              </div>
             </div>
           );
         })}

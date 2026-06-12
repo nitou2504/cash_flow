@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.deps import get_db, get_current_user
 from api.schemas import InvoiceOut, InvoiceLineOut, InvoiceTaxOut, ConsumoOut, InvoiceLinkIn
-from cashflow import consumo_repository
+from cashflow import consumo_repository, controller
 
 router = APIRouter(prefix="/api/invoices", tags=["invoices"], dependencies=[Depends(get_current_user)])
 
@@ -160,17 +160,23 @@ def link_invoice_to_consumo(
     conn: sqlite3.Connection = Depends(get_db),
 ):
     cursor = conn.cursor()
-    cursor.execute("SELECT invoice_number FROM invoices WHERE id = ?", (invoice_id,))
+    cursor.execute("SELECT invoice_number, total FROM invoices WHERE id = ?", (invoice_id,))
     inv = cursor.fetchone()
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    cursor.execute("SELECT matched_invoice_number FROM consumos WHERE id = ?", (body.consumo_id,))
+    cursor.execute("SELECT matched_invoice_number, registered_txn_id FROM consumos WHERE id = ?", (body.consumo_id,))
     consumo = cursor.fetchone()
     if not consumo:
         raise HTTPException(status_code=404, detail="Consumo not found")
     if consumo["matched_invoice_number"]:
         raise HTTPException(status_code=409, detail="Consumo already matched to an invoice")
     consumo_repository.set_invoice_match(conn, body.consumo_id, inv["invoice_number"])
+    if body.use_invoice_amount and consumo["registered_txn_id"]:
+        # Treat the invoice total as the true amount (goes through the
+        # controller so budget envelopes recalculate)
+        controller.process_transaction_update(
+            conn, consumo["registered_txn_id"], {"amount": -abs(inv["total"])},
+        )
     return {"ok": True}
 
 

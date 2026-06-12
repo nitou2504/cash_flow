@@ -150,10 +150,10 @@ export const api = {
     request<import('./types').Consumo[]>(
       `/invoices/${invoiceId}/candidates${windowDays ? `?window_days=${windowDays}` : ''}`),
 
-  linkInvoice: (invoiceId: number, consumoId: number) =>
+  linkInvoice: (invoiceId: number, consumoId: number, useInvoiceAmount?: boolean) =>
     request<{ ok: boolean }>(`/invoices/${invoiceId}/link`, {
       method: 'POST',
-      body: JSON.stringify({ consumo_id: consumoId }),
+      body: JSON.stringify({ consumo_id: consumoId, use_invoice_amount: !!useInvoiceAmount }),
     }),
 
   timeline: (params?: Record<string, string>) => {

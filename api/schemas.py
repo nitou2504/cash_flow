@@ -199,6 +199,7 @@ class ConsumoOut(BaseModel):
 
 class InvoiceLinkIn(BaseModel):
     consumo_id: int
+    use_invoice_amount: bool = False
 
 
 class ReviewItemOut(BaseModel):
