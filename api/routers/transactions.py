@@ -38,8 +38,32 @@ def _txn_to_out(t: dict) -> TransactionOut:
     )
 
 
-def _txn_to_timeline(t: dict, budget_ids: set, invoice_txn_ids: set) -> TimelineTransaction:
+def _build_overspend_map(conn: sqlite3.Connection, budgets: list) -> dict:
+    """(budget_id, 'YYYY-MM') -> amount spent over the monthly envelope."""
+    budget_amounts = {b["id"]: b["monthly_amount"] for b in budgets}
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT budget, strftime('%Y-%m', date_payed) AS m, SUM(amount) AS total
+        FROM transactions
+        WHERE budget IS NOT NULL
+          AND (origin_id IS NULL OR origin_id != budget)
+          AND status != 'pending'
+        GROUP BY budget, m
+    """)
+    overspend = {}
+    for row in cursor.fetchall():
+        spent = abs(row["total"]) if row["total"] else 0.0
+        monthly = budget_amounts.get(row["budget"])
+        if monthly is not None and spent > monthly:
+            overspend[(row["budget"], row["m"])] = round(spent - monthly, 2)
+    return overspend
+
+
+def _txn_to_timeline(t: dict, budget_ids: set, invoice_txn_ids: set, overspend_map: dict | None = None) -> TimelineTransaction:
     is_alloc = t.get("origin_id") in budget_ids and t.get("budget") == t.get("origin_id")
+    overspend = 0.0
+    if is_alloc and overspend_map:
+        overspend = overspend_map.get((t.get("origin_id"), str(t["date_payed"])[:7]), 0.0)
     return TimelineTransaction(
         id=t.get("id", 0),
         date_created=str(t["date_created"]),
@@ -56,6 +80,7 @@ def _txn_to_timeline(t: dict, budget_ids: set, invoice_txn_ids: set) -> Timeline
         running_balance=t.get("running_balance"),
         is_budget_allocation=is_alloc,
         has_invoice=t.get("id", 0) in invoice_txn_ids,
+        budget_overspend=overspend,
     )
 
 
@@ -122,7 +147,8 @@ def search_transactions(
     )
     invoice_txn_ids = {row[0] for row in cursor.fetchall()}
 
-    results = [_txn_to_timeline(t, budget_ids, invoice_txn_ids) for t in rows]
+    overspend_map = _build_overspend_map(conn, budgets)
+    results = [_txn_to_timeline(t, budget_ids, invoice_txn_ids, overspend_map) for t in rows]
     return SearchResponse(results=results, total=total, limit=limit, offset=offset)
 
 
@@ -151,6 +177,7 @@ def get_timeline(
     # Budget IDs for allocation detection
     budgets = repository.get_all_budgets(conn)
     budget_ids = {b["id"] for b in budgets}
+    overspend_map = _build_overspend_map(conn, budgets)
 
     # Invoice-linked transaction IDs
     cursor = conn.cursor()
@@ -303,7 +330,7 @@ def get_timeline(
         except ValueError:
             month_label = mk
 
-        tl_txns = [_txn_to_timeline(t, budget_ids, invoice_txn_ids) for t in group_txns]
+        tl_txns = [_txn_to_timeline(t, budget_ids, invoice_txn_ids, overspend_map) for t in group_txns]
 
         result_months.append(MonthGroup(
             month_key=mk,
@@ -337,7 +364,7 @@ def get_timeline(
         if idx > 0:
             stats_mom = monthly_minimums[current_mk] - monthly_minimums[sorted_month_keys[idx - 1]]
 
-    pending_past_tl = [_txn_to_timeline(t, budget_ids, invoice_txn_ids) for t in pending_from_past]
+    pending_past_tl = [_txn_to_timeline(t, budget_ids, invoice_txn_ids, overspend_map) for t in pending_from_past]
 
     return TimelineResponse(
         pending_from_past=pending_past_tl,

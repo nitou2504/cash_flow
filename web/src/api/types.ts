@@ -197,6 +197,7 @@ export interface ReviewItem {
 
 export interface TimelineTransaction extends Transaction {
   is_budget_allocation: boolean;
+  budget_overspend?: number;
   has_invoice: boolean;
 }
 

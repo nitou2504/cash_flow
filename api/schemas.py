@@ -213,6 +213,7 @@ class ReviewItemOut(BaseModel):
 class TimelineTransaction(TransactionOut):
     is_budget_allocation: bool = False
     has_invoice: bool = False
+    budget_overspend: float = 0
 
 
 class MonthGroup(BaseModel):

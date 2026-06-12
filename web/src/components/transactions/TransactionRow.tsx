@@ -137,9 +137,16 @@ const TransactionRow = forwardRef<HTMLDivElement, Props>(
         <span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>{txn.category || ''}</span>
 
         {/* Amount */}
-        <span className="num" style={{
-          textAlign: 'right', fontWeight: 600,           color: is_budget_allocation ? 'var(--accent)' : txn.amount > 0 ? 'var(--pos)' : color,
-        }}>
+        <span
+          className="num"
+          title={is_budget_allocation && txn.budget_overspend ? `Over budget by $${txn.budget_overspend.toFixed(2)}` : undefined}
+          style={{
+            textAlign: 'right', fontWeight: 600,
+            color: is_budget_allocation
+              ? (txn.budget_overspend ? 'var(--neg)' : 'var(--accent)')
+              : txn.amount > 0 ? 'var(--pos)' : color,
+          }}
+        >
           {fmtMoney(txn.amount)}
         </span>
 
