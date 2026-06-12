@@ -10,7 +10,7 @@ from api.auth import SECRET_KEY, ALGORITHM
 
 
 def get_db() -> Generator[sqlite3.Connection, None, None]:
-    conn = create_connection(DB_PATH)
+    conn = create_connection(DB_PATH, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
     try:
         yield conn

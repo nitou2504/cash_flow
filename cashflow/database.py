@@ -15,11 +15,18 @@ def convert_date(s: bytes):
 sqlite3.register_adapter(date, adapt_date_iso)
 sqlite3.register_converter("DATE", convert_date)
 
-def create_connection(db_path: str) -> Connection:
+def create_connection(db_path: str, check_same_thread: bool = True) -> Connection:
     """
     Establishes and returns a connection to the SQLite database file.
+
+    check_same_thread=False is needed by the FastAPI app, where a request's
+    dependency setup, handler, and teardown may run on different threadpool
+    threads (each request still uses its own connection sequentially).
     """
-    conn = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
+    conn = sqlite3.connect(
+        db_path, detect_types=sqlite3.PARSE_DECLTYPES,
+        check_same_thread=check_same_thread,
+    )
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
