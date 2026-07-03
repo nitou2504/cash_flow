@@ -165,7 +165,7 @@ class TestBotNoBudgetFlow(unittest.TestCase):
             'name': 'mom', 'account': 'Cash',
             'budget': 'Home Food & Supplies', 'no_budget_phrase': 'de mateo',
         }
-        request_json = {'description': 'Supermaxi de mateo', 'amount': -25.0, 'category': 'Home Food & Supplies'}
+        request_json = {'description': 'Supermaxi de Mateo', 'amount': -25.0, 'category': 'Home Food & Supplies'}
 
         result = self._simulate_budget_resolution(extra_user, skip_budget=True, request_json=request_json)
         self.assertNotIn('budget', result)

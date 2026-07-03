@@ -273,10 +273,7 @@ Manual per-txn: `python3 cli.py create tx` with `-n` for installments, `-b` for 
 
 ### Known account mappings
 
-- Father's account 6634 (Sanchez Rueda Pedro Jose) — real transfers, usually mercado/home budget
-- Ana's account 2210 — transfers for various purposes
-- Own accounts: 1057 (savings), 7788, 9911
-- CC numbers: 4477 (Visa Pichincha), 3355 (Produbanco), 8811 (Diners)
+Real account-suffix → person mappings live in `register_rules.yaml` (`transfer_destinations`, gitignored). Never commit real account digits or names — use the `.example` placeholders.
 
 ### Interbank CC payment fees
 
@@ -284,5 +281,5 @@ Each interbank CC payment: $0.34 comision + $0.05 IVA = $0.39
 
 ### Subscription conventions
 
-- Spotify: $8.04/mo (incl 15% IVA, uses ×1.15 all-inclusive convention)
-- $20 transfers to father (6634) from budget_mercado_groceries
+- Recurring subscription amounts that include IVA use the ×1.15 all-inclusive convention (e.g. Spotify)
+- Recurring family transfers are budget-linked via `transfer_destinations` rules

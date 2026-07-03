@@ -569,7 +569,7 @@ def check_no_budget(user_input: str, phrase: str) -> bool:
     """Check if user input contains a phrase meaning the budget should be skipped.
 
     Uses the small/local LLM for fuzzy matching to handle dictation typos
-    (e.g., "de mateo" vs "de matteo" vs "de matteoo").
+    (e.g., "de mateo" vs "de matteo" vs "de Matteo").
 
     Returns True if the phrase (or a close variation) is present.
     """
@@ -577,9 +577,9 @@ def check_no_budget(user_input: str, phrase: str) -> bool:
 
 The phrase may appear with different capitalization, accents, or dictation-induced typos. For example, if the phrase is "de mateo", these should all match:
 - "de mateo"
-- "de mateo"
+- "de Mateo"
 - "de matteo"
-- "de matteoo"
+- "de Matteo"
 - "de stefano"
 
 Respond with ONLY "true" or "false". No explanation."""

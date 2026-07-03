@@ -208,7 +208,7 @@ def parse_produbanco(msg_id: str, subject: str, text: str) -> EmailTxn | None:
     )
 
 
-# --- Cash transfer parser (Pichincha bank transfers from account 1057) ---
+# --- Cash transfer parser (Pichincha bank transfers from own savings account) ---
 
 # Old format (labelled fields, one per line)
 _CASH_DEST_RE = re.compile(r"Cuenta acreditada:\s*(?:\*{6}|X{6})(\d{4})")

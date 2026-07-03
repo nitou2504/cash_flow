@@ -81,7 +81,7 @@ TELEGRAM_EXTRA_USER_MOM=987654321,Visa Pichincha,Home Groceries,de mateo
 - `<NAME>` becomes the `source` tag on transactions (`MOM` → `mom`)
 - Extra users are automatically authorized — no need to add them to `TELEGRAM_ALLOWED_USERS`
 - The configured account is appended to the message for payment date resolution; the budget is resolved in code to the active period (not by the LLM — prevents category pollution)
-- If `no_budget_phrase` is set, a parallel small-model LLM call checks for a fuzzy match — if found, the budget is omitted (e.g. "de mateo" / "de matteo" / "de matteoo")
+- If `no_budget_phrase` is set, a parallel small-model LLM call checks for a fuzzy match — if found, the budget is omitted (e.g. "de mateo" / "de matteo" / "de mateos")
 
 **How it works**:
 
