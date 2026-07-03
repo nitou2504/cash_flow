@@ -1,6 +1,6 @@
 # Cash Flow — Agent Guide
 
-Personal finance CLI app. Budget envelopes, CC billing-cycle awareness, single timeline forecasting real cash position. SQLite backend, LLM-powered natural language input, Telegram bot, Gmail invoice pipeline.
+Personal finance app. Budget envelopes, CC billing-cycle awareness, single timeline forecasting real cash position. SQLite backend, web dashboard (React + FastAPI), LLM-powered natural language input, Telegram bot, Gmail invoice pipeline. The web app is the primary interface.
 
 ## Project Layout
 
@@ -9,6 +9,19 @@ cli.py                  # Main CLI entry point (all commands)
 bot.py                  # Telegram bot
 cash_flow.db            # Single SQLite database (all tables)
 llm_config.yaml         # LLM model routing config
+
+api/                    # FastAPI backend for the web app
+  app.py                # App factory, SPA serving, lifespan (rollover + sync scheduler)
+  auth.py               # Password login (WEB_PASSWORD), JWT cookie, rate limit
+  routers/              # dashboard, transactions, accounts, categories, budgets,
+                        # subscriptions, review, invoices, settings, gmail, fixes
+
+web/                    # React 19 + TS + Vite frontend source
+  src/pages/            # Dashboard, Transactions, Review, Invoices, Subscriptions, Settings, Login
+static/                 # Built frontend (committed; served by FastAPI) — copy web/dist here after build
+sync/scheduler.py       # In-process Gmail sync scheduler (midnight + midday EC time)
+docs/                   # User docs (web, cli, concepts, gmail-sync, llm, telegram-bot, architecture)
+                        # + screenshots/ used by README
 
 cashflow/               # Core domain
   config.py             # Paths, backup settings, Telegram user config
@@ -49,6 +62,13 @@ specs/                  # Design docs
 extra/                  # Bank statements, utility scripts, invoice XML cache
 backups/                # Auto + manual DB backups
 ```
+
+## Web App
+
+- Run: `docker compose up -d --build` (port 8787) or `WEB_PASSWORD=x uvicorn api.app:app --port 8000`
+- Frontend dev: `cd web && npm run dev` (proxies /api to :8090); ship with `npm run build` → copy `web/dist/*` to `static/` and commit ("update static build output" commits)
+- Auth env: `WEB_PASSWORD` (required), `WEB_SECRET_KEY`, `WEB_DEV_MODE=true` for plain HTTP
+- DB path is cwd-relative (`cash_flow.db`) — run server from repo root
 
 ## CLI Commands
 
